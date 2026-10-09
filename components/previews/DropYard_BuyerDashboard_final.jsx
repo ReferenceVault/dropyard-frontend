@@ -2031,10 +2031,9 @@ function ClaimModal({ item, onClose, onConfirm, accent, accentDeep, accentBg }) 
                       <input type="number" value={offer} onChange={e => setOffer(parseInt(e.target.value) || 0)} placeholder="Your offer" style={{ border: "none", outline: "none", flex: 1, fontFamily: F.head, fontSize: 18, fontWeight: 800, color: C.ink, background: "transparent" }}/>
                       <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, whiteSpace: "nowrap" }}>vs ${item.price} asking</span>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 12px", borderRadius: 10, background: C.aiMist, border: "1px solid " + C.ai + "20" }}>
-                      <Sparkles size={11} style={{ color: C.ai, flexShrink: 0 }}/>
-                      <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ai, lineHeight: 1.45 }}>This seller uses an AI agent — you'll get a response within seconds.</p>
-                    </div>
+                    {/* AI-agent response hint removed — the agent feature
+                        isn't shipped yet, so promising a reply "within
+                        seconds" set an expectation nothing can meet. */}
                   </div>
                 )}
               </button>
@@ -2120,17 +2119,16 @@ function ClaimModal({ item, onClose, onConfirm, accent, accentDeep, accentBg }) 
         {/* STEP 2a — OFFER SENT */}
         {step === "offer-sent" && (
           <div style={{ padding: "0 28px 28px 28px", textAlign: "center" }}>
-            <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.aiMist, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-              <Sparkles size={30} style={{ color: C.ai }}/>
+            {/* Success mark — green check (matches STEP 2b). Was a purple AI
+                Sparkles badge; removed with the AI-agent copy below since the
+                agent feature isn't shipped yet. */}
+            <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.greenMist, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <CheckCircle size={32} style={{ color: C.green }}/>
             </div>
             <h3 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.ink, marginBottom: 8 }}>Offer sent!</h3>
             <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, lineHeight: 1.55, marginBottom: 20 }}>
               You offered <b style={{ color: C.ink }}>${offer}</b> for <b style={{ color: C.ink }}>{item.title}</b>. The seller will respond shortly.
             </p>
-            <div style={{ padding: 14, borderRadius: 12, background: C.aiMist, border: "1px solid " + C.ai + "25", textAlign: "left", marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
-              <Sparkles size={14} style={{ color: C.ai, flexShrink: 0 }}/>
-              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.ai, lineHeight: 1.5 }}>This seller uses an AI agent. You should receive a response within seconds — check your Messages tab.</p>
-            </div>
             <div style={{ padding: 14, borderRadius: 12, background: "#F0FFF4", border: "1px solid " + C.wa + "30", textAlign: "left", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
               <MessageCircle size={14} style={{ color: C.wa, flexShrink: 0 }}/>
               <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, lineHeight: 1.5 }}>You'll also be notified on WhatsApp when the seller responds.</p>
@@ -2221,10 +2219,12 @@ function AskModal({ item, onClose, onSend }) {
             <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 8 }}>Your question</p>
             <textarea value={msg} onChange={e => setMsg(e.target.value)} placeholder="E.g., What's the condition? Any scratches? Does it come with accessories?" rows={5} style={{ width: "100%", padding: 14, borderRadius: 14, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink, outline: "none", resize: "vertical", background: C.paper }}/>
 
-            {/* AI agent hint */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, padding: "8px 12px", borderRadius: 10, background: C.aiMist, border: "1px solid " + C.ai + "20" }}>
-              <Sparkles size={12} style={{ color: C.ai, flexShrink: 0 }}/>
-              <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ai, lineHeight: 1.45 }}>This seller uses an AI agent — your question will be answered instantly. All Q&As are visible to other buyers.</p>
+            {/* Public-Q&A disclosure. The "seller uses an AI agent — answered
+                instantly" promise was dropped here; the visibility notice is a
+                real disclosure and stays. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, padding: "8px 12px", borderRadius: 10, background: C.sand, border: "1px solid " + C.fawn }}>
+              <MessageCircle size={12} style={{ color: C.mink, flexShrink: 0 }}/>
+              <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, lineHeight: 1.45 }}>All Q&amp;As are visible to other buyers.</p>
             </div>
 
             {/* WhatsApp toggle — same UX pattern as ClaimModal */}
