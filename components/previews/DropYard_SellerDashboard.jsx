@@ -10048,6 +10048,43 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // ── Neighborhood autofill from postal code ──────────────────────────────
+  // GET /api/geo/postal reads the local Geonames FSA table — no third-party
+  // geocoder, no API key. We only fill the field while the user hasn't typed
+  // their own value, so autofill never fights the person using the form.
+  // Clearing the field re-arms it.
+  const neighborhoodTouched = useRef(Boolean(user?.neighborhood));
+  const [autofillNote, setAutofillNote] = useState("");
+
+  useEffect(() => {
+    const fsa = postalCode.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase();
+    if (!/^[A-Z]\d[A-Z]$/.test(fsa) || neighborhoodTouched.current) {
+      setAutofillNote("");
+      return;
+    }
+    let cancelled = false;
+    // Debounced so typing a full postal code sends one request, not six.
+    const timer = setTimeout(async () => {
+      try {
+        const data = await apiRequest(`/api/geo/postal?code=${encodeURIComponent(fsa)}`);
+        if (cancelled || neighborhoodTouched.current || !data?.neighborhood) return;
+        setNeighborhood(data.neighborhood);
+        setAutofillNote(`Filled from ${data.fsa} — edit if it's not right.`);
+      } catch {
+        // Unknown FSA or offline: leave the field for the user to type.
+        if (!cancelled) setAutofillNote("");
+      }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [postalCode]);
+
+  const onNeighborhoodChange = (value) => {
+    // Empty again → let autofill take over on the next postal-code change.
+    neighborhoodTouched.current = value.trim().length > 0;
+    setAutofillNote("");
+    setNeighborhood(value);
+  };
+
   const toggleMethod = (m) => {
     setMethods(prev => {
       const next = new Set(prev);
@@ -10125,11 +10162,16 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <Field label="Neighborhood">
             <input
-              type="text" value={neighborhood} onChange={e => setNeighborhood(e.target.value)}
+              type="text" value={neighborhood} onChange={e => onNeighborhoodChange(e.target.value)}
               placeholder="e.g. Barrhaven"
               required
               style={fieldInput}
             />
+            {autofillNote && (
+              <p style={{ fontFamily: F.body, fontSize: 11, color: C.mink, marginTop: 5 }}>
+                {autofillNote}
+              </p>
+            )}
           </Field>
           <Field label="Postal code">
             <input
