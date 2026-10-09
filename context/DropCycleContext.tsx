@@ -54,6 +54,30 @@ export function DropCycleProvider({ children }: { children: React.ReactNode }) {
     setSimulatedDateState(d);
   }, []);
 
+  // Dev-only: ?simulate=<ISO datetime> pins the clock so a phase can be
+  // tested without waiting for it or changing the machine's date. The phase
+  // is computed client-side from this value, so it drives the whole UI —
+  // the Drop banner, the seller publish options, the countdown.
+  //
+  //   /buyer?simulate=2026-10-10T13:00    → LIVE  (Sat 08:00–Sun 20:00)
+  //   /buyer?simulate=2026-10-09T22:00    → PREVIEW
+  //
+  // Ignored in production builds so a crafted URL can't shift what a real
+  // user sees. Invalid dates are ignored and the real clock is used.
+  useEffect(() => {
+    if (process.env.NODE_ENV === "production") return;
+    if (typeof window === "undefined") return;
+    const raw = new URLSearchParams(window.location.search).get("simulate");
+    if (!raw) return;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      console.warn(`[DropCycle] ignoring unparseable ?simulate=${raw}`);
+      return;
+    }
+    console.info(`[DropCycle] simulating ${parsed.toISOString()}`);
+    setSimulatedDateState(parsed);
+  }, []);
+
   // Only start the clock on the client to avoid SSR/client mismatch
   useEffect(() => {
     setNow(simulatedDate ?? new Date());
