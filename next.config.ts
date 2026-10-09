@@ -52,7 +52,13 @@ const cspDirectives: Record<string, string[] | true> = {
   "default-src":     ["'self'"],
   "script-src":      SCRIPT_SRC,
   "style-src":       ["'self'", "'unsafe-inline'"], // styled-jsx requires inline
-  "img-src":         ["'self'", "data:", "blob:", "https:"], // S3 photos via any HTTPS host
+  // S3 photos via any HTTPS host. In dev the backend's local-upload fallback
+  // serves item photos from the API origin over plain http://, which neither
+  // 'self' (the frontend origin) nor https: covers — so allow API_HOST too.
+  // Dev-only: production photos are always HTTPS, so the policy stays strict.
+  "img-src":         IS_DEV
+    ? ["'self'", "data:", "blob:", "https:", API_HOST]
+    : ["'self'", "data:", "blob:", "https:"],
   "font-src":        ["'self'", "data:"],
   "connect-src":     ["'self'", API_HOST, "https://accounts.google.com", "https://oauth2.googleapis.com", "wss:", "ws:"], // ws: for Socket.IO + Next.js HMR
   "frame-src":       ["'self'", "https://accounts.google.com"],
