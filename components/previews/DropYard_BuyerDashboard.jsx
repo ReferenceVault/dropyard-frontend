@@ -4123,7 +4123,6 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   // When the parent passes an `openThreadId` (an item title — the cross-view
   // linkage we settled on), find the matching conversation and auto-select
   // it. Clear the parent's flag so back-navigation doesn't keep re-selecting.
-  const [filter, setFilter]             = useState("all");
   // Per-thread drafts — preserves the typed text when switching between
   // conversations and coming back, mirroring v2 / FB Messenger behavior.
   const [drafts, setDrafts]             = useState({});
@@ -4518,22 +4517,11 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
     "completed":         { label: "Completed",         color: C.ash,       bg: C.sand,        icon: Check      },
   };
 
-  const filters = [
-    { id: "all",       label: "All" },
-    { id: "claim",     label: "Claims" },
-    { id: "offer",     label: "Offers" },
-    { id: "question",  label: "Q&A" },
-  ];
-
-  const counts = {
-    all:      conversations.length,
-    claim:    conversations.filter(c => c.type === "claim").length,
-    offer:    conversations.filter(c => c.type === "offer").length,
-    question: conversations.filter(c => c.type === "question").length,
-  };
   const unreadCount = conversations.filter(c => c.unread).length;
 
-  const filtered = conversations.filter(c => filter === "all" || c.type === filter);
+  // No type filter any more (see the note where the chips were removed), so
+  // the list is simply every conversation.
+  const filtered = conversations;
   const active = conversations.find(c => c.id === activeId) || conversations[0];
   const activeStatus = active ? statusMeta[active.status] : null;
   // Demo mode reads messages inline from the conversation; wired mode uses
@@ -4667,18 +4655,16 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
         </div>
       )}
 
-      {/* Filter tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
-        {filters.map(f => {
-          const active = filter === f.id;
-          return (
-            <button key={f.id} onClick={() => setFilter(f.id)} style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px", borderRadius: 999, border: "1.5px solid " + (active ? C.ink : C.fawn), background: active ? C.ink : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 150ms" }}>
-              {f.label}
-              <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 999, background: active ? "rgba(255,255,255,0.18)" : C.sand, color: active ? "#fff" : C.ash }}>{counts[f.id]}</span>
-            </button>
-          );
-        })}
-      </div>
+      {/* The All / Claims / Offers / Q&A filter row was removed here too.
+          BUG-088 took it off the seller dashboard for this exact reason but
+          missed the buyer side: adaptBuyerConversation hardcodes
+          `type: "question"` on every thread, so Claims and Offers were
+          permanently 0 and Q&A was always identical to All. Worse than
+          useless — a thread with an accepted claim still counted as Q&A, so
+          the chips actively misreported what was in the list.
+          To bring them back, first derive a real type (claim when the thread
+          has a claim, offer when it has OFFER/COUNTER messages, else
+          question) — the chips are the easy half. */}
 
       <div style={{
         display: isMobile ? "flex" : "grid",
@@ -4704,7 +4690,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
           {filtered.length === 0 ? (
             <div style={{ padding: "40px 20px", textAlign: "center" }}>
               <MessageSquare size={28} style={{ color: C.smoke, marginBottom: 10 }}/>
-              <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No {filter === "all" ? "" : filter + " "}threads.</p>
+              <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No threads.</p>
             </div>
           ) : filtered.map(c => {
             const isActive = c.id === activeId;
