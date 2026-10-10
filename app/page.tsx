@@ -155,8 +155,11 @@ function DropYardWebsiteInner() {
   const goBuyerAuth = (mode: "signup" | "login" = "login") => {
     router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}`);
   };
+  // as=seller tells /join which side of the dashboard the user asked for.
+  // Without it every seller CTA ended up on the buyer dashboard, because
+  // /join sends all signed-in users to /buyer and that opens in buyer mode.
   const goSellerAuth = (mode: "signup" | "login" = "login") => {
-    router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}`);
+    router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}&as=seller`);
   };
   const goMovingAuth = (mode: "signup" | "login" = "login") => {
     router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}`);

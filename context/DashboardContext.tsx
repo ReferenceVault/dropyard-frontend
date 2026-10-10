@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 
 export type DashboardMode = "buyer" | "seller";
 
@@ -29,7 +29,13 @@ export interface DashboardState {
   promoEmailOptIn: boolean;
   watchlist: string[];
   buyerClaims: BuyerClaim[];
-  setMode: (mode: DashboardMode) => void;
+  /**
+   * `persist: false` switches the view without changing the remembered
+   * preference. Used for one-off intent, e.g. a "Sell with DropYard" link
+   * that should open the seller side this once — not redefine which side
+   * every later visit opens on.
+   */
+  setMode: (mode: DashboardMode, opts?: { persist?: boolean }) => void;
   setSellerOnboardingComplete: (v: boolean) => void;
   setBuyerOnboardingComplete: (v: boolean) => void;
   setDropType: (t: DropType) => void;
@@ -86,16 +92,25 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   // and refreshing snaps back to buyer mode (the page lives at /buyer for
   // both personas, so the URL alone can't recover state).
   const [mode, setModeState] = useState<DashboardMode>("buyer");
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = window.localStorage.getItem("dropyard:mode");
-    if (saved === "buyer" || saved === "seller") setModeState(saved);
-  }, []);
-  const setMode = useCallback((next: DashboardMode) => {
+  // React runs child effects before the parent's, so the dashboard page picks
+  // a mode (from ?mode=, the saved preference, or the user's role) before this
+  // provider mounts its own. Without this guard the hydration below would then
+  // overwrite that choice with whatever is in storage — which is exactly how a
+  // "?mode=seller" link ended up on the buyer dashboard.
+  const modeChosenRef = useRef(false);
+  const setMode = useCallback((next: DashboardMode, opts?: { persist?: boolean }) => {
+    modeChosenRef.current = true;
     setModeState(next);
+    if (opts?.persist === false) return;
     if (typeof window !== "undefined") {
       window.localStorage.setItem("dropyard:mode", next);
     }
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (modeChosenRef.current) return;
+    const saved = window.localStorage.getItem("dropyard:mode");
+    if (saved === "buyer" || saved === "seller") setModeState(saved);
   }, []);
   const [sellerOnboardingComplete, setSellerOnboardingComplete] = useState(false);
   const [buyerOnboardingComplete, setBuyerOnboardingComplete] = useState(false);
