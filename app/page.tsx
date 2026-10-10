@@ -42,13 +42,18 @@ export function DropYardLogo({ size = "default" }: { size?: "small" | "default" 
   const sizes = {
     small: { container: "w-8 h-8" },
     default: { container: "w-10 h-10" },
-    large: { container: "h-20 w-auto" },
+    large: { container: "h-14 w-auto" },
   };
   const s = sizes[size] || sizes.default;
 
   return (
     <div className={`${s.container} relative flex items-center justify-center`}>
-      <img src="/Logo.png" alt="DropYard logo" className="h-full w-auto object-contain scale-150" />
+      {/* Tagline-free wordmark, trimmed to its artwork. The tagline is
+          illegible at nav height and the hero says it anyway. The old asset was
+          54% whitespace, which is why this needed scale-150 to look right —
+          with the trimmed file the box is the mark, so the zoom is gone and
+          the container drops from h-20 to h-14. */}
+      <img src="/logo-wordmark.png" alt="DropYard logo" className="h-full w-auto object-contain" />
     </div>
   );
 }

@@ -21,7 +21,9 @@ export const metadata: Metadata = {
   title: "DropYard",
   description: "From one home to another. Local yard sales, simplified.",
   icons: {
-    icon: "/Logo.png",
+    // Tagline-free mark: at favicon size "From one home to another" is a grey
+    // smudge that shrinks the house and wordmark to fit around it.
+    icon: "/Logo_1.png",
   },
 };
 
