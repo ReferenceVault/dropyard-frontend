@@ -130,10 +130,16 @@ export default function ShopWaysSection() {
                 ))}
               </ul>
 
-              {/* CTA */}
-              <button className="mt-10 w-full rounded-xl bg-[#ff6a00] text-white py-3 text-[13px] font-semibold transition hover:bg-[#e85f00] hover:shadow-lg">
-                Explore Shelf &rarr;
-              </button>
+              {/* CTA — was a <button> with neither onClick nor href, so
+                  clicking it did nothing. It also said "Explore Shelf" while
+                  the rest of the page calls the same action "Browse the
+                  Shelf". */}
+              <a
+                href="/buyer"
+                className="mt-10 block w-full rounded-xl bg-[#ff6a00] text-center text-white py-3 text-[13px] font-semibold transition hover:bg-[#e85f00] hover:shadow-lg"
+              >
+                Browse the Shelf &rarr;
+              </a>
 
             </div>
           </div>

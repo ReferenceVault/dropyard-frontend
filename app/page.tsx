@@ -1025,7 +1025,7 @@ function HomePage({
               onClick={goBrowse}
               className="hidden md:flex items-center gap-2 text-emerald-600 font-medium hover:text-emerald-700"
             >
-              View All <ChevronRight size={18} />
+              Browse Items <ChevronRight size={18} />
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -1036,7 +1036,7 @@ function HomePage({
               onClick={goBrowse}
               className="bg-emerald-600 text-white px-8 py-3 rounded-full font-semibold hover:bg-emerald-700 inline-flex items-center gap-2"
             >
-              Browse All Items <ArrowRight size={18} />
+              Browse Items <ArrowRight size={18} />
             </button>
           </div>
         </div>
@@ -1289,7 +1289,12 @@ export function Footer({
             <h4 className="font-bold mb-4 text-emerald-400 text-[13px] uppercase tracking-wider">Discover</h4>
             <div className="flex flex-col gap-3">
               <button onClick={() => setPage("howitworks")} className="inline-block w-fit cursor-pointer text-left text-[13px] font-medium text-slate-300 transition-all duration-200 hover:translate-x-2 hover:text-emerald-300 hover:font-bold">How it Works</button>
-              <button onClick={() => setPage("buyers")} className="inline-block w-fit cursor-pointer text-left text-[13px] font-medium text-slate-300 transition-all duration-200 hover:translate-x-2 hover:text-emerald-300 hover:font-bold">Browse Items</button>
+              {/* "Browse Items" pointed at /for-buyers - the marketing page,
+                  the same destination as the "For Buyers" link below it. Two
+                  links, two labels, one page, and the browse label went
+                  nowhere near the items. Now it opens the actual listings,
+                  matching the two "Browse Items" CTAs on this page. */}
+              <a href="/buyer" className="inline-block w-fit cursor-pointer text-left text-[13px] font-medium text-slate-300 transition-all duration-200 hover:translate-x-2 hover:text-emerald-300 hover:font-bold">Browse Items</a>
               <button onClick={() => setPage("buyers")} className="inline-block w-fit cursor-pointer text-left text-[13px] font-medium text-slate-300 transition-all duration-200 hover:translate-x-2 hover:text-emerald-300 hover:font-bold">For Buyers</button>
               <button onClick={() => setPage("sellers")} className="inline-block w-fit cursor-pointer text-left text-[13px] font-medium text-slate-300 transition-all duration-200 hover:translate-x-2 hover:text-emerald-300 hover:font-bold">For Sellers</button>
             </div>
