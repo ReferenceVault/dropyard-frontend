@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -26,14 +26,27 @@ function JoinPageContent() {
   const { signin, signup, signInWithGoogle, user, loading: authLoading } = useAuth();
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
 
+  // Every path out of /join lands on the dashboard, and the dashboard opens
+  // in buyer mode by default. A seller CTA that routes through here therefore
+  // dropped the user on the buyer side — "Sell with DropYard" on the landing
+  // page did exactly that. ?as=seller carries that intent through to the
+  // dashboard, which reads it as ?mode=seller.
+  const dashboardHref = useCallback(
+    (role?: string) => {
+      if (role === "ADMIN") return "/admin";
+      return searchParams.get("as") === "seller" ? "/buyer?mode=seller" : "/buyer";
+    },
+    [searchParams],
+  );
+
   // Symmetric to BuyerDashboardContent's unauthed-user guard: if an already
   // signed-in user lands on /join (back button, deep link, or stale tab),
   // bounce them to their dashboard instead of showing the auth form.
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace(user.role === "ADMIN" ? "/admin" : "/buyer");
+      router.replace(dashboardHref(user.role));
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, user, router, dashboardHref]);
 
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
@@ -53,7 +66,7 @@ function JoinPageContent() {
       const user = await signInWithGoogle(accessToken);
       // Replace, not push — so the back button from the dashboard skips past
       // /join instead of landing the now-authenticated user back here.
-      router.replace(user.role === "ADMIN" ? "/admin" : "/buyer");
+      router.replace(dashboardHref(user.role));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Google sign-in failed");
     } finally {
@@ -112,7 +125,7 @@ function JoinPageContent() {
         : await signin(normalizedEmail, password, rememberMe);
       // Replace, not push — so the back button from the dashboard skips past
       // /join instead of landing the now-authenticated user back here.
-      router.replace(user.role === "ADMIN" ? "/admin" : "/buyer");
+      router.replace(dashboardHref(user.role));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {

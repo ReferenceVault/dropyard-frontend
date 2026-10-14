@@ -123,14 +123,16 @@ body {
 }
 
 /* Logo image — taller on desktop. */
+/* Sized for the trimmed wordmark (artwork fills ~94% of the box). The old
+   Logo_1.png was 54% whitespace, so a 38px box drew only a ~17px mark. */
 .dy-seller-topnav__logo {
-  height: 38px;
+  height: 30px;
   width: auto;
   display: block;
 }
 @media (max-width: 768px) {
   .dy-seller-topnav__logo {
-    height: 30px;
+    height: 24px;
   }
 }
 

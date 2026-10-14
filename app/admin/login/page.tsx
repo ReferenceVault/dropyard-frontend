@@ -88,7 +88,7 @@ export default function AdminLoginPage() {
               />
               {/* Big logo circle */}
               <div className="relative flex h-56 w-56 items-center justify-center rounded-full bg-white/70 backdrop-blur-sm border-2 border-white shadow-[0_25px_60px_rgba(11,47,32,0.10)]">
-                <img src="/Logo.png" alt="DropYard" className="h-40 w-40 object-contain" />
+                <img src="/Logo_1.png" alt="DropYard" className="h-40 w-40 object-contain" />
               </div>
             </div>
 

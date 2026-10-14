@@ -28,6 +28,83 @@ export const DROP_CLOSE_HOUR = 20;
 const DAYS_FULL  = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// ─────────────────────────────────────────────────────────────────
+// Toronto timezone helpers — must mirror the backend's src/lib/dropCycle.ts
+//
+// The Drop runs on Toronto wall-clock: Sat 08:00 to Sun 20:00 America/Toronto.
+// This file used to read the boundaries off the BROWSER's clock (getDay /
+// getHours / setHours), so every viewer outside Eastern computed a different
+// phase from the server. A seller in Vancouver saw "Queue for the next Drop"
+// for three hours after the Drop had actually opened; a tester in IST saw
+// "Live Drop" and a claim button while the API still had the items as DRAFT
+// and rejected every claim.
+//
+// Canada alone spans six timezones, so this is wrong for most of the country
+// — it only looked correct from Ottawa/Toronto.
+// ─────────────────────────────────────────────────────────────────
+
+const OPERATING_TIMEZONE = "America/Toronto";
+
+/** Read an absolute instant's calendar parts as they appear in Toronto. */
+function torontoParts(d: Date): { year: number; month: number; day: number; hour: number; minute: number; weekday: number } {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: OPERATING_TIMEZONE,
+    year: "numeric", month: "numeric", day: "numeric",
+    hour: "numeric", minute: "numeric", weekday: "short",
+    hour12: false,
+  });
+  const parts = fmt.formatToParts(d);
+  const get = (type: string) => parts.find(p => p.type === type)?.value ?? "0";
+  // Intl can report hour="24" at midnight in some locales — normalise to 0.
+  const hourRaw = Number(get("hour"));
+  // getDay() convention: 0 = Sunday … 6 = Saturday, so DROP_OPEN_DAY etc.
+  // keep working unchanged.
+  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return {
+    year:    Number(get("year")),
+    month:   Number(get("month")),
+    day:     Number(get("day")),
+    hour:    hourRaw === 24 ? 0 : hourRaw,
+    minute:  Number(get("minute")),
+    weekday: weekdayMap[get("weekday")] ?? 0,
+  };
+}
+
+/**
+ * Absolute instant for a given Toronto wall-clock time. DST-aware: tries EST
+ * (UTC-5) then EDT (UTC-4) and keeps whichever round-trips back to the same
+ * wall-clock through Toronto's calendar.
+ */
+function torontoToUtc(year: number, month: number, day: number, hour = 0, minute = 0): Date {
+  for (const offset of [5, 4]) {
+    const candidate = new Date(Date.UTC(year, month - 1, day, hour + offset, minute, 0, 0));
+    const view = torontoParts(candidate);
+    if (view.year === year && view.month === month && view.day === day
+        && view.hour === hour && view.minute === minute) {
+      return candidate;
+    }
+  }
+  // Only reachable for a wall-clock that doesn't exist (the skipped 2am hour
+  // on spring-forward). Our boundaries are 00:00 / 08:00 / 20:00, so this is
+  // a guard rather than a real case; fall back to EST rather than throwing
+  // and blanking the whole dashboard.
+  return new Date(Date.UTC(year, month - 1, day, hour + 5, minute, 0, 0));
+}
+
+/** Shift a Toronto calendar date by whole days, then pin it to `hour`:00. */
+function torontoShift(from: Date, days: number, hour: number): Date {
+  const p = torontoParts(from);
+  // Date.UTC normalises month/year rollover for us; we only need the
+  // resulting calendar date, which we then re-anchor in Toronto.
+  const shifted = new Date(Date.UTC(p.year, p.month - 1, p.day + days));
+  return torontoToUtc(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth() + 1,
+    shifted.getUTCDate(),
+    hour,
+  );
+}
+
 function formatHour12(h24: number, style: "AM" | "am" | "a.m." | "amSpaced"): string {
   const display = h24 > 12 ? h24 - 12 : h24 === 0 ? 12 : h24;
   const isPM = h24 >= 12 && h24 < 24;
@@ -110,48 +187,36 @@ export interface DropCycleInfo {
 /** Get the Drop-opening moment (Saturday 8am by default) of the current
  *  Drop, or next Drop if we're past close on Sunday. */
 function getCurrentDropSaturday(ref: Date): Date {
-  const d = new Date(ref);
-  const day = d.getDay();
-  const hour = d.getHours();
+  // Toronto wall-clock, not the viewer's. See the timezone note above.
+  const { weekday: day, hour } = torontoParts(ref);
 
   // Past the close moment (Sunday 8pm by default): next week's open day.
   if (day === DROP_CLOSE_DAY && hour >= DROP_CLOSE_HOUR) {
-    d.setDate(d.getDate() + 6);
-    d.setHours(DROP_OPEN_HOUR, 0, 0, 0);
-    return d;
+    return torontoShift(ref, 6, DROP_OPEN_HOUR);
   }
 
   if (day === DROP_CLOSE_DAY) {
-    d.setDate(d.getDate() - 1); // yesterday = open day
-  } else if (day < DROP_OPEN_DAY) {
-    d.setDate(d.getDate() + (DROP_OPEN_DAY - day)); // this week's open day
+    return torontoShift(ref, -1, DROP_OPEN_HOUR); // yesterday = open day
   }
-  d.setHours(DROP_OPEN_HOUR, 0, 0, 0);
-  return d;
+  if (day < DROP_OPEN_DAY) {
+    return torontoShift(ref, DROP_OPEN_DAY - day, DROP_OPEN_HOUR); // this week's open day
+  }
+  return torontoShift(ref, 0, DROP_OPEN_HOUR); // already Saturday
 }
 
-/** Get Monday 00:00 of the submission week (Mon before Drop Saturday) */
+/** Get Monday 00:00 Toronto of the submission week (Mon before Drop Saturday) */
 function getSubmissionMonday(sat: Date): Date {
-  const mon = new Date(sat);
-  mon.setDate(mon.getDate() - 5);
-  mon.setHours(0, 0, 0, 0);
-  return mon;
+  return torontoShift(sat, -5, 0);
 }
 
-/** Get Thursday 00:00 (start of Preview) */
+/** Get Thursday 00:00 Toronto (start of Preview) */
 function getPreviewThursday(sat: Date): Date {
-  const thu = new Date(sat);
-  thu.setDate(thu.getDate() - 2);
-  thu.setHours(0, 0, 0, 0);
-  return thu;
+  return torontoShift(sat, -2, 0);
 }
 
-/** Get the Drop-close moment (Sunday 8pm by default) given the open Saturday */
+/** Get the Drop-close moment (Sunday 8pm Toronto) given the open Saturday */
 function getDropCloseSunday(sat: Date): Date {
-  const sun = new Date(sat);
-  sun.setDate(sun.getDate() + 1);
-  sun.setHours(DROP_CLOSE_HOUR, 0, 0, 0);
-  return sun;
+  return torontoShift(sat, 1, DROP_CLOSE_HOUR);
 }
 
 export function getDropCycleInfo(now: Date = new Date()): DropCycleInfo {
@@ -300,10 +365,10 @@ export function toSellerOverviewPhase(
  */
 export function hoursSinceLastDropClose(now: Date = new Date()): number {
   const info = getDropCycleInfo(now);
-  // Last-Drop close = current Drop Saturday - 6 days + ${DROP_CLOSE_HOUR}h (prior week's close).
-  const lastClose = new Date(info.currentDropDate);
-  lastClose.setDate(lastClose.getDate() - 6);
-  lastClose.setHours(DROP_CLOSE_HOUR, 0, 0, 0);
+  // Last-Drop close = current Drop Saturday - 6 days at DROP_CLOSE_HOUR
+  // (the prior week's Sunday close), in Toronto wall-clock like every other
+  // boundary in this file.
+  const lastClose = torontoShift(info.currentDropDate, -6, DROP_CLOSE_HOUR);
   const ms = now.getTime() - lastClose.getTime();
   return ms / (60 * 60 * 1000);
 }

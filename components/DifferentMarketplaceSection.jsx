@@ -117,11 +117,15 @@ export default function DifferentMarketplaceSection() {
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              {/* Was "Explore Drops" pointing at /for-buyers — a different verb
+                  for the same action the rest of the page calls "Browse", and
+                  it opened the marketing page rather than the Drop it names.
+                  Matches the landing page's wording and destination now. */}
               <a
-                href="/for-buyers"
+                href="/buyer"
                 className="group inline-flex items-center justify-center rounded-full bg-[#ff9412] px-6 py-3.5 text-[13px] font-extrabold text-white shadow-[0_18px_36px_rgba(255,148,18,0.25)] transition duration-300 hover:-translate-y-1 hover:bg-[#ff8500] hover:shadow-[0_22px_46px_rgba(255,148,18,0.32)]"
               >
-                Explore Drops
+                Browse the Barrhaven Drop
                 <ArrowIcon className="ml-2 h-4 w-4 transition duration-300 group-hover:translate-x-1" />
               </a>
               <a

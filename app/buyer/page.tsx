@@ -113,6 +113,19 @@ function AuthedBuyerContent() {
     if (modeInitForUserIdRef.current !== user.id) {
       modeInitForUserIdRef.current = user.id;
       const isOnlySeller = user.role === "SELLER";
+      // ?mode=seller lets a caller state which side of the dashboard it meant.
+      // Without it, "Sell with DropYard" on the landing page sent an already
+      // signed-in user through /join, which redirects everyone to /buyer — so
+      // a seller CTA opened the buyer dashboard and the user had to find
+      // "Switch to Seller" themselves.
+      //
+      // It wins over the remembered mode for this visit but is NOT persisted:
+      // following one seller link must not redefine which side every later
+      // visit opens on. Only the Seller/Buyer toggle changes the preference.
+      const requested = typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("mode")
+        : null;
+      const asked = (requested === "buyer" || requested === "seller") ? requested : null;
       // Prefer the user's last chosen mode (persisted by setMode) over the
       // role-default. SELLER-only users still force "seller" — they have no
       // buyer dashboard. BOTH-role users get whichever they left in.
@@ -120,6 +133,8 @@ function AuthedBuyerContent() {
       const preferred = (saved === "buyer" || saved === "seller") ? saved : null;
       if (isOnlySeller) {
         setMode("seller");
+      } else if (asked) {
+        setMode(asked, { persist: false });
       } else if (preferred) {
         setMode(preferred);
       } else {

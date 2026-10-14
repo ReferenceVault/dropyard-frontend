@@ -42,13 +42,18 @@ export function DropYardLogo({ size = "default" }: { size?: "small" | "default" 
   const sizes = {
     small: { container: "w-8 h-8" },
     default: { container: "w-10 h-10" },
-    large: { container: "h-20 w-auto" },
+    large: { container: "h-14 w-auto" },
   };
   const s = sizes[size] || sizes.default;
 
   return (
     <div className={`${s.container} relative flex items-center justify-center`}>
-      <img src="/Logo.png" alt="DropYard logo" className="h-full w-auto object-contain scale-150" />
+      {/* Tagline-free wordmark, trimmed to its artwork. The tagline is
+          illegible at nav height and the hero says it anyway. The old asset was
+          54% whitespace, which is why this needed scale-150 to look right —
+          with the trimmed file the box is the mark, so the zoom is gone and
+          the container drops from h-20 to h-14. */}
+      <img src="/logo-wordmark.png" alt="DropYard logo" className="h-full w-auto object-contain" />
     </div>
   );
 }
@@ -150,8 +155,11 @@ function DropYardWebsiteInner() {
   const goBuyerAuth = (mode: "signup" | "login" = "login") => {
     router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}`);
   };
+  // as=seller tells /join which side of the dashboard the user asked for.
+  // Without it every seller CTA ended up on the buyer dashboard, because
+  // /join sends all signed-in users to /buyer and that opens in buyer mode.
   const goSellerAuth = (mode: "signup" | "login" = "login") => {
-    router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}`);
+    router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}&as=seller`);
   };
   const goMovingAuth = (mode: "signup" | "login" = "login") => {
     router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}`);
@@ -1020,7 +1028,7 @@ function HomePage({
               onClick={goBrowse}
               className="hidden md:flex items-center gap-2 text-emerald-600 font-medium hover:text-emerald-700"
             >
-              View All <ChevronRight size={18} />
+              Browse Items <ChevronRight size={18} />
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -1031,7 +1039,7 @@ function HomePage({
               onClick={goBrowse}
               className="bg-emerald-600 text-white px-8 py-3 rounded-full font-semibold hover:bg-emerald-700 inline-flex items-center gap-2"
             >
-              Browse All Items <ArrowRight size={18} />
+              Browse Items <ArrowRight size={18} />
             </button>
           </div>
         </div>
@@ -1284,7 +1292,12 @@ export function Footer({
             <h4 className="font-bold mb-4 text-emerald-400 text-[13px] uppercase tracking-wider">Discover</h4>
             <div className="flex flex-col gap-3">
               <button onClick={() => setPage("howitworks")} className="inline-block w-fit cursor-pointer text-left text-[13px] font-medium text-slate-300 transition-all duration-200 hover:translate-x-2 hover:text-emerald-300 hover:font-bold">How it Works</button>
-              <button onClick={() => setPage("buyers")} className="inline-block w-fit cursor-pointer text-left text-[13px] font-medium text-slate-300 transition-all duration-200 hover:translate-x-2 hover:text-emerald-300 hover:font-bold">Browse Items</button>
+              {/* "Browse Items" pointed at /for-buyers - the marketing page,
+                  the same destination as the "For Buyers" link below it. Two
+                  links, two labels, one page, and the browse label went
+                  nowhere near the items. Now it opens the actual listings,
+                  matching the two "Browse Items" CTAs on this page. */}
+              <a href="/buyer" className="inline-block w-fit cursor-pointer text-left text-[13px] font-medium text-slate-300 transition-all duration-200 hover:translate-x-2 hover:text-emerald-300 hover:font-bold">Browse Items</a>
               <button onClick={() => setPage("buyers")} className="inline-block w-fit cursor-pointer text-left text-[13px] font-medium text-slate-300 transition-all duration-200 hover:translate-x-2 hover:text-emerald-300 hover:font-bold">For Buyers</button>
               <button onClick={() => setPage("sellers")} className="inline-block w-fit cursor-pointer text-left text-[13px] font-medium text-slate-300 transition-all duration-200 hover:translate-x-2 hover:text-emerald-300 hover:font-bold">For Sellers</button>
             </div>

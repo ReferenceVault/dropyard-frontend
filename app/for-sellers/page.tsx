@@ -28,7 +28,9 @@ export default function ForSellersPage() {
   // BUG-074 — generic CTA defaults to signin so returning users land on
   // the right form. /join's prominent Sign-In/Sign-Up toggle handles new
   // visitors in one click.
-  const goJoin = () => router.push("/join?mode=signin");
+  // as=seller: every CTA on this page is seller intent, and /join sends
+  // signed-in users to /buyer, which opens in buyer mode without it.
+  const goJoin = () => router.push("/join?mode=signin&as=seller");
 
   // AI Seller waitlist (inline form replacing the old "Notify Me When Available" button).
   const [aiEmail, setAiEmail] = useState("");
@@ -165,7 +167,7 @@ export default function ForSellersPage() {
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = C.oPrimary; (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)"; }}>
                 Become a Seller <ArrowRight size={18} />
               </button>
-              <button onClick={() => router.push("/join?mode=signin")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px 32px", borderRadius: 50, border: `2px solid ${C.oPrimary}`, cursor: "pointer", fontSize: 15, fontWeight: 700, backgroundColor: "transparent", color: C.oPrimary, transition: "all 0.2s" }}
+              <button onClick={() => router.push("/join?mode=signin&as=seller")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px 32px", borderRadius: 50, border: `2px solid ${C.oPrimary}`, cursor: "pointer", fontSize: 15, fontWeight: 700, backgroundColor: "transparent", color: C.oPrimary, transition: "all 0.2s" }}
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(245,158,11,0.08)"; (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-2px)"; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.backgroundColor = "transparent"; (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)"; }}>
                 I Have an Account

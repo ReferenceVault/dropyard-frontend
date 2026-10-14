@@ -21,8 +21,10 @@ export function GlobalFooter() {
     router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}`);
   };
 
+  // as=seller carries the intent through /join, which otherwise lands every
+  // signed-in user on the buyer dashboard regardless of which CTA they used.
   const goSellerAuth = (mode: "signup" | "login" = "login") => {
-    router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}`);
+    router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}&as=seller`);
   };
   const goMovingAuth = (mode: "signup" | "login" = "login") => {
     router.push(`/join?mode=${mode === "login" ? "signin" : "signup"}`);
