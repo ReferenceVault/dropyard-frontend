@@ -16,6 +16,7 @@ import {
   dropOpenDay,
   dropOpenHour,
   dropOpenHourCompact,
+  OPERATING_TIMEZONE,
 } from "@/lib/dropCycle";
 import { submitSubmission, isValidEmail } from "@/lib/submissions";
 import {
@@ -1315,8 +1316,11 @@ function ActionItems({ pickupsToday, pickupsWeek, messages, drafts, onNav }) {
 
 function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draftsCount, recap, onNav, onShare }) {
   const { isMobile } = useViewport();
-  const dayLabel = nextDropAt.toLocaleDateString("en-CA", { weekday: "long" });
-  const timeLabel = nextDropAt.toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit", hour12: true }).replace(":00 ", " ");
+  // Both must format on the Drop's clock, not the viewer's. Without timeZone
+  // the 8 a.m. Toronto opening renders as the local equivalent — "5:30 p.m."
+  // in IST, "5 a.m." in Vancouver — and the weekday can slip a day as well.
+  const dayLabel = nextDropAt.toLocaleDateString("en-CA", { timeZone: OPERATING_TIMEZONE, weekday: "long" });
+  const timeLabel = nextDropAt.toLocaleTimeString("en-CA", { timeZone: OPERATING_TIMEZONE, hour: "numeric", minute: "2-digit", hour12: true }).replace(":00 ", " ");
   const hrsSinceClose = hoursSinceLastDropClose(now);
   const isFresh = recap && hrsSinceClose < 30;
   const showRecapLine = recap && !isFresh && hrsSinceClose < 120; // ~5 days

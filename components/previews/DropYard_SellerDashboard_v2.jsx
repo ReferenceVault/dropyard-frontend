@@ -1080,6 +1080,14 @@ function Overview({ onNav, dropPhase = "between", now = new Date() }) {
      • Late-week       → countdown leads; no recap line (it's stale)
    The "back on Shelf" call-out appears separately above stats when fresh. */
 function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draftsCount, recap, onNav, onShare, isMobile }) {
+  // NOTE: these deliberately do NOT pin timeZone, unlike the same lines in
+  // DropYard_SellerDashboard.jsx. This file has its own nextDropMoment (above)
+  // that builds the instant with browser-local getDay/setHours, so the instant
+  // is already the viewer's "Saturday 8am", not Toronto's. Formatting it in
+  // Toronto would surface that as a visibly wrong label ("Friday 10:30 p.m."
+  // in IST). The two errors currently cancel to the right-looking string.
+  // Fix the instant first — switch this file to lib/dropCycle's nextDropMoment
+  // — then pin the timeZone here.
   const dayLabel = nextDropAt.toLocaleDateString("en-CA", { weekday: "long" });
   const timeLabel = nextDropAt.toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit", hour12: true }).replace(":00 ", " ");
   const hrsSinceClose = hoursSinceLastDropClose(now);

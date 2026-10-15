@@ -240,6 +240,11 @@ export default function DynamicDropCard() {
                 </div>
               ) : (
                 <>
+                  {/* Days only when there are any. Without this the boxes read
+                      "04 HRS" two days out — the hours are the remainder after
+                      whole days, so the card looked four hours away when it was
+                      two and a bit. "00 DAYS" on Drop day would just be noise. */}
+                  {time.days > 0 && <CountdownUnit value={time.days} label="Days" />}
                   <CountdownUnit value={time.hours} label="Hrs" />
                   <CountdownUnit value={time.minutes} label="Min" />
                   <CountdownUnit value={time.seconds} label="Sec" />
