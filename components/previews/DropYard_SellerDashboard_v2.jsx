@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { apiRequest } from "@/lib/api";
 import {
   Camera, X, Check, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Sparkles, Zap,
   MessageCircle, Package, Eye, ArrowRight, User, Clock, Calendar,
@@ -2199,6 +2200,33 @@ function ShareSheet({ items, onClose, isMobile }) {
 
 function ManualItemForm({ onDone, onBack, onGoToItems, acceptedMethods = { cash: true, etransfer: true } }) {
   const { isMobile } = useViewport();
+
+  // BUG-084 — real count of OTHER sellers in this Drop, replacing a hardcoded
+  // "90+". Mirrors DropYard_SellerDashboard.jsx so both surfaces read the same.
+  // This preview renders unauthenticated, and /api/drop/current is optionalAuth:
+  // for an anonymous caller the backend returns otherSellerCount === sellerCount,
+  // which is the right number here since there is no "self" to exclude.
+  // null = not loaded / request failed → the copy omits the clause rather than
+  // flashing a placeholder number.
+  const [otherSellers, setOtherSellers] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    apiRequest("/api/drop/current", {})
+      .then((r) => {
+        if (cancelled) return;
+        setOtherSellers(typeof r?.otherSellerCount === "number" ? r.otherSellerCount : null);
+      })
+      .catch(() => { if (!cancelled) setOtherSellers(null); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Omitted entirely at 0 or while unknown — "alongside 0 other sellers" reads
+  // worse than not mentioning it, and an unloaded count must never be guessed.
+  const sellerPhrase =
+    otherSellers == null || otherSellers === 0 ? ""
+    : otherSellers === 1                       ? " alongside 1 other seller"
+    :                                            ` alongside ${otherSellers} other sellers`;
+
   const cats = ["Furniture", "Electronics", "Appliances & Kitchen", "Clothing & Accessories", "Kids & Baby", "Sports & Outdoor", "Tools & Garden", "Home Décor", "Books, Games & Hobbies", "Collectibles & Antiques", "Other"];
   const conds = ["New", "Used - Like New", "Used - Good", "Used - Fair"];
   const [title, setTitle] = useState("");
@@ -2653,7 +2681,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, acceptedMethods = { cash:
                     <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>Queue for the next Drop</p>
                     <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 900, padding: "2px 7px", borderRadius: 999, background: C.green, color: "#fff", letterSpacing: "0.06em" }}>RECOMMENDED</span>
                   </div>
-                  <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>Goes live Saturday at 8 am alongside 90+ other sellers — higher visibility, event-driven traffic.</p>
+                  <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>{`Goes live Saturday at 8 am${sellerPhrase} — higher visibility, event-driven traffic.`}</p>
                 </div>
               </button>
 
