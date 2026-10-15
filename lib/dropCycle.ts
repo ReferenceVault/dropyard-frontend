@@ -43,7 +43,9 @@ const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // — it only looked correct from Ottawa/Toronto.
 // ─────────────────────────────────────────────────────────────────
 
-const OPERATING_TIMEZONE = "America/Toronto";
+/** The Drop's wall clock. Exported so components that format a Drop instant
+ *  themselves pass it too — formatting without it renders the viewer's zone. */
+export const OPERATING_TIMEZONE = "America/Toronto";
 
 /** Read an absolute instant's calendar parts as they appear in Toronto. */
 function torontoParts(d: Date): { year: number; month: number; day: number; hour: number; minute: number; weekday: number } {
@@ -303,18 +305,25 @@ export function getDropCycleInfo(now: Date = new Date()): DropCycleInfo {
   };
 }
 
-/** Format date for display (e.g. "Sat, Mar 22") */
+/** Format date for display (e.g. "Sat, Mar 22"), on the Drop's clock.
+ *  Without timeZone this reports the VIEWER's calendar day, which for a Drop
+ *  instant near midnight Toronto is the wrong date east or west of Eastern. */
 export function formatDropDate(d: Date): string {
   return d.toLocaleDateString("en-CA", {
+    timeZone: OPERATING_TIMEZONE,
     weekday: "short",
     month: "short",
     day: "numeric",
   });
 }
 
-/** Format time for display (e.g. "8:00 AM") */
+/** Format time for display (e.g. "8:00 a.m."), on the Drop's clock.
+ *  Without timeZone the 8 a.m. Toronto opening renders as the viewer's local
+ *  equivalent — 5:30 p.m. in IST, 5 a.m. in Vancouver — so every seller
+ *  outside Eastern was told the wrong opening time. */
 export function formatDropTime(d: Date): string {
   return d.toLocaleTimeString("en-CA", {
+    timeZone: OPERATING_TIMEZONE,
     hour: "numeric",
     minute: "2-digit",
     hour12: true,
