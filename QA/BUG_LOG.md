@@ -40,7 +40,26 @@ Consequences:
 
 ## P2 — Fixed this session
 
-### BUG-098  ·  P2  ·  /buyer Discover → Live Drop welcome band  ·  Status: Fixed (verify)
+### BUG-101  ·  P2  ·  Seller → List New Item → "List Another Item"  ·  Status: Fixed (verify)
+**Title:** "List Another Item" reopens the form still filled with the listing that was just published.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:**
+1. Sign in as a seller, List New Item, fill it in and publish
+2. On the "Published to Drop!" screen, click "List Another Item"
+**Expected:** A blank form.
+**Actual:** Every field — title, description, category, condition, price, photos, pickup dates, payment, bundle lines — is still populated from the previous item and has to be cleared by hand.
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse clean. Browser pass pending.
+**Notes:** The success screen is an early return inside `ManualItemForm`, not a separate component, so publishing never unmounts the form. The button was `onClick={() => setSaved(null)}` — it dismissed the confirmation and revealed the form with all ~19 state values still sitting there.
+
+Fix: `resetForm()` restores every field to its initial value and then clears `saved`. Kept as an explicit list rather than a state object so it stays next to the `useState` initialisers it has to mirror.
+
+**Second entry point, same root, fixed with it:** the sidebar / mobile-nav "+ List New Item" CTA calls `safeNav("add-manual")`. Pressing it while already on the form — which is exactly where the seller is after publishing — is `setView` to the value it already has: no state change, no remount, so the stale success screen just stays put and the button reads as dead. The dashboard now keeps a `listFormNonce` that every listing entry point bumps, used as `key` on `ManualItemForm`, so any route into "List New Item" mounts a fresh one.
+
+**Numbering note:** this session's entries were first filed as BUG-097/098, but `DropYard_SellerDashboard.jsx` already cites BUG-097 for the "Enhance with AI" removal, which was never logged here. Renumbered to BUG-099/100/101; the next free number is BUG-102.
+
+### BUG-100  ·  P2  ·  /buyer Discover → Live Drop welcome band  ·  Status: Fixed (verify)
 **Title:** "89 items" in the Live Drop banner is hardcoded — it never matches what's actually on sale.
 **Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
 **Repro steps:** Sign in as a buyer during a LIVE Drop → look at the hero band on Discover.
@@ -58,7 +77,7 @@ Consequences:
 
 **Still hardcoded in the same band, not in scope here:** the neighbourhood name ("Barrhaven") and the "Sunday at 6 PM" cutoff in the body copy — the countdown panel beside it already computes the real close time via `dropCloseMoment`.
 
-### BUG-097  ·  P2  ·  /buyer seller profile → "Back"  ·  Status: Fixed (verify)
+### BUG-099  ·  P2  ·  /buyer seller profile → "Back"  ·  Status: Fixed (verify)
 **Title:** Back on a seller's profile drops the buyer onto the Discover dashboard instead of the item they came from.
 **Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
 **Repro steps:**

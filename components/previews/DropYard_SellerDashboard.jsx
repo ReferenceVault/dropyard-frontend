@@ -3547,6 +3547,39 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
     }
   }
 
+  /**
+   * Wipe every field back to its initial value. The success screen is rendered
+   * by the same component instance as the form, so nothing unmounts after a
+   * publish — without this, "List Another Item" put the seller back in front of
+   * the listing they just published and made them clear it by hand.
+   * Keep in sync with the useState initialisers above.
+   */
+  function resetForm() {
+    setTitle("");
+    setDesc("");
+    setCat("");
+    setCond("");
+    setPrice("");
+    setPhotos([]);
+    setShowPickup(false);
+    setPickupMode("flexible");
+    setPickupDays([]);
+    setPickupCustom([]);
+    setPickupNewDate("");
+    setPickupDateError("");
+    setPickupWindows(["morning", "afternoon"]);
+    setShowPayment(false);
+    setPaymentMethod(aiSettings.paymentMethod || "either");
+    setShowBundle(false);
+    setIsBundle(false);
+    setBundleContents([""]);
+    setSubmitError(null);
+    // Placement resets to the Drop path; the dropIsLive effect above corrects
+    // it if the phase makes Shelf invalid.
+    setPublishWhen("drop");
+    setSaved(null);
+  }
+
   if (saved) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
@@ -3568,7 +3601,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
             <button onClick={() => onGoToItems ? onGoToItems() : onDone()} style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 24px", borderRadius: 999, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: F.body, backgroundColor: C.gPrimary, color: "#fff" }}>
               Go to My Items <ArrowRight size={16} />
             </button>
-            <button onClick={() => setSaved(null)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 20px", borderRadius: 50, border: "1.5px solid #e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F.body, background: C.paper, color: C.mink }}>
+            <button onClick={resetForm} style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 20px", borderRadius: 50, border: "1.5px solid #e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F.body, background: C.paper, color: C.mink }}>
               List Another Item
             </button>
           </div>
@@ -10321,6 +10354,12 @@ export default function DropYardSellerDashboard({
     window.history.replaceState(null, "", url.pathname + url.search);
   }, [view]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Remount key for the listing form. Every entry point into "List New Item"
+  // bumps it, which guarantees a blank form. Without it, pressing the CTA
+  // while already on the form (e.g. sitting on its "Published!" screen) is a
+  // no-op setView to the same value — nothing unmounts, so the seller keeps
+  // staring at the previous listing.
+  const [listFormNonce, setListFormNonce] = useState(0);
   const [aiSettings, setAiSettings] = useState({});
   const [aiPlan, setAiPlan] = useState("free");
   const [aiUsed, setAiUsed] = useState(3);
@@ -10357,6 +10396,7 @@ export default function DropYardSellerDashboard({
     // pane left over from a deep link like "Set your default", otherwise
     // Settings would keep reopening on Payments.
     if (target === "settings") setSettingsSection(null);
+    if (target === "add-manual" || target === "add-chooser") setListFormNonce(n => n + 1);
     setView(target);
   };
 
@@ -10507,8 +10547,8 @@ export default function DropYardSellerDashboard({
             {view === "settings" && <SettingsView key={settingsSection || "default"} user={user} initialSection={settingsSection}/>}
             {view === "edit-item" && <EditItemView onBack={() => setView("items")} editingItem={editingItem} aiSettings={aiSettings} accessToken={accessToken} onItemsChange={onItemsChange}/>}
 
-            {view === "add-chooser" && <ManualItemForm onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
-            {view === "add-manual" && <ManualItemForm onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
+            {view === "add-chooser" && <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
+            {view === "add-manual" && <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
             {view === "add-ai" && <AIPhotoFlow onDone={() => setView("items")} onBack={() => setView("add-manual")} aiSettings={aiSettings}/>}
 
             {view === "ai-setup" && <AISetup settings={aiSettings} onSave={setAiSettings} onComplete={() => {setView(aiEntryPoint==="add-manual"?"add-ai":"ai-photos")}} onBack={() => setView(aiEntryPoint==="add-manual"?"add-manual":"overview")} />}
