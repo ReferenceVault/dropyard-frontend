@@ -40,6 +40,24 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-097  ·  P2  ·  /buyer seller profile → "Back"  ·  Status: Fixed (verify)
+**Title:** Back on a seller's profile drops the buyer onto the Discover dashboard instead of the item they came from.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:**
+1. Sign in as a buyer, open any item on /buyer
+2. Click "View profile" on the seller card
+3. Click "Back" on the seller profile
+**Expected:** Returns to the item detail that was open.
+**Actual:** Returns to the buyer dashboard (Discover), losing the item.
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, July3DropF)_
+**Re-tested:** Browser pass pending.
+**Notes:** Fallout from the [[BUG-080]] precedence fix. `viewingItem` outranks `viewingSellerName`, so `onViewSeller` has to clear `viewingItem` for the profile to render at all — and that discarded the only record of where the buyer came from. `onBack` was a bare `setViewingSellerName(null)`, which could then only fall through to the page underneath.
+
+Fix: a new `sellerBackItem` state captures `viewingItem` at the moment "View profile" is pressed; profile Back restores it and clears the capture. Cleared on every deliberate navigation away (`onGoToClaims`, `onGoToMessages`, `resetNav` — i.e. the top bar and the mobile bottom nav), so a tab switch never resurrects a stale item on a later Back.
+
+Nav stack now unwinds in both directions: Discover → item → profile → Back → item → Back → Discover, and the BUG-080 direction (Discover → profile → item → Back → profile → Back → Discover) is unchanged, since a profile reached from Discover has no captured item.
+
 ### BUG-096  ·  P2  ·  Seller Overview → "Needs your attention" / hero counts  ·  Status: Fixed (verify)
 **Title:** A listing queued for the Drop is reported as "1 draft unfinished", and doesn't count toward the queued total.
 **Found by:** Narveer · **Found date:** 2026-08-15 · **Test case:** exploratory (round 2, item #3)
