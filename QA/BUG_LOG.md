@@ -40,6 +40,27 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-106  ·  P2  ·  /buyer Messages → conversation status chip  ·  Status: Fixed (verify)
+**Title:** Every thread is chipped "Answered", including ones nobody has replied to.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:** As a buyer, send an offer on an item and open Messages before the seller replies.
+**Expected:** The thread reads as waiting on the seller.
+**Actual:** "Answered" on every row in the list and in the open thread's header — while the panel directly below says "Waiting for seller to respond".
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse + lint clean (67 problems before and after), `next build` compiles. Browser pass pending.
+**Notes:** `adaptBuyerConversation` computed the chip as:
+```js
+const status = (api.unreadCount || 0) > 0 ? "pending" : (lastFromMe ? "answered" : "answered");
+```
+Both branches of the ternary return the same value, so once a thread had no unread messages it was "Answered" no matter who spoke last. The seller-side adapter has the correct version of this line (`lastFromMe ? "answered" : "pending"`), so this reads as a copy-paste that was never inverted for the buyer's point of view.
+
+Fix: the chip now states **who spoke last**, which is the only thing it can honestly say — `lastFromMe ? "pending" : "answered"`. Unread count deliberately plays no part: an unread message can only have come from the seller, so it *is* an answer, and the unread dot already marks it as new.
+
+Two related writes were feeding the same confusion and are gone:
+  - opening a thread ran `status: c.status === "pending" ? "answered" : c.status`, so **reading** a message marked it answered. Both the local handler and the `conversation:read` socket handler now clear unread only.
+  - the `message:new` handler set "pending" for any incoming message; it now applies the adapter's rule (`isFromMe ? "pending" : "answered"`), so a live-arriving reply chips the same as one found on reload.
+
 ### BUG-105  ·  P1  ·  Offers reserve the item — listing vanishes before the seller agrees  ·  Status: Fixed (verify)
 **Title:** Making an offer hides the item from every other buyer and from the homepage, although the seller hasn't accepted anything.
 **Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory

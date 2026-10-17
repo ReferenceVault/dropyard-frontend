@@ -59,9 +59,14 @@ function adaptBuyerConversation(api, myId) {
   if (api.buyerId && myId && api.buyerId !== myId) return null;
   const layer = api.item?.placement === "SHELF" ? "shelf" : "drop";
   const lastFromMe = api.lastMessage && api.lastMessage.senderId === myId;
-  const status = (api.unreadCount || 0) > 0
-    ? "pending"
-    : (lastFromMe ? "answered" : "answered");
+  // Whose turn it is, read from the buyer's side: if the last word in the
+  // thread is mine, I'm waiting on the seller; if it's theirs, they answered.
+  // This was `lastFromMe ? "answered" : "answered"` — both branches the same,
+  // so every thread claimed to be answered, including ones where the buyer
+  // had just sent an offer and nobody had replied. Unread count deliberately
+  // plays no part: an unread message can only have come from the seller, so
+  // it IS an answer; the unread dot is what marks it as new.
+  const status = lastFromMe ? "pending" : "answered";
   return {
     id:     api.id,
     type:   "question",
@@ -4460,8 +4465,12 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
       }).catch(() => {});
       // Clear unread on the active conv up to the parent so the badge
       // matches what's visible on screen.
+      // Opening a thread clears its unread state. It must NOT touch `status`:
+      // that says who spoke last, and reading a message doesn't answer it —
+      // a thread where the buyer is still waiting stays "Pending" after they
+      // open it.
       setConvList(prev => prev.map(c => c.id === activeId
-        ? { ...c, unread: false, unreadCount: 0, status: c.status === "pending" ? "answered" : c.status }
+        ? { ...c, unread: false, unreadCount: 0 }
         : c));
     }
   });
@@ -6284,7 +6293,11 @@ export default function DropYardBuyerDashboard({
         lastMessageAt: message.createdAt || c.lastMessageAt,
         unread:        newUnread > 0,
         unreadCount:   newUnread,
-        status:        newUnread > 0 ? "pending" : c.status,
+        // Same rule as the adapter: my own message leaves me waiting on the
+        // seller, theirs is an answer. Previously an incoming message set
+        // "pending" and reading it flipped to "answered", which labelled a
+        // thread by whether it had been opened rather than who spoke last.
+        status:        isFromMe ? "pending" : "answered",
       };
     });
     const moved = updated.find((c) => c.id === conversationId);
@@ -6322,8 +6335,10 @@ export default function DropYardBuyerDashboard({
   useSocketEvent("conversation:read", (payload) => {
     const cid = payload?.conversationId;
     if (!cid) return;
+    // Unread only — `status` tracks who spoke last and is unaffected by the
+    // thread being opened somewhere else.
     setConvList((prev) => prev.map((c) => c.id === cid
-      ? { ...c, unreadCount: 0, unread: false, status: c.status === "pending" ? "answered" : c.status }
+      ? { ...c, unreadCount: 0, unread: false }
       : c
     ));
   });
