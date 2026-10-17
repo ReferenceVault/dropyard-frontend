@@ -40,6 +40,19 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-102  ·  P3  ·  Seller Inventory → page header + Drop strip  ·  Status: Fixed (verify)
+**Title:** Decorative sparkle / dot-cluster ornaments make the product look AI-generated.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:** Sign in as a seller → Inventory → My items.
+**Expected:** No ornamental glyphs that read as an AI watermark.
+**Actual:** A ✨ Sparkles tile anchors the "Drop is live now" strip, and a three-dot amber/green/claret cluster floats in the top-right of the page header.
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse + lint clean (149 pre-existing problems before and after — no new ones). Browser pass pending.
+**Notes:** Both are pure decoration; nothing reads state from either.
+  - **Sparkles tile** — removed for *both* Drop phases, not just the live one. The tile also held a Calendar glyph between Drops, which is harmless on its own, but keeping it would make the band grow and lose an icon as the cycle turns over. The pulsing green dot next to the headline already signals the live state. `Sparkles` and `Calendar` are still imported and used elsewhere (25 and 13 other call sites) — genuine AI surfaces keep theirs.
+  - **Three-dot cluster** — the same motif appears in six page headers, so removing only the reported one would have left it on five other pages. Removed from all: seller Inventory, Messages, History, Settings, and buyer item-detail + Settings.
+
 ### BUG-101  ·  P2  ·  Seller → List New Item → "List Another Item"  ·  Status: Fixed (verify)
 **Title:** "List Another Item" reopens the form still filled with the listing that was just published.
 **Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory

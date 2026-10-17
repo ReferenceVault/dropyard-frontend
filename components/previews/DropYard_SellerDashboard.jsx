@@ -4129,13 +4129,6 @@ function InventoryTabs({ activeView, onNav, ordersCount = 0, ordersUrgent = 0, a
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: isMobile ? "0 auto 12px" : "0 auto 14px" }}>
       {/* Page header with icon */}
       <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 2 : 4 }}>
-        {!isMobile && (
-          <div style={{ position: "absolute", top: 18, right: 0, display: "flex", gap: 6, opacity: 0.5 }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }}/>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }}/>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.claret }}/>
-          </div>
-        )}
         <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
           <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.greenMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
             {activeView === "questions"
@@ -4815,9 +4808,11 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
         <ClosingTimeBanner counts={counts} onDiscount={applyBulkDiscount}/>
       ) : (
       <div style={{ padding: isMobile ? "14px 16px" : "12px 16px", borderRadius: 16, background: dropIsLive ? C.greenMist : "linear-gradient(135deg, " + C.amberMist + ", " + C.paper + ")", border: "1.5px solid " + (dropIsLive ? C.green + "30" : C.amber + "25"), marginBottom: 14, display: "flex", alignItems: isMobile ? "flex-start" : "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ width: isMobile ? 38 : 44, height: isMobile ? 38 : 44, borderRadius: isMobile ? 12 : 14, background: dropIsLive ? C.green : C.amber, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px " + (dropIsLive ? C.green : C.amber) + "35" }}>
-          {dropIsLive ? <Sparkles size={isMobile ? 17 : 20} style={{ color: "#fff" }}/> : <Calendar size={isMobile ? 17 : 20} style={{ color: "#fff" }}/>}
-        </div>
+        {/* Icon tile removed — the live state showed a Sparkles glyph, which
+            reads as an "AI generated" marker on a band that has nothing to do
+            with AI. Dropped for both phases rather than only the live one, so
+            the band keeps the same shape as the Drop cycle turns over. The
+            pulsing live dot beside the headline still carries the state. */}
         <div style={{ flex: 1, minWidth: isMobile ? 0 : 220 }}>
           <p style={{ fontFamily: F.head, fontSize: isMobile ? 13 : 14, fontWeight: 900, color: dropIsLive ? C.greenDeep : C.amberDeep, marginBottom: 2, display: "flex", alignItems: "center", gap: 7 }}>
             {dropIsLive && <span style={{ position: "relative", display: "inline-flex", width: 9, height: 9 }}>
@@ -6419,13 +6414,6 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       {/* Page header — hidden on mobile when inside a thread so the conversation gets full screen */}
       {(!isMobile || !mobileViewingId) && (
       <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 2 : 4 }}>
-        {!isMobile && (
-          <div style={{ position: "absolute", top: 18, right: 0, display: "flex", gap: 6, opacity: 0.5 }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }}/>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }}/>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.claret }}/>
-          </div>
-        )}
         <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
           <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.aiMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
             <MessageSquare size={isMobile ? 18 : 20} style={{ color: C.ai }} strokeWidth={2.2}/>
@@ -7442,13 +7430,6 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
       {!embedded && (
         <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 2 : 4 }}>
-          {!isMobile && (
-            <div style={{ position: "absolute", top: 18, right: 0, display: "flex", gap: 6, opacity: 0.5 }}>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }}/>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }}/>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.claret }}/>
-            </div>
-          )}
           <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
             <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.amberMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
               <Award size={isMobile ? 18 : 20} style={{ color: C.amberDeep }} strokeWidth={2.2}/>
@@ -9758,13 +9739,6 @@ function SettingsView({ user, initialSection = null }) {
       {/* Page header — hidden on mobile while drilled into a section. */}
       {(!isMobile || !mobileViewingSection) && (
         <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 4 : 10 }}>
-          {!isMobile && (
-            <div style={{ position: "absolute", top: 18, right: 0, display: "flex", gap: 6, opacity: 0.5 }}>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }}/>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }}/>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.claret }}/>
-            </div>
-          )}
           <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
             <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.amberMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
               <Settings size={isMobile ? 18 : 20} style={{ color: C.amberDeep }} strokeWidth={2.2}/>

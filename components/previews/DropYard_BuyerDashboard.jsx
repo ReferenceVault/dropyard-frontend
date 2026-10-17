@@ -731,13 +731,6 @@ function PageTitle({ eyebrow, title, subtitle, action, eyebrowBg, eyebrowColor, 
           <ArrowLeft size={14}/> Back to Discover
         </button>
       )}
-      {!isMobile && (
-        <div style={{ position: "absolute", top: 8, right: 0, display: "flex", gap: 6, opacity: 0.5 }}>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }}/>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }}/>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.claret }}/>
-        </div>
-      )}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: isMobile ? 12 : 24, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 18, flex: 1, minWidth: 0 }}>
           {IconComp && (
@@ -5754,11 +5747,6 @@ function BuyerSettingsHeader() {
   return (
     <div className="fade-in" style={{ maxWidth: 1160, margin: "0 auto 14px" }}>
       <div style={{ padding: "14px 0 10px", position: "relative", marginBottom: 4 }}>
-        <div style={{ position: "absolute", top: 18, right: 0, display: "flex", gap: 6, opacity: 0.5 }}>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }}/>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }}/>
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.claret }}/>
-        </div>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
           <div style={{ width: 48, height: 48, borderRadius: 14, background: C.greenMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
             <SettingsIcon size={20} style={{ color: C.greenDeep }} strokeWidth={2.2}/>
