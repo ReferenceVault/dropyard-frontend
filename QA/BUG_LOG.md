@@ -40,6 +40,32 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-104  ·  P1  ·  /buyer Discover — Drop phase  ·  Status: Fixed (verify)
+**Title:** The buyer dashboard shows "LIVE NOW" hours before the Drop opens for any viewer outside Eastern time.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory (three surfaces compared side by side)
+**Repro steps:**
+1. Set the machine's timezone east of Toronto (IST reproduces it)
+2. On a Saturday between 08:00 local and 08:00 Toronto, open `/` and `/buyer`
+**Expected:** Both agree on the phase. Toronto is still in PREVIEW, so the Drop has not opened.
+**Actual:** The homepage correctly says "GOING LIVE SOON · Live in 0d 5h 23m". `/buyer` says "LIVE NOW · The Drop is live in Barrhaven" with Claim buttons.
+**Environment:** Chrome, Windows, IST (UTC+5:30), local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse + lint clean (67 problems before and after — no new ones). Browser pass pending; reproduce with the machine clock in IST, or `?simulate=2026-10-17T02:36-04:00`.
+**Notes:** `computeDropState()` in the buyer dashboard read the **browser's** clock:
+```js
+const day = now.getDay(); const hour = now.getHours();
+if (day === DROP_OPEN_DAY && hour >= DROP_OPEN_HOUR) return "live";
+```
+It imported the canonical constants, which is what made it look correct, but applied them to the viewer's wall-clock. This is precisely the defect `lib/dropCycle.ts` was rewritten to eliminate — its header warns that a tester in IST "saw 'Live Drop' and a claim button while the API still had the items as DRAFT and rejected every claim". The library was fixed; this copy of the logic was missed. At 12:06 IST on Sat 17 Oct, Toronto was 02:36 — PREVIEW — so the dashboard went live 9.5 hours early.
+
+`computeDropState()` now returns `getDropCycleInfo(new Date()).phase === "LIVE"`, the same source the homepage and the seller dashboard already use.
+
+**Tell-tale in the screenshots:** the banner read "LIVE NOW" *and* "DROP CLOSES IN 41h 23m". The live window is Sat 08:00 → Sun 20:00, so a genuinely live Drop can never have more than 36h left. The countdown was right — it comes from `dropCloseMoment`, which is Toronto-aware — only the phase gate was wrong.
+
+**Fixed alongside:** the band's "until Sunday at 6 PM" / "Sunday 6 PM cutoff" / "closes Sunday 6pm" strings. `DROP_CLOSE_HOUR` is 20, so the real cutoff is **8 PM** and the UI was understating the window by two hours. All four now render `dropCloseDay()` + `dropCloseHour()`.
+
+**Not fixed, flagged:** the Live Drop grid heading counted Sneak Peek cards in "4 items up for grabs" while the band said "2 items". Those two Sneak Peek cards were only in the pool because the phase was wrong — they carry "Opens Saturday 8 AM" and cannot be claimed. Worth re-checking during a genuine LIVE phase; if preview-status items can still reach that pool, the heading needs the same `status === "live"` filter the band uses (BUG-100).
+
 ### BUG-103  ·  P2  ·  Seller → Inventory → Orders tab badge  ·  Status: Fixed (verify)
 **Title:** The Orders tab badge reads "4 ·" with zero pending claims and zero pickups.
 **Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory

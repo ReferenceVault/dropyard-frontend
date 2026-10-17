@@ -7,11 +7,12 @@ import { useSocketEvent } from "@/context/SocketContext";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { useAuth } from "@/context/AuthContext";
 import {
-  DROP_OPEN_DAY, DROP_OPEN_HOUR, DROP_CLOSE_DAY, DROP_CLOSE_HOUR,
   dropOpenHour, dropOpenHourCompact, dropOpenHourBadge,
-  dropOpenDay, dropOpenFull,
+  dropOpenDay, dropOpenFull, dropOpenHourLong,
+  dropCloseDay, dropCloseHour, dropZoneLabel,
   nextDropMoment, dropCloseMoment,
   formatCompactCountdown,
+  getDropCycleInfo,
 } from "@/lib/dropCycle";
 
 /** Shared SSR-safe live countdown to the next drop open. Returns "" on the
@@ -438,20 +439,20 @@ function GlobalStyle() {
 /* ============================================================
    TOP BAR
    ============================================================ */
-// Drop schedule: derived from lib/dropCycle.ts constants — DO NOT hardcode
-// the day/hour here. The window is from DROP_OPEN_DAY at DROP_OPEN_HOUR
-// through Sunday 6pm local time. Between drops at all other times. This is
-// computed from the system clock so the UI flips automatically across the
-// weekend without any manual toggle.
+// Drop schedule: owned by lib/dropCycle.ts — DO NOT hardcode a day/hour here,
+// and do not re-derive the window from the constants either. The boundaries
+// are Toronto wall-clock, so they can only be resolved by the library. Checked
+// against the real clock on an interval, so the UI flips on its own when the
+// Drop opens and closes.
 function computeDropState() {
-  const now = new Date();
-  const day = now.getDay();
-  const hour = now.getHours();
-  // Canonical drop window derived from lib/dropCycle.ts constants. No magic
-  // numbers — changing the open/close hour propagates here automatically.
-  if (day === DROP_OPEN_DAY  && hour >= DROP_OPEN_HOUR)  return "live";
-  if (day === DROP_CLOSE_DAY && hour <  DROP_CLOSE_HOUR) return "live";
-  return "between";
+  // The phase comes from getDropCycleInfo, which resolves the window on
+  // Toronto wall-clock. This used to read `now.getDay()` / `now.getHours()`
+  // off the BROWSER, which is the exact mistake lib/dropCycle.ts was rewritten
+  // to remove: every viewer outside Eastern computed their own phase. From
+  // IST the dashboard went "LIVE NOW" at Sat 08:00 local — 9.5 hours before
+  // the Drop actually opened — and offered Claim buttons on items the API
+  // still had as DRAFT.
+  return getDropCycleInfo(new Date()).phase === "LIVE" ? "live" : "between";
 }
 
 // Avatar with dropdown menu - real user initials and sign-out.
@@ -882,32 +883,56 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
           )}
         </div>
 
-        {/* Right: countdown panel — translucent ink card, mirror of WelcomeBand structure */}
-        <div style={{ position: "relative", flexShrink: 0, padding: "12px 18px", borderRadius: 14, background: "rgba(255, 248, 235, 0.78)", border: "1.5px solid " + C.amberDeep + "35", textAlign: "center", minWidth: 230, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", boxShadow: "0 8px 24px rgba(192, 104, 0, 0.18)" }}>
-          <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>Drop opens in</p>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 3, fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
-            <span>{t.d}</span>
-            <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>d</span>
-            <span style={{ marginLeft: 4 }}>{pad(t.h)}</span>
-            <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>h</span>
-            <span style={{ marginLeft: 4 }}>{pad(t.m)}</span>
-            <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>m</span>
-            <span style={{ marginLeft: 4 }}>{pad(t.s)}</span>
-            <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>s</span>
-          </div>
-          <button onClick={onRemindMe} style={{
-            marginTop: 8,
-            display: "inline-flex", alignItems: "center", gap: 5,
-            padding: "5px 12px", borderRadius: 999, border: "none",
-            background: reminded ? "rgba(255,255,255,0.7)" : C.amberDeep,
-            color: reminded ? C.amberDeep : "#fff",
-            fontFamily: F.head, fontSize: 11, fontWeight: 800,
-            cursor: "pointer",
-            boxShadow: reminded ? "none" : "0 2px 0 " + C.amberDeep,
-          }}>
-            {reminded ? <><Check size={11}/> Notified</> : <><Bell size={11}/> Remind me</>}
-          </button>
+      </div>
+
+      {/* Countdown — a full-width cream pill under the band copy. Replaces the
+          stacked card that used to sit in the right column: the clock reads
+          left-to-right on one line, and the open moment sits beside it so the
+          number is never shown without the time it counts to. The zone label
+          is spelled out because the Drop runs on Toronto wall-clock and most
+          viewers are not in it (BUG-104). */}
+      <div style={{
+        position: "relative", marginTop: 16,
+        display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
+        padding: "8px 8px 8px 22px", borderRadius: 999,
+        background: "rgba(255, 248, 235, 0.92)",
+        border: "1.5px solid " + C.amberDeep + "25",
+        boxShadow: "0 6px 20px rgba(192, 104, 0, 0.14)",
+        backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+      }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.amberDeep, flexShrink: 0 }}/>
+          <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, whiteSpace: "nowrap" }}>Next Drop in</span>
+        </span>
+
+        <div style={{ display: "flex", alignItems: "baseline", gap: 3, fontFamily: F.head, fontSize: 26, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
+          <span>{t.d}</span>
+          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>d</span>
+          <span style={{ marginLeft: 8 }}>{pad(t.h)}</span>
+          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>h</span>
+          <span style={{ marginLeft: 8 }}>{pad(t.m)}</span>
+          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>m</span>
+          <span style={{ marginLeft: 8 }}>{pad(t.s)}</span>
+          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>s</span>
         </div>
+
+        <span style={{ width: 1, alignSelf: "stretch", margin: "6px 0", background: C.amberDeep + "28", flexShrink: 0 }}/>
+
+        <span style={{ flex: 1, minWidth: 180, fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>
+          {dropOpenDay()} {dropOpenHourLong()} · {dropZoneLabel()}
+        </span>
+
+        <button onClick={onRemindMe} style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
+          padding: "12px 22px", borderRadius: 999, border: "none",
+          background: reminded ? C.paper : C.amberDeep,
+          color: reminded ? C.amberDeep : "#fff",
+          fontFamily: F.head, fontSize: 13, fontWeight: 800,
+          cursor: "pointer", flexShrink: 0,
+          boxShadow: reminded ? "inset 0 0 0 1.5px " + C.amberDeep + "40" : "0 2px 0 " + C.amberDeep,
+        }}>
+          {reminded ? <><Check size={15}/> Notified</> : <><Bell size={15}/> Remind me</>}
+        </button>
       </div>
     </section>
   );
@@ -993,14 +1018,14 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
           </h1>
           <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.82)", maxWidth: 520, lineHeight: 1.55, marginBottom: 12 }}>
             {displayCount === null ? (
-              <>Items from your neighbours are claimable until Sunday at 6 PM. Drops are first-come, first-served.</>
+              <>Items from your neighbours are claimable until {dropCloseDay()} at {dropCloseHour()}. Drops are first-come, first-served.</>
             ) : displayCount > 0 ? (
               <>
                 <b style={{ color: "#fff", fontWeight: 800 }}>{displayCount} item{displayCount === 1 ? "" : "s"}</b>
-                {" "}from your neighbours {displayCount === 1 ? "is" : "are"} claimable until Sunday at 6 PM. Drops are first-come, first-served.
+                {" "}from your neighbours {displayCount === 1 ? "is" : "are"} claimable until {dropCloseDay()} at {dropCloseHour()}. Drops are first-come, first-served.
               </>
             ) : (
-              <>Nothing is claimable in this Drop right now — new items show up here the moment a neighbour posts one. The window closes Sunday at 6 PM.</>
+              <>Nothing is claimable in this Drop right now — new items show up here the moment a neighbour posts one. The window closes {dropCloseDay()} at {dropCloseHour()}.</>
             )}
           </p>
           {/* Avatar stack */}
@@ -1030,7 +1055,7 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
             <span style={{ marginLeft: 4, color: C.amber }}>{pad(t.s)}</span>
             <span style={{ fontSize: 14, color: C.amber, fontWeight: 700, opacity: 0.75 }}>s</span>
           </div>
-          <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: "rgba(255,255,255,0.55)", marginTop: 4 }}>Sunday 6 PM cutoff</p>
+          <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: "rgba(255,255,255,0.55)", marginTop: 4 }}>{dropCloseDay() + " " + dropCloseHour() + " cutoff"}</p>
         </div>
       </div>
     </section>
@@ -5560,7 +5585,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
               ? (peekLiveCount === 1
                   ? "1 item from your Sneak Peek is live and shown first. " + liveUnifiedPool.length + " items total."
                   : peekLiveCount + " items from your Sneak Peek are live and shown first. " + liveUnifiedPool.length + " items total.")
-              : liveUnifiedPool.length + " item" + (liveUnifiedPool.length === 1 ? "" : "s") + " up for grabs. The window closes Sunday 6pm — claim now before they're gone.";
+              : liveUnifiedPool.length + " item" + (liveUnifiedPool.length === 1 ? "" : "s") + " up for grabs. The window closes " + dropCloseDay() + " " + dropCloseHour() + " — claim now before they're gone.";
             return <SectionHeader eyebrow="Live Drop" eyebrowBg={C.green} title="Your neighbours right now" subtitle={subtitle} pulse={true}/>;
           })()}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>

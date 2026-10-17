@@ -153,6 +153,17 @@ export function dropCloseHourLong(): string {
 
 /** "8 PM" close-hour label. */
 export function dropCloseHour(): string { return formatHour12(DROP_CLOSE_HOUR, "AM"); }
+/**
+ * "Toronto time" — the zone label to print next to any Drop instant. Derived
+ * from OPERATING_TIMEZONE so it follows the operating city rather than being
+ * retyped per surface. Worth showing wherever a Drop time appears: the
+ * boundaries are Toronto wall-clock and most viewers are not in that zone.
+ */
+export function dropZoneLabel(): string {
+  const city = OPERATING_TIMEZONE.split("/").pop() ?? OPERATING_TIMEZONE;
+  return `${city.replace(/_/g, " ")} time`;
+}
+
 /** "Sunday" close-day label. */
 export function dropCloseDay(short = false): string {
   return short ? DAYS_SHORT[DROP_CLOSE_DAY] : DAYS_FULL[DROP_CLOSE_DAY];
