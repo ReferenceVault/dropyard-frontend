@@ -40,6 +40,173 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-106  ·  P2  ·  /buyer Messages → conversation status chip  ·  Status: Fixed (verify)
+**Title:** Every thread is chipped "Answered", including ones nobody has replied to.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:** As a buyer, send an offer on an item and open Messages before the seller replies.
+**Expected:** The thread reads as waiting on the seller.
+**Actual:** "Answered" on every row in the list and in the open thread's header — while the panel directly below says "Waiting for seller to respond".
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse + lint clean (67 problems before and after), `next build` compiles. Browser pass pending.
+**Notes:** `adaptBuyerConversation` computed the chip as:
+```js
+const status = (api.unreadCount || 0) > 0 ? "pending" : (lastFromMe ? "answered" : "answered");
+```
+Both branches of the ternary return the same value, so once a thread had no unread messages it was "Answered" no matter who spoke last. The seller-side adapter has the correct version of this line (`lastFromMe ? "answered" : "pending"`), so this reads as a copy-paste that was never inverted for the buyer's point of view.
+
+Fix: the chip now states **who spoke last**, which is the only thing it can honestly say — `lastFromMe ? "pending" : "answered"`. Unread count deliberately plays no part: an unread message can only have come from the seller, so it *is* an answer, and the unread dot already marks it as new.
+
+Two related writes were feeding the same confusion and are gone:
+  - opening a thread ran `status: c.status === "pending" ? "answered" : c.status`, so **reading** a message marked it answered. Both the local handler and the `conversation:read` socket handler now clear unread only.
+  - the `message:new` handler set "pending" for any incoming message; it now applies the adapter's rule (`isFromMe ? "pending" : "answered"`), so a live-arriving reply chips the same as one found on reload.
+
+### BUG-105  ·  P1  ·  Offers reserve the item — listing vanishes before the seller agrees  ·  Status: Fixed (verify)
+**Title:** Making an offer hides the item from every other buyer and from the homepage, although the seller hasn't accepted anything.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:** As buyer A, open a LIVE item and send an offer below the asking price → view Discover / the homepage as anyone else.
+**Expected:** The item stays listed. Nothing has been agreed.
+**Actual:** The item disappears everywhere for up to 36 hours (the PROPOSED TTL), or until the seller answers.
+**Environment:** local dev, seeded Barrhaven data
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** `tsc --noEmit` clean on the backend; frontend parse + lint clean (67 problems before and after) and `next build` compiles. **No migration.** Needs a backend restart. Browser pass pending.
+**Notes:** `POST /items/:id/claim` flipped the item to `RESERVED` for *every* claim, and the feed hides anything that isn't `LIVE`. First-come-first-serve is the right behaviour for a claim at the listed price, but an offer is a negotiation the seller has agreed to nothing in — it was handing one buyer a 36-hour exclusive hold for free, and giving the seller fewer offers to choose between.
+
+Agreed behaviour (confirmed with Narveer):
+  - **Offer at a different amount** → item stays `LIVE`. Several buyers can have offers on one item at once.
+  - **Claim at the listed price** → takes the item outright: `RESERVED`, and every pending offer on it is declined.
+  - **Seller accepts an offer** → same thing: `RESERVED`, competing offers declined.
+
+Implementation — `src/lib/itemAvailability.ts`, on one invariant: **while an item is RESERVED, exactly one non-terminal claim exists on it**. It holds because offers never reserve, both locking paths decline their competitors inside the same transaction, and the claim route still refuses anything that isn't LIVE.
+  - `lockItemForClaim()` — reserve + decline competitors, returning them so the caller can post their NOTICE and emit `claim:updated` (neither belongs in a transaction). Used by the listed-price branch of `POST /items/:id/claim`, by `PATCH /claims/:id/accept`, and by the in-chat accept in `conversations.ts`.
+  - `releaseItemIfNoActiveClaims()` — replaces the hardcoded `status: 'LIVE'` in decline / cancel / expire. Those wrote LIVE unconditionally, which with concurrent offers would release an item another claim legitimately held. It also fixes a **pre-existing** defect: a cancelled or expired claim on a `SOLD` or `ARCHIVED` item put that item back in the feed. Only `RESERVED` items are touched now.
+  - Guard change: a competing PROPOSED claim no longer returns 409. Only an ACCEPTED claim blocks, plus a new per-buyer guard so one buyer can't stack offers on the same item.
+  - Buyers whose offer loses get a NOTICE in their thread naming the reason, plus a `claim:updated` so the Claims tab doesn't keep showing it as live.
+
+Frontend: `claimedIds` excluded `offer-pending` claims, which otherwise put the "YOU CLAIMED THIS" overlay on an item that is still open to everyone and disabled the buyer's own CTA. Pending offers are a separate `offeredIds` set and render as a quiet "Offer pending" badge; the card stays claimable, because claiming at the listed price is exactly how a buyer takes the item while their offer sits unanswered.
+
+**Follow-up (same day, Narveer):** the item should vanish **for the buyer who made the offer** — everyone else keeps seeing it. Done in `GET /api/items` rather than per-surface: when the request carries a viewer, the query adds `claims: { none: { buyerId: viewer, status: PROPOSED } }`. One rule, so Discover and the homepage's "Featured This Week" agree, and the `total` used for pagination counts the same set. The homepage fetched the feed anonymously, so it now passes the viewer's token when signed in; signed-out visitors see exactly what they saw before. Saved is a different endpoint (the watchlist) and deliberately still shows the item — the buyer put it there on purpose — carrying the "Offer pending" badge.
+
+**Existing data:** items already `RESERVED` by a pending offer stay hidden until that claim is declined, cancelled or expires (36h) — the fix changes what happens from now on, it does not sweep the table. To release them, decline the offers, or run once:
+```sql
+UPDATE "Item" SET status = 'LIVE'
+WHERE status = 'RESERVED'
+  AND id NOT IN (SELECT "itemId" FROM "Claim" WHERE status = 'ACCEPTED');
+```
+
+**Still open, untouched:** the in-chat accept path writes `status: 'CONFIRMED'` and `CLAIMED` rather than the `ACCEPTED`/`RESERVED` lifecycle — see [[BUG-091]]. It now declines competitors, but the status discrepancy is unchanged.
+
+### BUG-104  ·  P1  ·  /buyer Discover — Drop phase  ·  Status: Fixed (verify)
+**Title:** The buyer dashboard shows "LIVE NOW" hours before the Drop opens for any viewer outside Eastern time.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory (three surfaces compared side by side)
+**Repro steps:**
+1. Set the machine's timezone east of Toronto (IST reproduces it)
+2. On a Saturday between 08:00 local and 08:00 Toronto, open `/` and `/buyer`
+**Expected:** Both agree on the phase. Toronto is still in PREVIEW, so the Drop has not opened.
+**Actual:** The homepage correctly says "GOING LIVE SOON · Live in 0d 5h 23m". `/buyer` says "LIVE NOW · The Drop is live in Barrhaven" with Claim buttons.
+**Environment:** Chrome, Windows, IST (UTC+5:30), local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse + lint clean (67 problems before and after — no new ones). Browser pass pending; reproduce with the machine clock in IST, or `?simulate=2026-10-17T02:36-04:00`.
+**Notes:** `computeDropState()` in the buyer dashboard read the **browser's** clock:
+```js
+const day = now.getDay(); const hour = now.getHours();
+if (day === DROP_OPEN_DAY && hour >= DROP_OPEN_HOUR) return "live";
+```
+It imported the canonical constants, which is what made it look correct, but applied them to the viewer's wall-clock. This is precisely the defect `lib/dropCycle.ts` was rewritten to eliminate — its header warns that a tester in IST "saw 'Live Drop' and a claim button while the API still had the items as DRAFT and rejected every claim". The library was fixed; this copy of the logic was missed. At 12:06 IST on Sat 17 Oct, Toronto was 02:36 — PREVIEW — so the dashboard went live 9.5 hours early.
+
+`computeDropState()` now returns `getDropCycleInfo(new Date()).phase === "LIVE"`, the same source the homepage and the seller dashboard already use.
+
+**Tell-tale in the screenshots:** the banner read "LIVE NOW" *and* "DROP CLOSES IN 41h 23m". The live window is Sat 08:00 → Sun 20:00, so a genuinely live Drop can never have more than 36h left. The countdown was right — it comes from `dropCloseMoment`, which is Toronto-aware — only the phase gate was wrong.
+
+**Fixed alongside:** the band's "until Sunday at 6 PM" / "Sunday 6 PM cutoff" / "closes Sunday 6pm" strings. `DROP_CLOSE_HOUR` is 20, so the real cutoff is **8 PM** and the UI was understating the window by two hours. All four now render `dropCloseDay()` + `dropCloseHour()`.
+
+**Not fixed, flagged:** the Live Drop grid heading counted Sneak Peek cards in "4 items up for grabs" while the band said "2 items". Those two Sneak Peek cards were only in the pool because the phase was wrong — they carry "Opens Saturday 8 AM" and cannot be claimed. Worth re-checking during a genuine LIVE phase; if preview-status items can still reach that pool, the heading needs the same `status === "live"` filter the band uses (BUG-100).
+
+### BUG-103  ·  P2  ·  Seller → Inventory → Orders tab badge  ·  Status: Fixed (verify)
+**Title:** The Orders tab badge reads "4 ·" with zero pending claims and zero pickups.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:** Sign in as a seller with no claims → Inventory → Orders.
+**Expected:** The badge matches what the page shows — nothing, when there is nothing.
+**Actual:** "4" with the urgent dot, sitting directly above "No claims to review".
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse + lint clean (82 pre-existing problems before and after — no new ones). Browser pass pending.
+**Notes:** `OrdersView` held `const scheduledCount = 4; const todayCount = 1;` — Phase B placeholders that were never replaced when claims went live, passed straight into the badge.
+
+The deeper problem was that `ordersCount` was a **prop**, and each of the four parents meant something different by it: `MyItemsView` sent scheduled pickups, `ClaimsView` sent pending claims, `PickupsView` sent its own list length, `OrdersView` sent the constant. The same tab row showed a different number depending on which view you were standing in.
+
+Fix: `InventoryTabs` now owns the count, exactly as it already did for the Questions badge ("fetched here so the count is identical on every inventory tab"). It requests `?status=PROPOSED` and `?status=ACCEPTED` — the two sections `OrdersView` actually renders — and badges `pending + pickups`, with urgent = pending claims + pickups due today. `claim:new` / `claim:updated` sockets refresh it. The `ordersCount` / `ordersUrgent` props are gone from all four call sites, so the counts cannot drift apart again, and `MyItemsView`'s now-duplicate pickups fetch was removed with them.
+
+A failed request leaves the last known count in place rather than falling back to 0 — a badge that silently drops to zero on a network blip hides work the seller has to do.
+
+### BUG-102  ·  P3  ·  Seller Inventory → page header + Drop strip  ·  Status: Fixed (verify)
+**Title:** Decorative sparkle / dot-cluster ornaments make the product look AI-generated.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:** Sign in as a seller → Inventory → My items.
+**Expected:** No ornamental glyphs that read as an AI watermark.
+**Actual:** A ✨ Sparkles tile anchors the "Drop is live now" strip, and a three-dot amber/green/claret cluster floats in the top-right of the page header.
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse + lint clean (149 pre-existing problems before and after — no new ones). Browser pass pending.
+**Notes:** Both are pure decoration; nothing reads state from either.
+  - **Sparkles tile** — removed for *both* Drop phases, not just the live one. The tile also held a Calendar glyph between Drops, which is harmless on its own, but keeping it would make the band grow and lose an icon as the cycle turns over. The pulsing green dot next to the headline already signals the live state. `Sparkles` and `Calendar` are still imported and used elsewhere (25 and 13 other call sites) — genuine AI surfaces keep theirs.
+  - **Three-dot cluster** — the same motif appears in six page headers, so removing only the reported one would have left it on five other pages. Removed from all: seller Inventory, Messages, History, Settings, and buyer item-detail + Settings.
+
+### BUG-101  ·  P2  ·  Seller → List New Item → "List Another Item"  ·  Status: Fixed (verify)
+**Title:** "List Another Item" reopens the form still filled with the listing that was just published.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:**
+1. Sign in as a seller, List New Item, fill it in and publish
+2. On the "Published to Drop!" screen, click "List Another Item"
+**Expected:** A blank form.
+**Actual:** Every field — title, description, category, condition, price, photos, pickup dates, payment, bundle lines — is still populated from the previous item and has to be cleared by hand.
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse clean. Browser pass pending.
+**Notes:** The success screen is an early return inside `ManualItemForm`, not a separate component, so publishing never unmounts the form. The button was `onClick={() => setSaved(null)}` — it dismissed the confirmation and revealed the form with all ~19 state values still sitting there.
+
+Fix: `resetForm()` restores every field to its initial value and then clears `saved`. Kept as an explicit list rather than a state object so it stays next to the `useState` initialisers it has to mirror.
+
+**Second entry point, same root, fixed with it:** the sidebar / mobile-nav "+ List New Item" CTA calls `safeNav("add-manual")`. Pressing it while already on the form — which is exactly where the seller is after publishing — is `setView` to the value it already has: no state change, no remount, so the stale success screen just stays put and the button reads as dead. The dashboard now keeps a `listFormNonce` that every listing entry point bumps, used as `key` on `ManualItemForm`, so any route into "List New Item" mounts a fresh one.
+
+**Numbering note:** this session's entries were first filed as BUG-097/098, but `DropYard_SellerDashboard.jsx` already cites BUG-097 for the "Enhance with AI" removal, which was never logged here. Renumbered to BUG-099/100/101; the next free number is BUG-102.
+
+### BUG-100  ·  P2  ·  /buyer Discover → Live Drop welcome band  ·  Status: Fixed (verify)
+**Title:** "89 items" in the Live Drop banner is hardcoded — it never matches what's actually on sale.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:** Sign in as a buyer during a LIVE Drop → look at the hero band on Discover.
+**Expected:** The count reflects the number of claimable items.
+**Actual:** Always reads "89 items" (and "+89" on the avatar stack), whatever the feed holds.
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse clean. Browser pass pending.
+**Notes:** `WelcomeBand` took no props at all — the number, and the "+89" avatar-overflow pill, were literals in the JSX. Its Between-Drops twin `AnticipationBand` already accepted `queuedCount` / `sellerNames`, so the band is now wired the same way:
+  - `DiscoverPage` derives `liveItemsCount` + `liveSellerNames` from the **unfiltered** `itemsSource`. Counting the filtered grid would have made the banner follow the search box and category chips, which describe the buyer's view, not the Drop.
+  - Only `status === "live"` counts. `claimed` items are already gone, and `preview` items are Sneak Peek drafts that can't be claimed yet — including either would overstate what's available.
+  - The "+N" pill now counts **neighbours** past the five avatars (`sellerNames.length - 5`). The old "+89" was the item count repeated in a slot that means something else; it renders only when there is an overflow.
+  - Avatars come from the real seller names; a real-but-empty array beats the demo names, so an empty Drop no longer shows five invented neighbours.
+  - Zero state gets its own copy ("Nothing is claimable in this Drop right now…") instead of "0 items", and when no count is passed the sentence simply drops the number.
+
+**Still hardcoded in the same band, not in scope here:** the neighbourhood name ("Barrhaven") and the "Sunday at 6 PM" cutoff in the body copy — the countdown panel beside it already computes the real close time via `dropCloseMoment`.
+
+### BUG-099  ·  P2  ·  /buyer seller profile → "Back"  ·  Status: Fixed (verify)
+**Title:** Back on a seller's profile drops the buyer onto the Discover dashboard instead of the item they came from.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:**
+1. Sign in as a buyer, open any item on /buyer
+2. Click "View profile" on the seller card
+3. Click "Back" on the seller profile
+**Expected:** Returns to the item detail that was open.
+**Actual:** Returns to the buyer dashboard (Discover), losing the item.
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, July3DropF)_
+**Re-tested:** Browser pass pending.
+**Notes:** Fallout from the [[BUG-080]] precedence fix. `viewingItem` outranks `viewingSellerName`, so `onViewSeller` has to clear `viewingItem` for the profile to render at all — and that discarded the only record of where the buyer came from. `onBack` was a bare `setViewingSellerName(null)`, which could then only fall through to the page underneath.
+
+Fix: a new `sellerBackItem` state captures `viewingItem` at the moment "View profile" is pressed; profile Back restores it and clears the capture. Cleared on every deliberate navigation away (`onGoToClaims`, `onGoToMessages`, `resetNav` — i.e. the top bar and the mobile bottom nav), so a tab switch never resurrects a stale item on a later Back.
+
+Nav stack now unwinds in both directions: Discover → item → profile → Back → item → Back → Discover, and the BUG-080 direction (Discover → profile → item → Back → profile → Back → Discover) is unchanged, since a profile reached from Discover has no captured item.
+
 ### BUG-096  ·  P2  ·  Seller Overview → "Needs your attention" / hero counts  ·  Status: Fixed (verify)
 **Title:** A listing queued for the Drop is reported as "1 draft unfinished", and doesn't count toward the queued total.
 **Found by:** Narveer · **Found date:** 2026-08-15 · **Test case:** exploratory (round 2, item #3)

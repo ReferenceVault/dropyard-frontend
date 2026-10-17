@@ -3547,6 +3547,39 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
     }
   }
 
+  /**
+   * Wipe every field back to its initial value. The success screen is rendered
+   * by the same component instance as the form, so nothing unmounts after a
+   * publish — without this, "List Another Item" put the seller back in front of
+   * the listing they just published and made them clear it by hand.
+   * Keep in sync with the useState initialisers above.
+   */
+  function resetForm() {
+    setTitle("");
+    setDesc("");
+    setCat("");
+    setCond("");
+    setPrice("");
+    setPhotos([]);
+    setShowPickup(false);
+    setPickupMode("flexible");
+    setPickupDays([]);
+    setPickupCustom([]);
+    setPickupNewDate("");
+    setPickupDateError("");
+    setPickupWindows(["morning", "afternoon"]);
+    setShowPayment(false);
+    setPaymentMethod(aiSettings.paymentMethod || "either");
+    setShowBundle(false);
+    setIsBundle(false);
+    setBundleContents([""]);
+    setSubmitError(null);
+    // Placement resets to the Drop path; the dropIsLive effect above corrects
+    // it if the phase makes Shelf invalid.
+    setPublishWhen("drop");
+    setSaved(null);
+  }
+
   if (saved) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 400 }}>
@@ -3568,7 +3601,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
             <button onClick={() => onGoToItems ? onGoToItems() : onDone()} style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 24px", borderRadius: 999, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: F.body, backgroundColor: C.gPrimary, color: "#fff" }}>
               Go to My Items <ArrowRight size={16} />
             </button>
-            <button onClick={() => setSaved(null)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 20px", borderRadius: 50, border: "1.5px solid #e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F.body, background: C.paper, color: C.mink }}>
+            <button onClick={resetForm} style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 20px", borderRadius: 50, border: "1.5px solid #e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F.body, background: C.paper, color: C.mink }}>
               List Another Item
             </button>
           </div>
@@ -4068,8 +4101,50 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
 
 /* ============================== MY ITEMS ============================== */
 /* ========= INVENTORY SUB-TABS (shared header for Items/Claims/Pickups) ========= */
-function InventoryTabs({ activeView, onNav, ordersCount = 0, ordersUrgent = 0, accessToken = null }) {
+function InventoryTabs({ activeView, onNav, accessToken = null }) {
   const { isMobile } = useViewport();
+
+  // Orders badge — pending claims (PROPOSED) + scheduled pickups (ACCEPTED),
+  // i.e. exactly the two sections OrdersView renders. Fetched here for the
+  // same reason as openQuestions below: one number on every inventory tab.
+  // It used to be threaded in from each parent, and each parent meant
+  // something different by it — MyItemsView sent pickups only, ClaimsView
+  // sent pending claims only, and OrdersView sent a hardcoded `4`, so the
+  // badge sat there reading "4" above a page saying "No claims to review".
+  const [ordersCount, setOrdersCount] = useState(0);
+  const [ordersUrgent, setOrdersUrgent] = useState(0);
+  const [ordersTick, setOrdersTick] = useState(0);
+  useSocketEvent("claim:new",     () => setOrdersTick(t => t + 1));
+  useSocketEvent("claim:updated", () => setOrdersTick(t => t + 1));
+  useEffect(() => {
+    if (!accessToken) { setOrdersCount(0); setOrdersUrgent(0); return; }
+    let cancelled = false;
+    // Both statuses are requested explicitly — an unfiltered /incoming also
+    // returns terminal claims (DECLINED, EXPIRED, PICKED_UP). See BUG-090.
+    Promise.all([
+      apiRequest("/api/claims/incoming?status=PROPOSED", { token: accessToken }).catch(() => null),
+      apiRequest("/api/claims/incoming?status=ACCEPTED", { token: accessToken }).catch(() => null),
+    ]).then(([proposed, accepted]) => {
+      if (cancelled) return;
+      // A failed leg yields null, not []; skip the update rather than
+      // reporting a drop to zero the seller would have to act on.
+      if (!proposed && !accepted) return;
+      const pending = Array.isArray(proposed?.claims) ? proposed.claims : [];
+      const pickups = Array.isArray(accepted?.claims) ? accepted.claims : [];
+      setOrdersCount(pending.length + pickups.length);
+      // Urgent = needs the seller today: every pending claim is waiting on an
+      // answer, plus any pickup scheduled for today. Same day heuristic as
+      // PickupsView's todayCount.
+      const SHORT_DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      const todayShort = SHORT_DAYS[new Date().getDay()].toLowerCase();
+      const dueToday = pickups.filter((c) => {
+        const slot = String(c?.pickupSlot || "").trim().toLowerCase();
+        return slot.startsWith(todayShort) || slot.startsWith("today");
+      }).length;
+      setOrdersUrgent(pending.length + dueToday);
+    });
+    return () => { cancelled = true; };
+  }, [accessToken, activeView, ordersTick]);
 
   // Unanswered-question badge. Fetched here rather than threaded from each
   // parent view so the count is identical on every inventory tab. Gated on
@@ -4096,13 +4171,6 @@ function InventoryTabs({ activeView, onNav, ordersCount = 0, ordersUrgent = 0, a
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: isMobile ? "0 auto 12px" : "0 auto 14px" }}>
       {/* Page header with icon */}
       <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 2 : 4 }}>
-        {!isMobile && (
-          <div style={{ position: "absolute", top: 18, right: 0, display: "flex", gap: 6, opacity: 0.5 }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }}/>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }}/>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.claret }}/>
-          </div>
-        )}
         <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
           <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.greenMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
             {activeView === "questions"
@@ -4305,15 +4373,13 @@ function QuestionsView({ onNav, accessToken = null }) {
 }
 
 function OrdersView({ onNav, accessToken = null, onClaimsChanged = null }) {
-  // Counts in the InventoryTabs header are placeholders for the pickups side
-  // (still demo data in Phase B). Pending claims are shown in their own
-  // section below and use the live count from ClaimsView.
-  const scheduledCount = 4;
-  const todayCount = 1;
-
+  // The Orders tab badge is no longer passed in from here — InventoryTabs
+  // fetches it. This used to hold `scheduledCount = 4` / `todayCount = 1`,
+  // placeholders that outlived the Phase B demo data and kept claiming four
+  // orders on an empty Orders page.
   return (
     <div>
-      <InventoryTabs activeView="orders" onNav={onNav} ordersCount={scheduledCount} ordersUrgent={todayCount} accessToken={accessToken}/>
+      <InventoryTabs activeView="orders" onNav={onNav} accessToken={accessToken}/>
 
       {/* Pending claims — wired to GET /api/claims/incoming */}
       <div style={{ marginBottom: 28 }}>
@@ -4446,35 +4512,8 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
   const [publishChooserItem, setPublishChooserItem] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  // Pickups badge on the Inventory → Orders tab. Real counts replace the
-  // previously-hardcoded "7 orders · 1 urgent" (BUG-052/audit). Same fetch
-  // shape PickupsView uses — see line 6099. Socket events refresh both.
-  const [pickupsCount, setPickupsCount] = useState(0);
-  const [pickupsTodayCount, setPickupsTodayCount] = useState(0);
-  const [pickupsTick, setPickupsTick] = useState(0);
-  useSocketEvent("claim:updated", () => setPickupsTick((t) => t + 1));
-  useSocketEvent("claim:new",     () => setPickupsTick((t) => t + 1));
-  useEffect(() => {
-    if (!accessToken) { setPickupsCount(0); setPickupsTodayCount(0); return; }
-    let cancelled = false;
-    apiRequest("/api/claims/incoming?status=ACCEPTED", { token: accessToken })
-      .then((data) => {
-        if (cancelled) return;
-        const claims = Array.isArray(data?.claims) ? data.claims : [];
-        setPickupsCount(claims.length);
-        // "Urgent" === pickup scheduled for today. Same heuristic as
-        // PickupsView's todayCount filter at line 5999.
-        const SHORT_DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-        const todayShort = SHORT_DAYS[new Date().getDay()].toLowerCase();
-        const todayN = claims.filter((c) => {
-          const slot = String(c?.pickupSlot || "").trim().toLowerCase();
-          return slot.startsWith(todayShort) || slot.startsWith("today");
-        }).length;
-        setPickupsTodayCount(todayN);
-      })
-      .catch(() => { /* keep last known counts on transient network blip */ });
-    return () => { cancelled = true; };
-  }, [accessToken, pickupsTick]);
+  // (The pickups-badge fetch that used to live here moved into InventoryTabs,
+  // which now owns the Orders count for every tab — BUG-103.)
 
   // Items now carry publishedTo (queue target) + status (draft | published)
   // Derived "lifecycle" tells the UI what state to render
@@ -4775,16 +4814,18 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
 
   return (
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
-      <InventoryTabs activeView="items" onNav={onNav} ordersCount={pickupsCount} ordersUrgent={pickupsTodayCount} accessToken={accessToken}/>
+      <InventoryTabs activeView="items" onNav={onNav} accessToken={accessToken}/>
 
       {/* Phase-aware Drop strip — closing window swaps to the bulk-discount banner. */}
       {isClosing ? (
         <ClosingTimeBanner counts={counts} onDiscount={applyBulkDiscount}/>
       ) : (
       <div style={{ padding: isMobile ? "14px 16px" : "12px 16px", borderRadius: 16, background: dropIsLive ? C.greenMist : "linear-gradient(135deg, " + C.amberMist + ", " + C.paper + ")", border: "1.5px solid " + (dropIsLive ? C.green + "30" : C.amber + "25"), marginBottom: 14, display: "flex", alignItems: isMobile ? "flex-start" : "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ width: isMobile ? 38 : 44, height: isMobile ? 38 : 44, borderRadius: isMobile ? 12 : 14, background: dropIsLive ? C.green : C.amber, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, boxShadow: "0 3px 10px " + (dropIsLive ? C.green : C.amber) + "35" }}>
-          {dropIsLive ? <Sparkles size={isMobile ? 17 : 20} style={{ color: "#fff" }}/> : <Calendar size={isMobile ? 17 : 20} style={{ color: "#fff" }}/>}
-        </div>
+        {/* Icon tile removed — the live state showed a Sparkles glyph, which
+            reads as an "AI generated" marker on a band that has nothing to do
+            with AI. Dropped for both phases rather than only the live one, so
+            the band keeps the same shape as the Drop cycle turns over. The
+            pulsing live dot beside the headline still carries the state. */}
         <div style={{ flex: 1, minWidth: isMobile ? 0 : 220 }}>
           <p style={{ fontFamily: F.head, fontSize: isMobile ? 13 : 14, fontWeight: 900, color: dropIsLive ? C.greenDeep : C.amberDeep, marginBottom: 2, display: "flex", alignItems: "center", gap: 7 }}>
             {dropIsLive && <span style={{ position: "relative", display: "inline-flex", width: 9, height: 9 }}>
@@ -5726,7 +5767,7 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
 
   return (
     <div>
-      {!embedded && <InventoryTabs activeView="orders" onNav={onNav} ordersCount={offers} ordersUrgent={0} accessToken={accessToken}/>}
+      {!embedded && <InventoryTabs activeView="orders" onNav={onNav} accessToken={accessToken}/>}
 
       {/* Success toast */}
       {successMsg && (
@@ -6386,13 +6427,6 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       {/* Page header — hidden on mobile when inside a thread so the conversation gets full screen */}
       {(!isMobile || !mobileViewingId) && (
       <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 2 : 4 }}>
-        {!isMobile && (
-          <div style={{ position: "absolute", top: 18, right: 0, display: "flex", gap: 6, opacity: 0.5 }}>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }}/>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }}/>
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.claret }}/>
-          </div>
-        )}
         <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
           <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.aiMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
             <MessageSquare size={isMobile ? 18 : 20} style={{ color: C.ai }} strokeWidth={2.2}/>
@@ -6956,7 +6990,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
 
   return (
     <div>
-      {!embedded && <InventoryTabs activeView="orders" onNav={onNav} ordersCount={pickups.length} ordersUrgent={todayCount} accessToken={accessToken} />}
+      {!embedded && <InventoryTabs activeView="orders" onNav={onNav} accessToken={accessToken} />}
 
       {/* Success toast */}
       {successMsg && (
@@ -7409,13 +7443,6 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
       {!embedded && (
         <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 2 : 4 }}>
-          {!isMobile && (
-            <div style={{ position: "absolute", top: 18, right: 0, display: "flex", gap: 6, opacity: 0.5 }}>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }}/>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }}/>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.claret }}/>
-            </div>
-          )}
           <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
             <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.amberMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
               <Award size={isMobile ? 18 : 20} style={{ color: C.amberDeep }} strokeWidth={2.2}/>
@@ -9725,13 +9752,6 @@ function SettingsView({ user, initialSection = null }) {
       {/* Page header — hidden on mobile while drilled into a section. */}
       {(!isMobile || !mobileViewingSection) && (
         <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 4 : 10 }}>
-          {!isMobile && (
-            <div style={{ position: "absolute", top: 18, right: 0, display: "flex", gap: 6, opacity: 0.5 }}>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.amber }}/>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.green }}/>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: C.claret }}/>
-            </div>
-          )}
           <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
             <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.amberMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
               <Settings size={isMobile ? 18 : 20} style={{ color: C.amberDeep }} strokeWidth={2.2}/>
@@ -10321,6 +10341,12 @@ export default function DropYardSellerDashboard({
     window.history.replaceState(null, "", url.pathname + url.search);
   }, [view]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // Remount key for the listing form. Every entry point into "List New Item"
+  // bumps it, which guarantees a blank form. Without it, pressing the CTA
+  // while already on the form (e.g. sitting on its "Published!" screen) is a
+  // no-op setView to the same value — nothing unmounts, so the seller keeps
+  // staring at the previous listing.
+  const [listFormNonce, setListFormNonce] = useState(0);
   const [aiSettings, setAiSettings] = useState({});
   const [aiPlan, setAiPlan] = useState("free");
   const [aiUsed, setAiUsed] = useState(3);
@@ -10357,6 +10383,7 @@ export default function DropYardSellerDashboard({
     // pane left over from a deep link like "Set your default", otherwise
     // Settings would keep reopening on Payments.
     if (target === "settings") setSettingsSection(null);
+    if (target === "add-manual" || target === "add-chooser") setListFormNonce(n => n + 1);
     setView(target);
   };
 
@@ -10507,8 +10534,8 @@ export default function DropYardSellerDashboard({
             {view === "settings" && <SettingsView key={settingsSection || "default"} user={user} initialSection={settingsSection}/>}
             {view === "edit-item" && <EditItemView onBack={() => setView("items")} editingItem={editingItem} aiSettings={aiSettings} accessToken={accessToken} onItemsChange={onItemsChange}/>}
 
-            {view === "add-chooser" && <ManualItemForm onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
-            {view === "add-manual" && <ManualItemForm onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
+            {view === "add-chooser" && <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
+            {view === "add-manual" && <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
             {view === "add-ai" && <AIPhotoFlow onDone={() => setView("items")} onBack={() => setView("add-manual")} aiSettings={aiSettings}/>}
 
             {view === "ai-setup" && <AISetup settings={aiSettings} onSave={setAiSettings} onComplete={() => {setView(aiEntryPoint==="add-manual"?"add-ai":"ai-photos")}} onBack={() => setView(aiEntryPoint==="add-manual"?"add-manual":"overview")} />}
