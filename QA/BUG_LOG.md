@@ -40,6 +40,24 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-098  ·  P2  ·  /buyer Discover → Live Drop welcome band  ·  Status: Fixed (verify)
+**Title:** "89 items" in the Live Drop banner is hardcoded — it never matches what's actually on sale.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:** Sign in as a buyer during a LIVE Drop → look at the hero band on Discover.
+**Expected:** The count reflects the number of claimable items.
+**Actual:** Always reads "89 items" (and "+89" on the avatar stack), whatever the feed holds.
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse clean. Browser pass pending.
+**Notes:** `WelcomeBand` took no props at all — the number, and the "+89" avatar-overflow pill, were literals in the JSX. Its Between-Drops twin `AnticipationBand` already accepted `queuedCount` / `sellerNames`, so the band is now wired the same way:
+  - `DiscoverPage` derives `liveItemsCount` + `liveSellerNames` from the **unfiltered** `itemsSource`. Counting the filtered grid would have made the banner follow the search box and category chips, which describe the buyer's view, not the Drop.
+  - Only `status === "live"` counts. `claimed` items are already gone, and `preview` items are Sneak Peek drafts that can't be claimed yet — including either would overstate what's available.
+  - The "+N" pill now counts **neighbours** past the five avatars (`sellerNames.length - 5`). The old "+89" was the item count repeated in a slot that means something else; it renders only when there is an overflow.
+  - Avatars come from the real seller names; a real-but-empty array beats the demo names, so an empty Drop no longer shows five invented neighbours.
+  - Zero state gets its own copy ("Nothing is claimable in this Drop right now…") instead of "0 items", and when no count is passed the sentence simply drops the number.
+
+**Still hardcoded in the same band, not in scope here:** the neighbourhood name ("Barrhaven") and the "Sunday at 6 PM" cutoff in the body copy — the countdown panel beside it already computes the real close time via `dropCloseMoment`.
+
 ### BUG-097  ·  P2  ·  /buyer seller profile → "Back"  ·  Status: Fixed (verify)
 **Title:** Back on a seller's profile drops the buyer onto the Discover dashboard instead of the item they came from.
 **Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory

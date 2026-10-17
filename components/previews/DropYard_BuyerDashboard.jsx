@@ -925,7 +925,7 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
    Deep ink/charcoal hero. LIVE NOW pill, headline with amber
    underline on "Barrhaven", avatar stack, countdown panel.
    ============================================================ */
-function WelcomeBand() {
+function WelcomeBand({ itemsCount = null, sellerNames = null }) {
   // Real countdown to Drop close (Sunday 8 PM by default). SSR-safe — `now`
   // starts null so server and client first render produce the same markup.
   const [now, setNow] = useState(null);
@@ -946,13 +946,28 @@ function WelcomeBand() {
   };
   const pad = (n) => n < 10 ? "0" + n : "" + n;
 
-  const neighbours = [
+  const fallbackNeighbours = [
     { name: "Jane D." },
     { name: "Mike T." },
     { name: "Anna W." },
     { name: "Tom R." },
     { name: "Alex K." },
   ];
+  // A real array always wins over the demo names, even when it's empty —
+  // otherwise an empty Drop would render five invented neighbours.
+  const neighbours = Array.isArray(sellerNames)
+    ? sellerNames.slice(0, 5).map(n => ({ name: n }))
+    : fallbackNeighbours;
+  // Claimable items in this Drop. Null = not known (no prop passed) — the
+  // copy then drops the number entirely rather than inventing one. This used
+  // to be a hardcoded "89" that never moved no matter what was listed.
+  const displayCount = typeof itemsCount === "number" ? itemsCount : null;
+  // The "+N" pill counts NEIGHBOURS past the five avatars — not items. The
+  // old hardcoded "+89" just repeated the item count, which is a different
+  // quantity entirely.
+  const overflowCount = Array.isArray(sellerNames)
+    ? Math.max(0, sellerNames.length - neighbours.length)
+    : 0;
 
   return (
     <section className="fade-in" style={{ background: "#1F1A14", borderRadius: 22, padding: "20px 26px", marginBottom: 20, position: "relative", overflow: "hidden", boxShadow: "0 4px 24px rgba(31, 29, 25, 0.18)", minHeight: 168 }}>
@@ -984,19 +999,32 @@ function WelcomeBand() {
             </span>
           </h1>
           <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.82)", maxWidth: 520, lineHeight: 1.55, marginBottom: 12 }}>
-            <b style={{ color: "#fff", fontWeight: 800 }}>89 items</b> from your neighbours are claimable until Sunday at 6 PM. Drops are first-come, first-served.
+            {displayCount === null ? (
+              <>Items from your neighbours are claimable until Sunday at 6 PM. Drops are first-come, first-served.</>
+            ) : displayCount > 0 ? (
+              <>
+                <b style={{ color: "#fff", fontWeight: 800 }}>{displayCount} item{displayCount === 1 ? "" : "s"}</b>
+                {" "}from your neighbours {displayCount === 1 ? "is" : "are"} claimable until Sunday at 6 PM. Drops are first-come, first-served.
+              </>
+            ) : (
+              <>Nothing is claimable in this Drop right now — new items show up here the moment a neighbour posts one. The window closes Sunday at 6 PM.</>
+            )}
           </p>
           {/* Avatar stack */}
-          <div style={{ display: "flex", alignItems: "center" }}>
-            {neighbours.map((n, i) => (
-              <div key={i} style={{ width: 32, height: 32, borderRadius: "50%", background: avatarBg(n.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + C.ink, marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i }}>
-                {initialsOf(n.name)}
-              </div>
-            ))}
-            <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.green, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + C.ink, marginLeft: -8 }}>
-              +89
+          {neighbours.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center" }}>
+              {neighbours.map((n, i) => (
+                <div key={i} style={{ width: 32, height: 32, borderRadius: "50%", background: avatarBg(n.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + C.ink, marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i }}>
+                  {initialsOf(n.name)}
+                </div>
+              ))}
+              {overflowCount > 0 && (
+                <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.green, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + C.ink, marginLeft: -8 }}>
+                  +{overflowCount}
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
         {/* Right: countdown panel */}
         <div style={{ position: "relative", flexShrink: 0, padding: "12px 18px", borderRadius: 14, background: "rgba(20, 16, 12, 0.55)", border: "1.5px solid rgba(255,255,255,0.14)", textAlign: "center", minWidth: 200, backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)", boxShadow: "0 8px 24px rgba(0,0,0,0.25)" }}>
@@ -5461,13 +5489,22 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   const queuedSellerNames = Array.isArray(sneakPeekSource) ? Array.from(new Set(sneakPeekSource.map(i => i.seller).filter(Boolean))) : null;
   const dropOpenCountdown = useDropOpenCountdownString();
 
+  // WelcomeBand's "N items" headline. Counted off the WHOLE pool, not the
+  // filtered grid — the band describes the Drop, not the current search or
+  // category. Only `live` items count: `claimed` ones are already gone and
+  // `preview` ones are Sneak Peek drafts that can't be claimed yet. Null when
+  // no source was passed (preview routes) so the band keeps its demo numbers.
+  const liveClaimable = Array.isArray(itemsSource) ? itemsSource.filter(i => i.status === "live") : null;
+  const liveItemsCount = liveClaimable ? liveClaimable.length : null;
+  const liveSellerNames = liveClaimable ? Array.from(new Set(liveClaimable.map(i => i.seller).filter(Boolean))) : null;
+
   // Show the cardboard-box skeleton on the initial backend load — empty
   // network states should not look like "the marketplace is empty".
   if (itemsLoading) {
     return (
       <>
         {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellerNames={queuedSellerNames}/>}
-        {state === "live" && <WelcomeBand/>}
+        {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellerNames={liveSellerNames}/>}
         <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state}/>
         <DiscoverSkeleton/>
       </>
@@ -5511,7 +5548,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   return (
     <>
       {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellerNames={queuedSellerNames}/>}
-      {state === "live" && <WelcomeBand/>}
+      {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellerNames={liveSellerNames}/>}
 
       <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state}/>
 
