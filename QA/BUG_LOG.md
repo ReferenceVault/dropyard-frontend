@@ -40,6 +40,41 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-105  ·  P1  ·  Offers reserve the item — listing vanishes before the seller agrees  ·  Status: Fixed (verify)
+**Title:** Making an offer hides the item from every other buyer and from the homepage, although the seller hasn't accepted anything.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:** As buyer A, open a LIVE item and send an offer below the asking price → view Discover / the homepage as anyone else.
+**Expected:** The item stays listed. Nothing has been agreed.
+**Actual:** The item disappears everywhere for up to 36 hours (the PROPOSED TTL), or until the seller answers.
+**Environment:** local dev, seeded Barrhaven data
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** `tsc --noEmit` clean on the backend; frontend parse + lint clean (67 problems before and after) and `next build` compiles. **No migration.** Needs a backend restart. Browser pass pending.
+**Notes:** `POST /items/:id/claim` flipped the item to `RESERVED` for *every* claim, and the feed hides anything that isn't `LIVE`. First-come-first-serve is the right behaviour for a claim at the listed price, but an offer is a negotiation the seller has agreed to nothing in — it was handing one buyer a 36-hour exclusive hold for free, and giving the seller fewer offers to choose between.
+
+Agreed behaviour (confirmed with Narveer):
+  - **Offer at a different amount** → item stays `LIVE`. Several buyers can have offers on one item at once.
+  - **Claim at the listed price** → takes the item outright: `RESERVED`, and every pending offer on it is declined.
+  - **Seller accepts an offer** → same thing: `RESERVED`, competing offers declined.
+
+Implementation — `src/lib/itemAvailability.ts`, on one invariant: **while an item is RESERVED, exactly one non-terminal claim exists on it**. It holds because offers never reserve, both locking paths decline their competitors inside the same transaction, and the claim route still refuses anything that isn't LIVE.
+  - `lockItemForClaim()` — reserve + decline competitors, returning them so the caller can post their NOTICE and emit `claim:updated` (neither belongs in a transaction). Used by the listed-price branch of `POST /items/:id/claim`, by `PATCH /claims/:id/accept`, and by the in-chat accept in `conversations.ts`.
+  - `releaseItemIfNoActiveClaims()` — replaces the hardcoded `status: 'LIVE'` in decline / cancel / expire. Those wrote LIVE unconditionally, which with concurrent offers would release an item another claim legitimately held. It also fixes a **pre-existing** defect: a cancelled or expired claim on a `SOLD` or `ARCHIVED` item put that item back in the feed. Only `RESERVED` items are touched now.
+  - Guard change: a competing PROPOSED claim no longer returns 409. Only an ACCEPTED claim blocks, plus a new per-buyer guard so one buyer can't stack offers on the same item.
+  - Buyers whose offer loses get a NOTICE in their thread naming the reason, plus a `claim:updated` so the Claims tab doesn't keep showing it as live.
+
+Frontend: `claimedIds` excluded `offer-pending` claims, which otherwise put the "YOU CLAIMED THIS" overlay on an item that is still open to everyone and disabled the buyer's own CTA. Pending offers are a separate `offeredIds` set and render as a quiet "Offer pending" badge; the card stays claimable, because claiming at the listed price is exactly how a buyer takes the item while their offer sits unanswered.
+
+**Follow-up (same day, Narveer):** the item should vanish **for the buyer who made the offer** — everyone else keeps seeing it. Done in `GET /api/items` rather than per-surface: when the request carries a viewer, the query adds `claims: { none: { buyerId: viewer, status: PROPOSED } }`. One rule, so Discover and the homepage's "Featured This Week" agree, and the `total` used for pagination counts the same set. The homepage fetched the feed anonymously, so it now passes the viewer's token when signed in; signed-out visitors see exactly what they saw before. Saved is a different endpoint (the watchlist) and deliberately still shows the item — the buyer put it there on purpose — carrying the "Offer pending" badge.
+
+**Existing data:** items already `RESERVED` by a pending offer stay hidden until that claim is declined, cancelled or expires (36h) — the fix changes what happens from now on, it does not sweep the table. To release them, decline the offers, or run once:
+```sql
+UPDATE "Item" SET status = 'LIVE'
+WHERE status = 'RESERVED'
+  AND id NOT IN (SELECT "itemId" FROM "Claim" WHERE status = 'ACCEPTED');
+```
+
+**Still open, untouched:** the in-chat accept path writes `status: 'CONFIRMED'` and `CLAIMED` rather than the `ACCEPTED`/`RESERVED` lifecycle — see [[BUG-091]]. It now declines competitors, but the status discrepancy is unchanged.
+
 ### BUG-104  ·  P1  ·  /buyer Discover — Drop phase  ·  Status: Fixed (verify)
 **Title:** The buyer dashboard shows "LIVE NOW" hours before the Drop opens for any viewer outside Eastern time.
 **Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory (three surfaces compared side by side)

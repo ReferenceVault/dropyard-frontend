@@ -904,9 +904,14 @@ function HomePage({
   // visitors. When the API returns 0 items the section hides entirely.
   // Same honest-empty-state pattern as the Sneak Peek fix (BUG-037).
   const [featuredItems, setFeaturedItems] = useState<typeof FEATURED_ITEMS>([]);
+  // Sent with the viewer's token when there is one. The feed is viewer-aware:
+  // it leaves out items the viewer already has an offer on (BUG-105), and an
+  // anonymous request can't apply that. Still a public endpoint — signed-out
+  // visitors get the same strip they always did.
+  const { accessToken: featuredToken } = useAuth();
   useEffect(() => {
     let cancelled = false;
-    apiRequest<{ items: Array<Record<string, unknown>> }>("/api/items?limit=4")
+    apiRequest<{ items: Array<Record<string, unknown>> }>("/api/items?limit=4", featuredToken ? { token: featuredToken } : {})
       .then((data) => {
         if (cancelled) return;
         const list = Array.isArray(data?.items) ? data.items : [];
@@ -941,7 +946,7 @@ function HomePage({
       })
       .catch(() => { if (!cancelled) setFeaturedItems([]); /* honest empty state on network blip */ });
     return () => { cancelled = true; };
-  }, []);
+  }, [featuredToken]);
   const testimonials = [
     {
       id: 1,
