@@ -4101,8 +4101,50 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
 
 /* ============================== MY ITEMS ============================== */
 /* ========= INVENTORY SUB-TABS (shared header for Items/Claims/Pickups) ========= */
-function InventoryTabs({ activeView, onNav, ordersCount = 0, ordersUrgent = 0, accessToken = null }) {
+function InventoryTabs({ activeView, onNav, accessToken = null }) {
   const { isMobile } = useViewport();
+
+  // Orders badge — pending claims (PROPOSED) + scheduled pickups (ACCEPTED),
+  // i.e. exactly the two sections OrdersView renders. Fetched here for the
+  // same reason as openQuestions below: one number on every inventory tab.
+  // It used to be threaded in from each parent, and each parent meant
+  // something different by it — MyItemsView sent pickups only, ClaimsView
+  // sent pending claims only, and OrdersView sent a hardcoded `4`, so the
+  // badge sat there reading "4" above a page saying "No claims to review".
+  const [ordersCount, setOrdersCount] = useState(0);
+  const [ordersUrgent, setOrdersUrgent] = useState(0);
+  const [ordersTick, setOrdersTick] = useState(0);
+  useSocketEvent("claim:new",     () => setOrdersTick(t => t + 1));
+  useSocketEvent("claim:updated", () => setOrdersTick(t => t + 1));
+  useEffect(() => {
+    if (!accessToken) { setOrdersCount(0); setOrdersUrgent(0); return; }
+    let cancelled = false;
+    // Both statuses are requested explicitly — an unfiltered /incoming also
+    // returns terminal claims (DECLINED, EXPIRED, PICKED_UP). See BUG-090.
+    Promise.all([
+      apiRequest("/api/claims/incoming?status=PROPOSED", { token: accessToken }).catch(() => null),
+      apiRequest("/api/claims/incoming?status=ACCEPTED", { token: accessToken }).catch(() => null),
+    ]).then(([proposed, accepted]) => {
+      if (cancelled) return;
+      // A failed leg yields null, not []; skip the update rather than
+      // reporting a drop to zero the seller would have to act on.
+      if (!proposed && !accepted) return;
+      const pending = Array.isArray(proposed?.claims) ? proposed.claims : [];
+      const pickups = Array.isArray(accepted?.claims) ? accepted.claims : [];
+      setOrdersCount(pending.length + pickups.length);
+      // Urgent = needs the seller today: every pending claim is waiting on an
+      // answer, plus any pickup scheduled for today. Same day heuristic as
+      // PickupsView's todayCount.
+      const SHORT_DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      const todayShort = SHORT_DAYS[new Date().getDay()].toLowerCase();
+      const dueToday = pickups.filter((c) => {
+        const slot = String(c?.pickupSlot || "").trim().toLowerCase();
+        return slot.startsWith(todayShort) || slot.startsWith("today");
+      }).length;
+      setOrdersUrgent(pending.length + dueToday);
+    });
+    return () => { cancelled = true; };
+  }, [accessToken, activeView, ordersTick]);
 
   // Unanswered-question badge. Fetched here rather than threaded from each
   // parent view so the count is identical on every inventory tab. Gated on
@@ -4331,15 +4373,13 @@ function QuestionsView({ onNav, accessToken = null }) {
 }
 
 function OrdersView({ onNav, accessToken = null, onClaimsChanged = null }) {
-  // Counts in the InventoryTabs header are placeholders for the pickups side
-  // (still demo data in Phase B). Pending claims are shown in their own
-  // section below and use the live count from ClaimsView.
-  const scheduledCount = 4;
-  const todayCount = 1;
-
+  // The Orders tab badge is no longer passed in from here — InventoryTabs
+  // fetches it. This used to hold `scheduledCount = 4` / `todayCount = 1`,
+  // placeholders that outlived the Phase B demo data and kept claiming four
+  // orders on an empty Orders page.
   return (
     <div>
-      <InventoryTabs activeView="orders" onNav={onNav} ordersCount={scheduledCount} ordersUrgent={todayCount} accessToken={accessToken}/>
+      <InventoryTabs activeView="orders" onNav={onNav} accessToken={accessToken}/>
 
       {/* Pending claims — wired to GET /api/claims/incoming */}
       <div style={{ marginBottom: 28 }}>
@@ -4472,35 +4512,8 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
   const [publishChooserItem, setPublishChooserItem] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  // Pickups badge on the Inventory → Orders tab. Real counts replace the
-  // previously-hardcoded "7 orders · 1 urgent" (BUG-052/audit). Same fetch
-  // shape PickupsView uses — see line 6099. Socket events refresh both.
-  const [pickupsCount, setPickupsCount] = useState(0);
-  const [pickupsTodayCount, setPickupsTodayCount] = useState(0);
-  const [pickupsTick, setPickupsTick] = useState(0);
-  useSocketEvent("claim:updated", () => setPickupsTick((t) => t + 1));
-  useSocketEvent("claim:new",     () => setPickupsTick((t) => t + 1));
-  useEffect(() => {
-    if (!accessToken) { setPickupsCount(0); setPickupsTodayCount(0); return; }
-    let cancelled = false;
-    apiRequest("/api/claims/incoming?status=ACCEPTED", { token: accessToken })
-      .then((data) => {
-        if (cancelled) return;
-        const claims = Array.isArray(data?.claims) ? data.claims : [];
-        setPickupsCount(claims.length);
-        // "Urgent" === pickup scheduled for today. Same heuristic as
-        // PickupsView's todayCount filter at line 5999.
-        const SHORT_DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-        const todayShort = SHORT_DAYS[new Date().getDay()].toLowerCase();
-        const todayN = claims.filter((c) => {
-          const slot = String(c?.pickupSlot || "").trim().toLowerCase();
-          return slot.startsWith(todayShort) || slot.startsWith("today");
-        }).length;
-        setPickupsTodayCount(todayN);
-      })
-      .catch(() => { /* keep last known counts on transient network blip */ });
-    return () => { cancelled = true; };
-  }, [accessToken, pickupsTick]);
+  // (The pickups-badge fetch that used to live here moved into InventoryTabs,
+  // which now owns the Orders count for every tab — BUG-103.)
 
   // Items now carry publishedTo (queue target) + status (draft | published)
   // Derived "lifecycle" tells the UI what state to render
@@ -4801,7 +4814,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
 
   return (
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
-      <InventoryTabs activeView="items" onNav={onNav} ordersCount={pickupsCount} ordersUrgent={pickupsTodayCount} accessToken={accessToken}/>
+      <InventoryTabs activeView="items" onNav={onNav} accessToken={accessToken}/>
 
       {/* Phase-aware Drop strip — closing window swaps to the bulk-discount banner. */}
       {isClosing ? (
@@ -5754,7 +5767,7 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
 
   return (
     <div>
-      {!embedded && <InventoryTabs activeView="orders" onNav={onNav} ordersCount={offers} ordersUrgent={0} accessToken={accessToken}/>}
+      {!embedded && <InventoryTabs activeView="orders" onNav={onNav} accessToken={accessToken}/>}
 
       {/* Success toast */}
       {successMsg && (
@@ -6977,7 +6990,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
 
   return (
     <div>
-      {!embedded && <InventoryTabs activeView="orders" onNav={onNav} ordersCount={pickups.length} ordersUrgent={todayCount} accessToken={accessToken} />}
+      {!embedded && <InventoryTabs activeView="orders" onNav={onNav} accessToken={accessToken} />}
 
       {/* Success toast */}
       {successMsg && (

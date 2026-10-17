@@ -40,6 +40,23 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-103  ·  P2  ·  Seller → Inventory → Orders tab badge  ·  Status: Fixed (verify)
+**Title:** The Orders tab badge reads "4 ·" with zero pending claims and zero pickups.
+**Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
+**Repro steps:** Sign in as a seller with no claims → Inventory → Orders.
+**Expected:** The badge matches what the page shows — nothing, when there is nothing.
+**Actual:** "4" with the urgent dot, sitting directly above "No claims to review".
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Parse + lint clean (82 pre-existing problems before and after — no new ones). Browser pass pending.
+**Notes:** `OrdersView` held `const scheduledCount = 4; const todayCount = 1;` — Phase B placeholders that were never replaced when claims went live, passed straight into the badge.
+
+The deeper problem was that `ordersCount` was a **prop**, and each of the four parents meant something different by it: `MyItemsView` sent scheduled pickups, `ClaimsView` sent pending claims, `PickupsView` sent its own list length, `OrdersView` sent the constant. The same tab row showed a different number depending on which view you were standing in.
+
+Fix: `InventoryTabs` now owns the count, exactly as it already did for the Questions badge ("fetched here so the count is identical on every inventory tab"). It requests `?status=PROPOSED` and `?status=ACCEPTED` — the two sections `OrdersView` actually renders — and badges `pending + pickups`, with urgent = pending claims + pickups due today. `claim:new` / `claim:updated` sockets refresh it. The `ordersCount` / `ordersUrgent` props are gone from all four call sites, so the counts cannot drift apart again, and `MyItemsView`'s now-duplicate pickups fetch was removed with them.
+
+A failed request leaves the last known count in place rather than falling back to 0 — a badge that silently drops to zero on a network blip hides work the seller has to do.
+
 ### BUG-102  ·  P3  ·  Seller Inventory → page header + Drop strip  ·  Status: Fixed (verify)
 **Title:** Decorative sparkle / dot-cluster ornaments make the product look AI-generated.
 **Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory
