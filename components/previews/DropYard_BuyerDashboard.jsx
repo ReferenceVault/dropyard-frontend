@@ -93,8 +93,24 @@ function adaptBuyerConversation(api, myId) {
     },
     lastMsg:  api.lastMessage?.body || "",
     lastTime: relativeTimeShort(api.lastMessageAt),
+    // Raw timestamp — `lastTime` above is a display string and can't be
+    // compared. The inbox groups Active vs Earlier on this, and
+    // upsertConvFromSocket keeps it current on every incoming message.
+    lastMessageAt: api.lastMessageAt || null,
     messages: [],
   };
+}
+
+// A thread stays in the "active" group while it's had activity inside this
+// window. Older ones collapse into "Earlier" instead of padding the
+// "N active threads" count — a three-month-old thread whose claim auto-expired
+// is history, not something the buyer is in the middle of.
+const ACTIVE_WINDOW_DAYS = 30;
+function isWithinActiveWindow(iso, days = ACTIVE_WINDOW_DAYS) {
+  if (!iso) return false;
+  const ms = new Date(iso).getTime();
+  if (Number.isNaN(ms)) return false;
+  return Date.now() - ms < days * 24 * 60 * 60 * 1000;
 }
 
 function relativeTimeShort(iso) {
@@ -4630,14 +4646,116 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
 
   const unreadCount = conversations.filter(c => c.unread).length;
 
-  // No type filter any more (see the note where the chips were removed), so
-  // the list is simply every conversation.
-  const filtered = conversations;
+  // ─── Active vs Earlier ───────────────────────────────────────────────────
+  // "7 active threads" used to mean "7 threads exist" — it counted months-old
+  // threads whose claims had auto-expired, so the number said nothing about
+  // what the buyer was actually dealing with. A thread is active when:
+  //   · it has a live claim (PROPOSED / ACCEPTED) — a negotiation or an agreed
+  //     pickup is live business however old the thread is, so age never
+  //     retires it;
+  //   · something in it is unread — never hide a message the buyer hasn't
+  //     seen; or
+  //   · it's had a message inside ACTIVE_WINDOW_DAYS.
+  // Everything else is history: still one click away under "Earlier", but out
+  // of the count and out of the way.
+  const isThreadActive = useCallback((c) => {
+    if (!c) return false;
+    if (c.unread || (c.unreadCount || 0) > 0) return true;
+    if (activeClaimByConv[c.id]) return true;
+    // Demo conversations carry no timestamp. Unknown age → leave it active
+    // rather than silently burying it.
+    if (!c.lastMessageAt) return true;
+    return isWithinActiveWindow(c.lastMessageAt);
+  }, [activeClaimByConv]);
+
+  const { activeThreads, earlierThreads } = useMemo(() => {
+    const act = [], earlier = [];
+    for (const c of conversations) (isThreadActive(c) ? act : earlier).push(c);
+    return { activeThreads: act, earlierThreads: earlier };
+  }, [conversations, isThreadActive]);
+
+  const [showEarlier, setShowEarlier] = useState(false);
+  // Opening an older thread (e.g. from the Claims tab or History) must not
+  // leave the selection hidden inside a collapsed group.
+  useEffect(() => {
+    if (activeId && earlierThreads.some(c => c.id === activeId)) setShowEarlier(true);
+  }, [activeId, earlierThreads]);
+
+  const inboxSubtitle = [
+    unreadCount > 0 ? unreadCount + " unread" : null,
+    activeThreads.length + " active thread" + (activeThreads.length !== 1 ? "s" : ""),
+    earlierThreads.length > 0 ? earlierThreads.length + " earlier" : null,
+  ].filter(Boolean).join(" · ");
+
+  // Put a thread away for good. The backend hides archived threads from the
+  // inbox (archivedByBuyer), and un-archives automatically if either side
+  // writes into it again, so this is a tidy-up, not a delete.
+  async function archiveThread(conv) {
+    if (!conv) return;
+    const wasActive = conv.id === activeId;
+    setConvList(prev => prev.filter(c => c.id !== conv.id));
+    if (wasActive) { setActiveId(null); setMobileViewingId(null); }
+    if (!usingBackend) return;
+    try {
+      await apiRequest("/api/conversations/" + encodeURIComponent(conv.id) + "/archive", {
+        method: "PATCH",
+        token:  accessToken,
+        body:   JSON.stringify({ archived: true }),
+      });
+      chatFlashOk("Thread archived. It'll come back if either of you writes again.");
+    } catch (err) {
+      // Put it back — the row vanishing while the server still has it would
+      // be a lie that survives until the next refetch.
+      setConvList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
+      if (wasActive) setActiveId(conv.id);
+      chatFlashErr("archive", err);
+    }
+  }
   const active = conversations.find(c => c.id === activeId) || conversations[0];
   const activeStatus = active ? statusMeta[active.status] : null;
   // Demo mode reads messages inline from the conversation; wired mode uses
   // the activeMsgs state populated by GET /:id/messages and socket pushes.
   const activeMessages = usingBackend ? (activeMsgs || []) : (active?.messages || []);
+
+  // One inbox row, shared by the Active and Earlier groups. `muted` dims the
+  // row so an expanded history reads as background, not as live threads.
+  function renderThreadRow(c, muted = false) {
+    const isActive = c.id === activeId;
+    const meta = statusMeta[c.status] || statusMeta.completed;
+    const Ic = meta.icon;
+    return (
+      <button key={c.id} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative", opacity: muted && !isActive ? 0.62 : 1 }}>
+        {/* Active accent bar — desktop only, left edge */}
+        {isActive && !isMobile && (
+          <span style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 3, borderRadius: 999, background: C.green }}/>
+        )}
+        {c.unread && <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", width: 6, height: 6, borderRadius: "50%", background: C.green }}/>}
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
+          <ItemImage src={c.item.img} emojiSize={32}/>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 2 }}>
+            <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.item.title}</p>
+            <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.ash, flexShrink: 0 }}>{c.lastTime}</span>
+          </div>
+          <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
+            <User size={10}/> {c.seller.name}
+            {c.seller.usesAI && <span style={{ fontFamily: F.head, fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: 4, background: C.aiMist, color: C.ai, letterSpacing: "0.05em", marginLeft: 2 }}>AI</span>}
+          </p>
+          <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: c.unread ? 700 : 500, color: c.unread ? C.ink : C.mink, marginBottom: muted ? 0 : 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.lastMsg}</p>
+          {/* The chip says whose turn it is — meaningless once a thread has
+              gone dormant. A six-month-old row badged "Pending" reads as if
+              the buyer is still waiting on a reply that is never coming, so
+              the Earlier group drops it rather than restating it. */}
+          {!muted && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.color, letterSpacing: "0.04em" }}>
+              <Ic size={10}/> {meta.label}
+            </span>
+          )}
+        </div>
+      </button>
+    );
+  }
 
   function renderMessage(m, i) {
     const isYou = m.from === "you";
@@ -4740,7 +4858,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
 
   return (
     <>
-      <PageTitle onBack={onBack} eyebrow="Messages" eyebrowColor={C.ai} title="Conversations" subtitle={unreadCount > 0 ? (unreadCount + " unread · " + conversations.length + " active thread" + (conversations.length !== 1 ? "s" : "")) : (conversations.length + " active thread" + (conversations.length !== 1 ? "s" : ""))} icon={MessageSquare} iconBg={C.aiMist} iconColor={C.ai}/>
+      <PageTitle onBack={onBack} eyebrow="Messages" eyebrowColor={C.ai} title="Conversations" subtitle={inboxSubtitle} icon={MessageSquare} iconBg={C.aiMist} iconColor={C.ai}/>
 
       {/* Success toast — celebration banner when an offer/counter is accepted. */}
       {successMsg && (
@@ -4798,42 +4916,49 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
           border: isMobile ? "1.5px solid " + C.fawn : undefined,
           borderRadius: isMobile ? 16 : 0,
         }}>
-          {filtered.length === 0 ? (
+          {conversations.length === 0 ? (
             <div style={{ padding: "40px 20px", textAlign: "center" }}>
               <MessageSquare size={28} style={{ color: C.smoke, marginBottom: 10 }}/>
               <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No threads.</p>
             </div>
-          ) : filtered.map(c => {
-            const isActive = c.id === activeId;
-            const meta = statusMeta[c.status] || statusMeta.completed;
-            const Ic = meta.icon;
-            return (
-              <button key={c.id} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative" }}>
-                {/* Active accent bar — desktop only, left edge */}
-                {isActive && !isMobile && (
-                  <span style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 3, borderRadius: 999, background: C.green }}/>
-                )}
-                {c.unread && <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", width: 6, height: 6, borderRadius: "50%", background: C.green }}/>}
-                <div style={{ width: 48, height: 48, borderRadius: 12, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
-                  <ItemImage src={c.item.img} emojiSize={32}/>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 2 }}>
-                    <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.item.title}</p>
-                    <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.ash, flexShrink: 0 }}>{c.lastTime}</span>
-                  </div>
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
-                    <User size={10}/> {c.seller.name}
-                    {c.seller.usesAI && <span style={{ fontFamily: F.head, fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: 4, background: C.aiMist, color: C.ai, letterSpacing: "0.05em", marginLeft: 2 }}>AI</span>}
+          ) : (
+            <>
+              {activeThreads.map(renderThreadRow)}
+
+              {/* Nothing live, but history exists — say so rather than showing
+                  a bare "No threads" over a list that isn't actually empty. */}
+              {activeThreads.length === 0 && (
+                <div style={{ padding: "28px 20px", textAlign: "center" }}>
+                  <MessageSquare size={24} style={{ color: C.smoke, marginBottom: 8 }}/>
+                  <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No active threads.</p>
+                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, marginTop: 2 }}>
+                    Your older conversations are below.
                   </p>
-                  <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: c.unread ? 700 : 500, color: c.unread ? C.ink : C.mink, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.lastMsg}</p>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.color, letterSpacing: "0.04em" }}>
-                    <Ic size={10}/> {meta.label}
-                  </span>
                 </div>
-              </button>
-            );
-          })}
+              )}
+
+              {/* Earlier — everything with no live claim and no activity in the
+                  last ACTIVE_WINDOW_DAYS. Collapsed by default: it's history,
+                  so it shouldn't compete with live threads for attention. */}
+              {earlierThreads.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setShowEarlier(v => !v)}
+                    style={{ width: "100%", textAlign: "left", padding: "11px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: C.sand, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    {showEarlier ? <ChevronUp size={14} style={{ color: C.mink }}/> : <ChevronDown size={14} style={{ color: C.mink }}/>}
+                    <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                      Earlier
+                    </span>
+                    <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash, marginLeft: "auto" }}>
+                      {earlierThreads.length} thread{earlierThreads.length !== 1 ? "s" : ""}
+                    </span>
+                  </button>
+                  {showEarlier && earlierThreads.map(c => renderThreadRow(c, true))}
+                </>
+              )}
+            </>
+          )}
         </div>
         )}
 
@@ -4871,6 +4996,19 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 11, fontWeight: 800, padding: "4px 11px", borderRadius: 999, background: activeStatus.bg, color: activeStatus.color, flexShrink: 0 }}>
                   <activeStatus.icon size={11}/> {activeStatus.label}
                 </span>
+              )}
+              {/* Put this thread away by hand, for when the buyer is done with
+                  it before the 30-day window retires it on its own. Hidden
+                  while a claim is live — archiving a pickup you still have to
+                  show up for would hide the only place it's coordinated. */}
+              {!activeClaimByConv[active.id] && (
+                <button
+                  onClick={() => archiveThread(active)}
+                  title="Archive this thread"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}
+                >
+                  <Archive size={11}/> Archive
+                </button>
               )}
             </div>
 
