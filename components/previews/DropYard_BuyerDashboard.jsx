@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { apiRequest } from "@/lib/api";
-import { useSocketEvent } from "@/context/SocketContext";
+import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -2425,7 +2425,7 @@ function Toast({ message, onClose }) {
 /* ============================================================
    CLAIM MODAL — buyer selects a pickup slot
    ============================================================ */
-function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessages = null }) {
+function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessages = null, onClaimCreated = null }) {
   const { isMobile } = useViewport();
   const [step, setStep] = useState("confirm"); // "confirm" | "offer-sent" | "done"
   const [mode, setMode] = useState("listed"); // "listed" | "offer"
@@ -2482,6 +2482,13 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
         claimTimeout,
       ]);
       setRealClaim(resp && resp.claim ? resp.claim : null);
+      // Tell the dashboard root a claim + conversation now exist, so the
+      // inbox, the Messages badge and the Claims tab are current by the time
+      // the buyer taps "View in Messages". The backend also pushes claim:new /
+      // message:new over the socket, but this must not depend on the socket
+      // being alive — that was the "I don't see the message unless I refresh"
+      // bug.
+      if (typeof onClaimCreated === "function") onClaimCreated(resp);
       // Both paths land on the same success step now — copy adjusts via mode.
       setStep(mode === "offer" ? "offer-sent" : "done");
     } catch (err) {
@@ -3053,7 +3060,7 @@ function formatPickupSummary(item) {
   return { days: daySummary, windows: winSummary };
 }
 
-function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller, onViewSeller, savedIds, onToggleSave, accessToken = null, onGoToMessages = null, currentUserId = null, onSwitchRole = null }) {
+function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller, onViewSeller, savedIds, onToggleSave, accessToken = null, onGoToMessages = null, onClaimCreated = null, currentUserId = null, onSwitchRole = null }) {
   // BUG-050 safety net — even with the buyer feed filtering own items out
   // (in the parent useEffect), a deep link, watchlist row, or stale cache
   // can still land a seller on their own item detail page. Detect that and
@@ -3549,7 +3556,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
         </div>
       </div>
 
-      {showClaim && <ClaimModal item={item} onClose={() => setShowClaim(false)} onConfirm={handleClaimConfirm} accessToken={accessToken} onGoToMessages={onGoToMessages}/>}
+      {showClaim && <ClaimModal item={item} onClose={() => setShowClaim(false)} onConfirm={handleClaimConfirm} accessToken={accessToken} onGoToMessages={onGoToMessages} onClaimCreated={onClaimCreated}/>}
       {showAsk && <AskModal item={item} onClose={() => setShowAsk(false)} onSend={async (msg) => {
         // Posts a PUBLIC question onto the item's Q&A — visible to every buyer
         // browsing this listing. This used to open a private conversation
@@ -6305,6 +6312,24 @@ export default function DropYardBuyerDashboard({
     return [moved, ...updated.filter((c) => c.id !== conversationId)];
   }, [accessToken, myUserId]);
 
+  // Imperative inbox refresh. Shared by the mount effect, the Messages-tab
+  // entry effect, and the post-claim callback — anything that needs the list
+  // to be current RIGHT NOW rather than whenever the next socket event lands.
+  // Keeps the previous list on a transient failure: blanking the inbox on a
+  // network blip is worse than showing a slightly stale one.
+  const refreshConvList = useCallback(() => {
+    // No token = the unauthed /preview/buyer-dashboard story, which runs on
+    // DEMO_BUYER_CONVERSATIONS. Leave it alone — clearing the list is the
+    // mount effect's job when a real session ends.
+    if (!accessToken) return Promise.resolve();
+    return apiRequest("/api/conversations", { token: accessToken })
+      .then((data) => {
+        const list = Array.isArray(data?.conversations) ? data.conversations : [];
+        setConvList(list.map((api) => adaptBuyerConversation(api, myUserId)).filter(Boolean));
+      })
+      .catch(() => { /* keep the current list on a transient blip */ });
+  }, [accessToken, myUserId]);
+
   // Initial fetch — adapts the raw API list into the UI shape MessagesPage
   // (and the existing badge logic) already expect. Refetches when itemsTick
   // bumps (claim:new / claim:updated) so the embedded item.status reflects
@@ -6322,6 +6347,49 @@ export default function DropYardBuyerDashboard({
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, myUserId, itemsTick]);
+
+  // ─── Don't make the inbox depend on the socket being alive ───
+  // The conversation list used to refresh ONLY on socket pushes (message:new /
+  // claim:new) or a full page load. So whenever the websocket was down — dev
+  // server restart, laptop waking up, a network blip, a handshake that failed
+  // on an expired token — sending an offer and tapping "View in Messages"
+  // landed on an empty inbox that stayed empty until the user hit refresh.
+  //
+  // Two cheap safety nets below. Both are no-ops when realtime is healthy
+  // (the list is already current, so the refetch just re-renders the same
+  // rows), and both remove the manual refresh when it isn't.
+
+  // 1. Entering the Messages tab always pulls a fresh list. This covers every
+  //    route in: the "View in Messages" CTA on the offer-sent screen, the top
+  //    bar, the mobile bottom nav, and the Claims-tab "Message seller" button.
+  useEffect(() => {
+    if (page !== "messages") return;
+    refreshConvList();
+  }, [page, refreshConvList]);
+
+  // 2. On socket reconnect, re-pull everything that went stale while the
+  //    connection was down — the inbox here, plus the items feed and the
+  //    claims list via their existing ticks.
+  const { connected: socketConnected } = useSocket();
+  const wasConnectedRef = useRef(socketConnected);
+  useEffect(() => {
+    const wasConnected = wasConnectedRef.current;
+    wasConnectedRef.current = socketConnected;
+    if (!socketConnected || wasConnected) return;
+    refreshConvList();
+    setItemsTick((t) => t + 1);
+    setClaimsTick((t) => t + 1);
+  }, [socketConnected, refreshConvList]);
+
+  // 3. A claim/offer the buyer just made is the one update we never have to
+  //    wait for — we know it happened because our own POST returned 201.
+  //    Bumping both ticks refetches the items feed, the inbox (itemsTick) and
+  //    the Claims tab, which is exactly what the socket's claim:new would
+  //    have triggered.
+  const handleClaimCreated = useCallback(() => {
+    setItemsTick((t) => t + 1);
+    setClaimsTick((t) => t + 1);
+  }, []);
 
   // Socket: new message → update the matching conv (or refetch if unknown).
   useSocketEvent("message:new", (payload) => {
@@ -6531,7 +6599,7 @@ export default function DropYardBuyerDashboard({
             <RegularSellerProfile sellerName={viewingSellerName} onBack={() => { setViewingSellerName(null); if (sellerBackItem) { setViewingItem(sellerBackItem); setSellerBackItem(null); } }} onSelect={setViewingItem} onClaimNow={setClaimItem} savedIds={savedIds} onToggleSave={toggleSave} itemsSource={itemsForUI} state={dropState}/>
           )}
           {viewingItem && (
-            <ItemDetail item={viewingItem} onBack={() => setViewingItem(null)} onClaimComplete={handleClaimComplete} onGoToClaims={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("claims"); }}  onViewSeller={(name) => { setSellerBackItem(viewingItem); setViewingItem(null); setViewingSellerName(name); }} savedIds={savedIds} onToggleSave={toggleSave} accessToken={accessToken} onGoToMessages={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("messages"); }} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>
+            <ItemDetail item={viewingItem} onBack={() => setViewingItem(null)} onClaimComplete={handleClaimComplete} onGoToClaims={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("claims"); }}  onViewSeller={(name) => { setSellerBackItem(viewingItem); setViewingItem(null); setViewingSellerName(name); }} savedIds={savedIds} onToggleSave={toggleSave} accessToken={accessToken} onGoToMessages={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("messages"); }} onClaimCreated={handleClaimCreated} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>
           )}
 
           {!viewingItem && !viewingSellerName && (
@@ -6562,6 +6630,7 @@ export default function DropYardBuyerDashboard({
             onConfirm={(slot, price, realClaim) => { handleClaimComplete({ ...claimItem, price }, slot, realClaim); setClaimItem(null); setPage("claims"); }}
             accessToken={accessToken}
             onGoToMessages={() => { setClaimItem(null); setPage("messages"); }}
+            onClaimCreated={handleClaimCreated}
           />
         )}
 
