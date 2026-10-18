@@ -34,7 +34,15 @@ function JoinPageContent() {
   const dashboardHref = useCallback(
     (role?: string) => {
       if (role === "ADMIN") return "/admin";
-      return searchParams.get("as") === "seller" ? "/buyer?mode=seller" : "/buyer";
+      // ?item=<id> means the visitor was trying to claim a specific listing
+      // and got sent here to sign in first. Hand it back so the dashboard
+      // opens that item instead of a generic feed (BUG-085).
+      const itemId = searchParams.get("item");
+      const params = new URLSearchParams();
+      if (searchParams.get("as") === "seller") params.set("mode", "seller");
+      if (itemId) params.set("item", itemId);
+      const qs = params.toString();
+      return qs ? `/buyer?${qs}` : "/buyer";
     },
     [searchParams],
   );

@@ -9,6 +9,7 @@ import DifferentMarketplaceSection from "@/components/DifferentMarketplaceSectio
 import EarlyAccessSection from "@/components/EarlyAccessSection";
 import SellingWaysSection from "@/components/SellingWaysSection";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Users,
@@ -273,8 +274,14 @@ function ItemCard({
     }
   };
 
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg hover:border-emerald-200 transition-all duration-300 group">
+  // The card body, rendered inside a link to the public item page when the row
+  // came from the API. That page is server-rendered, works signed-out, shows
+  // every photo and the full description, and its Claim CTA routes through
+  // /buyer, which sends signed-out visitors to /join and returns them to this
+  // exact item afterwards (BUG-085). A synthetic placeholder row has no page
+  // to open, so it stays unlinked rather than producing a dead 404 link.
+  const body = (
+    <>
       <div className="relative bg-gradient-to-br from-gray-50 to-gray-100 h-44 flex items-center justify-center overflow-hidden">
         {/^(https?:\/\/|data:image\/)/i.test(item.image) ? (
           <img
@@ -287,15 +294,6 @@ function ItemCard({
           <span className="text-[59px] group-hover:scale-110 transition-transform duration-300">{item.image}</span>
         )}
         <div className="absolute top-3 left-3 bg-amber-500 text-white text-[11px] font-bold px-2 py-1 rounded-full">-{discount}%</div>
-        <button
-          onClick={handleHeart}
-          disabled={pending}
-          aria-label={saved ? "Unsave item" : "Save item"}
-          aria-pressed={saved}
-          className={`absolute top-3 right-3 w-10 h-10 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${saved ? "bg-rose-500 text-white" : "bg-white/90 text-gray-400 hover:text-rose-500"}`}
-        >
-          <Heart size={16} fill={saved ? "currentColor" : "none"} />
-        </button>
         <div className="absolute bottom-3 left-3 bg-white/90 text-[11px] font-medium px-2 py-1 rounded-full text-gray-700">{item.condition}</div>
       </div>
       <div className="p-4">
@@ -317,6 +315,29 @@ function ItemCard({
           <div className="flex items-center gap-1 text-[11px] text-gray-400"><Heart size={12} />{saves}</div>
         </div>
       </div>
+    </>
+  );
+
+  return (
+    <div className="relative bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg hover:border-emerald-200 transition-all duration-300 group">
+      {realItemId ? (
+        <Link href={`/item/${encodeURIComponent(realItemId)}`} className="block" aria-label={`View ${item.title}`}>
+          {body}
+        </Link>
+      ) : body}
+      {/* Save sits OUTSIDE the link, not nested in it: a button inside an
+          anchor is invalid markup, and a click on it must save the item
+          rather than navigate. Same coordinates as before — the photo starts
+          at the card's top edge, so top-3/right-3 lands in the same place. */}
+      <button
+        onClick={handleHeart}
+        disabled={pending}
+        aria-label={saved ? "Unsave item" : "Save item"}
+        aria-pressed={saved}
+        className={`absolute top-3 right-3 z-10 w-10 h-10 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${saved ? "bg-rose-500 text-white" : "bg-white/90 text-gray-400 hover:text-rose-500"}`}
+      >
+        <Heart size={16} fill={saved ? "currentColor" : "none"} />
+      </button>
     </div>
   );
 }
@@ -904,14 +925,9 @@ function HomePage({
   // visitors. When the API returns 0 items the section hides entirely.
   // Same honest-empty-state pattern as the Sneak Peek fix (BUG-037).
   const [featuredItems, setFeaturedItems] = useState<typeof FEATURED_ITEMS>([]);
-  // Sent with the viewer's token when there is one. The feed is viewer-aware:
-  // it leaves out items the viewer already has an offer on (BUG-105), and an
-  // anonymous request can't apply that. Still a public endpoint — signed-out
-  // visitors get the same strip they always did.
-  const { accessToken: featuredToken } = useAuth();
   useEffect(() => {
     let cancelled = false;
-    apiRequest<{ items: Array<Record<string, unknown>> }>("/api/items?limit=4", featuredToken ? { token: featuredToken } : {})
+    apiRequest<{ items: Array<Record<string, unknown>> }>("/api/items?limit=4")
       .then((data) => {
         if (cancelled) return;
         const list = Array.isArray(data?.items) ? data.items : [];
@@ -946,7 +962,7 @@ function HomePage({
       })
       .catch(() => { if (!cancelled) setFeaturedItems([]); /* honest empty state on network blip */ });
     return () => { cancelled = true; };
-  }, [featuredToken]);
+  }, []);
   const testimonials = [
     {
       id: 1,
