@@ -40,6 +40,27 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-107  ·  P2  ·  / (homepage) → "Featured This Week" item cards  ·  Status: Fixed (verify)
+**Title:** Clicking a featured item card does nothing — there is no way into a listing from the landing page.
+**Found by:** Narveer · **Found date:** 2026-10-18 · **Test case:** exploratory
+**Repro steps:** Open `/`, scroll to "Featured This Week", click any card (signed out or in).
+**Expected:** The listing opens with its photos and details; attempting to claim while signed out prompts sign-up / log-in.
+**Actual:** Nothing happens. Only the heart does anything; the card has hover styling, so it reads as broken.
+**Environment:** Chrome, 1280px, local dev
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** `tsc` clean, lint clean (34 problems across the three routes before and after — no new ones), `next build` compiles. Browser pass pending.
+**Notes:** The card was a plain `<div>` with no handler. The destination already existed — `/item/[id]`, the public server-rendered page built for share links (BUG-085) — nothing linked to it from the homepage.
+
+Fix: the card body is wrapped in a `next/link` to `/item/<id>`, which keeps middle-click and open-in-new-tab working and (being `next/link`) avoids the full document reload that made the hero CTA feel dead in [[BUG-081]]. Guarded by the existing `realItemId` check, so a synthetic placeholder row is never linked to a 404. The Save button moved **out** of the link — a `<button>` inside an `<a>` is invalid markup and the click must save, not navigate — and is positioned over the card at the same coordinates.
+
+**Second half, found while tracing the signed-out path:** the claim hand-off dropped the item. `/item/<id>`'s CTA goes to `/buyer?item=<id>`; for a signed-out visitor `/buyer` did `router.replace("/join")`, discarding the id, and `/join` only ever forwarded `?as=seller`. So the visitor was correctly asked to sign up, then landed on a generic Discover feed with no trace of the listing they clicked — exactly the journey this report asks for, broken at the last step. The id now rides through: `/buyer` redirects to `/join?item=<id>`, and `/join` returns it on every exit path (sign-in, sign-up, Google, and the already-signed-in bounce). The dashboard end of this was already built under BUG-085.
+
+**Follow-up (18 Oct, Narveer):** signed-out worked, signed-in didn't — `/buyer?item=<id>` landed on Discover with the item never opening and `?item=` still sitting in the address bar. Root cause is **React StrictMode**, on by default in dev. The deep-link effect marked the id consumed in a ref *before* fetching and vetoed its own result through a `cancelled` flag set in cleanup. StrictMode's double-invoke therefore ran the effect, cleaned it up (`cancelled = true`), and bailed on the second pass at the ref check — so the single in-flight response was thrown away. The leftover `?item=` was the tell: `.finally` is what strips it, and it was gated on the same flag. Signed-out escaped it only by accident of timing: the token is null on mount, both passes return early, and the later token-driven re-run is not double-invoked.
+
+Fix: the `cancelled` flag is gone. `consumedItemRef` already guarantees one fetch per id, so it was redundant as well as harmful, and a resolve after unmount is a no-op in React 18. It was the only ref-guard + cancelled-flag pairing in the file; the other `cancelled` uses are re-runnable fetches where the flag is correct.
+
+**Known limitation:** `/item/[id]` shows the hero photo plus up to four thumbnails — which covers every photo, since listings cap at 5 — but the thumbnails aren't clickable to enlarge or swap the hero. It's a server component by design (Open Graph unfurling), so a gallery would need a small client island.
+
 ### BUG-106  ·  P2  ·  /buyer Messages → conversation status chip  ·  Status: Fixed (verify)
 **Title:** Every thread is chipped "Answered", including ones nobody has replied to.
 **Found by:** Narveer · **Found date:** 2026-10-17 · **Test case:** exploratory

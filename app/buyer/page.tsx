@@ -40,7 +40,15 @@ function BuyerDashboardContent() {
   const { user, loading } = useAuth();
   useEffect(() => {
     if (!loading && !user) {
-      router.replace("/join");
+      // Carry the deep-linked item through the sign-in detour. A signed-out
+      // visitor arrives here from the public item page's Claim CTA as
+      // /buyer?item=<id>; dropping the id meant they signed up and landed on
+      // a generic Discover feed with no sign of the listing they clicked.
+      // /join hands it back on the way out (BUG-085's missing half).
+      const itemId = typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("item")
+        : null;
+      router.replace(itemId ? `/join?item=${encodeURIComponent(itemId)}` : "/join");
     }
   }, [loading, user, router]);
   if (loading || !user) {

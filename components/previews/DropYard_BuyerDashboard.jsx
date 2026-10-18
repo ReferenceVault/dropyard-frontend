@@ -6285,23 +6285,30 @@ export default function DropYardBuyerDashboard({
   // paginated and filters out the viewer's own items, so a shared item is
   // frequently absent from it. A bad or removed id just leaves the buyer on
   // Discover — a shared link outliving its item is normal, not an error.
+  // NO cancelled-flag here, deliberately. This effect used to set one in a
+  // cleanup, and under React StrictMode (on by default in dev) that made the
+  // deep link a no-op for anyone ALREADY signed in: the double-invoke ran the
+  // effect, cleaned it up — flipping `cancelled` — then bailed on the second
+  // pass at the ref check, so the one in-flight response was discarded and the
+  // item never opened. It worked signed-out only because the token arrives
+  // after mount, and that later re-run isn't double-invoked.
+  // `consumedItemRef` is what guarantees a single fetch per id, so the flag
+  // was redundant as well as harmful; a resolve after unmount is a no-op.
   const consumedItemRef = useRef(null);
   useEffect(() => {
     if (!initialItemId || !accessToken) return;
     if (consumedItemRef.current === initialItemId) return; // once per id
     consumedItemRef.current = initialItemId;
-    let cancelled = false;
     apiRequest(`/api/items/${encodeURIComponent(initialItemId)}`, { token: accessToken })
       .then((r) => {
-        if (cancelled || !r?.item) return;
+        if (!r?.item) return;
         const ui = adaptBuyerItem(r.item);
         if (!ui) return;
         setPage("discover");
         setViewingItem(toDetailItem(ui));
       })
       .catch(() => { /* removed / invalid id — stay on Discover */ })
-      .finally(() => { if (!cancelled && onInitialItemConsumed) onInitialItemConsumed(); });
-    return () => { cancelled = true; };
+      .finally(() => { if (onInitialItemConsumed) onInitialItemConsumed(); });
   }, [initialItemId, accessToken, onInitialItemConsumed]);
   // Watchlist — demo set populates /preview/buyer-dashboard so the cards
   // look interactive; real users start with an empty Set and hydrate from
