@@ -1634,7 +1634,14 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   // will refuse.
   const isPreview = item.status === "preview";
   const isClaimed = isClaimedByOther || isClaimedByMe || isPurchasedByMe;
-  const ctaDisabled = isClaimed || isPreview;
+  // This viewer has an offer on the item that the seller hasn't answered. The
+  // card stays in the feed and keeps its normal look — only the badge above
+  // and this CTA change, and only for them; every other buyer sees an ordinary
+  // claimable card. The button is parked rather than live because the backend
+  // refuses a second claim from the same buyer ("you already have an offer on
+  // this item"), so offering it would be an invitation to an error toast.
+  const hasPendingOffer = offerPending === true && !isClaimed && !isPreview;
+  const ctaDisabled = isClaimed || isPreview || hasPendingOffer;
 
   return (
     <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 20, overflow: "hidden", border: "1px solid " + (fromPeek ? C.amber + "60" : hovered ? C.fawn : C.fawn + "80"), cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-3px)" : "translateY(0)", boxShadow: fromPeek ? (hovered ? "inset 4px 0 0 " + C.amber + ", 0 12px 32px rgba(31, 29, 25, 0.08)" : "inset 4px 0 0 " + C.amber + ", 0 1px 0 " + C.fawn + "60") : (hovered ? "0 12px 32px rgba(31, 29, 25, 0.08)" : "0 1px 0 " + C.fawn + "60"), animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
@@ -1734,24 +1741,26 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
 
         <button
           onClick={e => { e.stopPropagation(); if (ctaDisabled) { if (isPreview && onOpen) onOpen(); return; } if (onClaimNow) onClaimNow(); else if (onOpen) onOpen(); }}
-          disabled={isClaimed}
+          disabled={isClaimed || hasPendingOffer}
           className="cta-primary"
           style={{
             width: "100%",
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             padding: "10px 0", borderRadius: 12, border: "none",
-            background: isPreview ? C.sand : cardAccent,
-            color: isPreview ? C.mink : "#fff",
+            background: isPreview ? C.sand : hasPendingOffer ? C.amberMist : cardAccent,
+            color: isPreview ? C.mink : hasPendingOffer ? C.amberDeep : "#fff",
             fontFamily: F.head, fontSize: 12, fontWeight: 800,
-            cursor: isClaimed ? "not-allowed" : "pointer",
+            cursor: (isClaimed || hasPendingOffer) ? "not-allowed" : "pointer",
             opacity: isClaimed ? 0.4 : 1,
             marginTop: "auto",
-            boxShadow: (item.layer === "shelf" || isPreview) ? "none" : "0 2px 0 " + cardAccent + "40",
+            boxShadow: (item.layer === "shelf" || isPreview || hasPendingOffer) ? "none" : "0 2px 0 " + cardAccent + "40",
           }}
         >
           {isPreview
             ? <><Clock size={13}/> Opens {dropOpenDay()} {dropOpenHour()}</>
-            : <><CtaIcon size={13}/> {ctaLabel}</>}
+            : hasPendingOffer
+              ? <><Clock size={13}/> Waiting for seller</>
+              : <><CtaIcon size={13}/> {ctaLabel}</>}
         </button>
       </div>
     </article>
@@ -6213,7 +6222,28 @@ export default function DropYardBuyerDashboard({
     if (!accessToken) { setLiveItems(null); setItemsLoading(false); return; }
     let cancelled = false;
     setItemsLoading(true);
-    apiRequest("/api/items", { token: accessToken })
+    // Discover has no pagination — it renders one grid of everything that's
+    // claimable — so the feed has to be drained, not sampled. This called
+    // GET /api/items with no params, which the backend serves as page 1 of
+    // 20; with 28 live items the 8 oldest simply did not exist as far as any
+    // buyer was concerned, while their sellers saw "Live in Drop" on them.
+    // 100 is the backend's per-page cap; the loop covers the rest and stops
+    // at 1000 items so a runaway catalogue can't hang the dashboard.
+    const PAGE_SIZE = 100;
+    const MAX_PAGES = 10;
+    const fetchAllItems = async () => {
+      const first = await apiRequest(`/api/items?limit=${PAGE_SIZE}`, { token: accessToken });
+      const items = Array.isArray(first?.items) ? [...first.items] : [];
+      const total = typeof first?.total === "number" ? first.total : items.length;
+      const pages = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGES);
+      for (let p = 2; p <= pages; p++) {
+        if (cancelled) break;
+        const next = await apiRequest(`/api/items?limit=${PAGE_SIZE}&page=${p}`, { token: accessToken });
+        if (Array.isArray(next?.items)) items.push(...next.items);
+      }
+      return { items };
+    };
+    fetchAllItems()
       .then(data => {
         if (cancelled) return;
         const list = Array.isArray(data?.items) ? data.items : [];

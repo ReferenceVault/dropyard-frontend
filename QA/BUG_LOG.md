@@ -40,6 +40,23 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-108  ·  P1  ·  /buyer Discover feed — only the first 20 items exist  ·  Status: Fixed (verify)
+**Title:** Listings show "Live in Drop" to their seller but never appear on the buyer dashboard.
+**Found by:** Narveer · **Found date:** 2026-10-18 · **Test case:** exploratory
+**Repro steps:** Have more than 20 claimable items in the database → sign in as a buyer → Discover.
+**Expected:** Every claimable item is reachable.
+**Actual:** Exactly 20 render ("20 items up for grabs"), and the rest are invisible with no "load more" and no indication anything was withheld. With 28 live items, the 8 oldest — `dewdewdewd`, `sadsdd`, `blood doner`, `wooden chair colored` among them — could not be seen or claimed by anyone.
+**Environment:** Chrome, local dev, 28 live items
+**Fix commit:** _(local, oct17DropF)_
+**Re-tested:** Verified against the running API: `GET /api/items` returns 20 of 28, `?limit=100` returns all 28 including the four reported titles. Parse + lint clean (65 problems before and after), `next build` compiles. Browser pass pending.
+**Notes:** The dashboard called `GET /api/items` with no query at all, and the backend serves that as page 1 at `limit=20` (`Math.min(100, parseInt(limit) || 20)`). Discover has no pagination or infinite scroll — it renders one grid of everything claimable — so page 1 *was* the catalogue. Ordering is `createdAt desc`, which is why the symptom reads as "my older listings vanished" while the seller's own Inventory, which queries `/api/items/mine` with no such cap, keeps showing them as "Live in Drop". The two surfaces disagreed because only one of them was paginated.
+
+Fix: the feed is now drained rather than sampled — request `?limit=100` (the backend's per-page cap), read `total` from the response, and fetch any remaining pages, stopping at 10 pages / 1000 items so a runaway catalogue can't hang the dashboard. If the grid ever needs to scale past that, this is the place to add real infinite scroll.
+
+**Two by-design behaviours that look like the same bug and are NOT changed:**
+  - A seller never sees their **own** items in their **own** buyer feed — filtered client-side under [[BUG-050]], because they can neither claim nor message themselves. Checking from a second account is the way to confirm a listing is live.
+  - The homepage's "Featured This Week" is `?limit=4` — the four most recent listings, not a catalogue. An older listing legitimately isn't there; "Browse Items" is the full view.
+
 ### BUG-107  ·  P2  ·  / (homepage) → "Featured This Week" item cards  ·  Status: Fixed (verify)
 **Title:** Clicking a featured item card does nothing — there is no way into a listing from the landing page.
 **Found by:** Narveer · **Found date:** 2026-10-18 · **Test case:** exploratory
@@ -106,7 +123,12 @@ Implementation — `src/lib/itemAvailability.ts`, on one invariant: **while an i
 
 Frontend: `claimedIds` excluded `offer-pending` claims, which otherwise put the "YOU CLAIMED THIS" overlay on an item that is still open to everyone and disabled the buyer's own CTA. Pending offers are a separate `offeredIds` set and render as a quiet "Offer pending" badge; the card stays claimable, because claiming at the listed price is exactly how a buyer takes the item while their offer sits unanswered.
 
-**Follow-up (same day, Narveer):** the item should vanish **for the buyer who made the offer** — everyone else keeps seeing it. Done in `GET /api/items` rather than per-surface: when the request carries a viewer, the query adds `claims: { none: { buyerId: viewer, status: PROPOSED } }`. One rule, so Discover and the homepage's "Featured This Week" agree, and the `total` used for pagination counts the same set. The homepage fetched the feed anonymously, so it now passes the viewer's token when signed in; signed-out visitors see exactly what they saw before. Saved is a different endpoint (the watchlist) and deliberately still shows the item — the buyer put it there on purpose — carrying the "Offer pending" badge.
+**Follow-up 1 (same day, Narveer):** the item should vanish **for the buyer who made the offer**. Implemented in `GET /api/items` as `claims: { none: { buyerId: viewer, status: PROPOSED } }`, with the homepage passing its token so both surfaces agreed.
+
+**Follow-up 2 — reversed on review (18 Oct, Narveer):** the offering buyer should *keep* seeing the item; the card should just mark their pending claim. Hiding it meant losing sight of the listing while waiting on an answer. So:
+  - The feed filter is gone — `GET /api/items` is viewer-agnostic again, and the homepage fetches it anonymously as it always did. **The landing page shows no pending-claim marker**, as requested: it's a public strip with no notion of who's looking.
+  - On the buyer dashboard the marker is derived client-side from the viewer's own claims (`offeredIds`), so it is visible to that buyer and to nobody else. Other buyers get an ordinary claimable card.
+  - The marker is two things on one card: an "Offer pending" badge on the photo, and the CTA parked as "Waiting for seller". The button is disabled rather than live because the backend refuses a second claim from the same buyer ("you already have an offer on this item") — leaving it clickable would just produce an error toast. The full "YOU CLAIMED THIS" overlay stays reserved for actual claims; an offer must not grey the card out.
 
 **Existing data:** items already `RESERVED` by a pending offer stay hidden until that claim is declined, cancelled or expires (36h) — the fix changes what happens from now on, it does not sweep the table. To release them, decline the offers, or run once:
 ```sql
