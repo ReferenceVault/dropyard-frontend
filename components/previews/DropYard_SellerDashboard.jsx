@@ -27,7 +27,7 @@ import {
   MessageSquare, Plus, Truck, History, ArrowLeft, Shield, Tag, TrendingDown,
   Home, Heart, Users, Mail, Phone, Info, Lock, CreditCard, Banknote, Upload, RefreshCw,
   Star, Settings, BarChart3, Bell, Award, Leaf, Send, Share2, AlertCircle,
-  Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag
+  Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag, Archive
 } from "lucide-react";
 
 /* ============================================================
@@ -6023,6 +6023,30 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   };
   const [loading, setLoading]           = useState(usingBackend && convListProp == null);
 
+  // ─── Archived threads ────────────────────────────────────────────────────
+  // The seller inbox had no archive at all: the backend flag
+  // (`archivedBySeller`) and the PATCH route were already there, and the
+  // buyer had the button, but a seller's thread list only ever grew. Same
+  // two-list model as the buyer view — the live inbox drives the nav badge,
+  // and this list renders the collapsed "Archived" group beneath it.
+  const [archivedList, setArchivedList]       = useState([]);
+  const [showArchived, setShowArchived]       = useState(false);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  useEffect(() => {
+    if (!usingBackend) { setArchivedList([]); return; }
+    let cancelled = false;
+    setArchivedLoading(true);
+    apiRequest("/api/conversations?archived=true", { token: accessToken })
+      .then((data) => {
+        if (cancelled) return;
+        const list = Array.isArray(data?.conversations) ? data.conversations : [];
+        setArchivedList(list.map((api) => adaptSellerConversation(api, myId)).filter(Boolean));
+      })
+      .catch(() => { if (!cancelled) setArchivedList([]); })
+      .finally(() => { if (!cancelled) setArchivedLoading(false); });
+    return () => { cancelled = true; };
+  }, [usingBackend, accessToken, myId]);
+
   // Active thread messages — only used in wired mode. In demo mode the
   // existing render path reads inline from each conversation's `messages`.
   const [activeMsgs, setActiveMsgs]     = useState(null);
@@ -6250,6 +6274,14 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       // The socket emit echoes back to me, which appends via the message:new
       // handler. No optimistic add needed.
       setDraft("");
+      // Writing into an archived thread un-archives the sender's side server
+      // side, so mirror that here instead of leaving the row under "Archived"
+      // with a message the seller just sent as its preview.
+      const archived = archivedList.find(c => c.id === activeId);
+      if (archived) {
+        setArchivedList(prev => prev.filter(c => c.id !== activeId));
+        setConvList(prev => (prev.some(c => c.id === activeId) ? prev : [archived, ...prev]));
+      }
     } catch (err) {
       setErrorMsg("Send failed: " + (err?.message || "try again"));
       setTimeout(() => setErrorMsg(null), 4500);
@@ -6342,8 +6374,93 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
 
   // No type filter any more (BUG-088) — the list is every thread, newest first.
   const filtered = conversations;
-  const active = conversations.find(c => c.id === activeId) || conversations[0];
+  // Selection can land on an archived thread — opening one is how the seller
+  // reads it before deciding to bring it back.
+  const activeIsArchived = archivedList.some(c => c.id === activeId);
+  const active = conversations.find(c => c.id === activeId)
+    || archivedList.find(c => c.id === activeId)
+    || conversations[0];
   const activeStatus = active ? statusMeta[active.status] : null;
+
+  // Archive / unarchive. The endpoint and the per-side flag
+  // (`archivedBySeller`) already existed — the seller inbox simply never
+  // offered either, so a seller's thread list only ever grew.
+  async function archiveThread(conv) {
+    if (!conv) return;
+    const wasActive = conv.id === activeId;
+    setConvList(prev => prev.filter(c => c.id !== conv.id));
+    setArchivedList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
+    if (wasActive) { setActiveId(null); setMobileViewingId(null); }
+    if (!usingBackend) return;
+    try {
+      await apiRequest("/api/conversations/" + encodeURIComponent(conv.id) + "/archive", {
+        method: "PATCH",
+        token:  accessToken,
+        body:   JSON.stringify({ archived: true }),
+      });
+      setSuccessMsg("Moved to Archived, at the bottom of this list.");
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err) {
+      setConvList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
+      setArchivedList(prev => prev.filter(c => c.id !== conv.id));
+      if (wasActive) setActiveId(conv.id);
+      setErrorMsg("Couldn't archive: " + (err?.message || "try again"));
+      setTimeout(() => setErrorMsg(null), 4000);
+    }
+  }
+  async function unarchiveThread(conv) {
+    if (!conv) return;
+    setArchivedList(prev => prev.filter(c => c.id !== conv.id));
+    setConvList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
+    if (!usingBackend) return;
+    try {
+      await apiRequest("/api/conversations/" + encodeURIComponent(conv.id) + "/archive", {
+        method: "PATCH",
+        token:  accessToken,
+        body:   JSON.stringify({ archived: false }),
+      });
+      setSuccessMsg("Back in your inbox.");
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err) {
+      setArchivedList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
+      setConvList(prev => prev.filter(c => c.id !== conv.id));
+      setErrorMsg("Couldn't unarchive: " + (err?.message || "try again"));
+      setTimeout(() => setErrorMsg(null), 4000);
+    }
+  }
+
+  // One row renderer, shared by the inbox and the Archived group below it.
+  function renderThreadRow(c, muted = false) {
+    const isActive = c.id === activeId;
+    const meta = statusMeta[c.status] || statusMeta.completed;
+    const Ic = meta.icon;
+    return (
+      <button key={c.id} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative", opacity: muted && !isActive ? 0.62 : 1 }}>
+        {/* Active accent bar — desktop only, left edge */}
+        {isActive && !isMobile && (
+          <span style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 3, borderRadius: 999, background: C.green }}/>
+        )}
+        {c.unread && <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", width: 7, height: 7, borderRadius: "50%", background: C.green, boxShadow: "0 0 0 3px " + C.greenMist }}/>}
+        <ConversationItemThumb item={c.item} size={48} emojiSize={32}/>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 2 }}>
+            <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.item.title}</p>
+            <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.ash, flexShrink: 0 }}>{c.lastTime}</span>
+          </div>
+          <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
+            <User size={10}/> {c.buyer.name}
+            <Star size={10} style={{ color: C.amber, marginLeft: 4 }} fill={C.amber}/> {c.buyer.rating.toFixed(1)}
+          </p>
+          <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: c.unread ? 700 : 500, color: c.unread ? C.ink : C.mink, marginBottom: muted ? 0 : 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.lastMsg}</p>
+          {!muted && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.color, letterSpacing: "0.04em" }}>
+              <Ic size={10}/> {meta.label}
+            </span>
+          )}
+        </div>
+      </button>
+    );
+  }
   // Demo mode reads messages inline from the conversation; wired mode uses
   // the activeMsgs state populated by GET /:id/messages and socket pushes.
   const activeMessages = usingBackend ? (activeMsgs || []) : (active?.messages || []);
@@ -6523,40 +6640,68 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
           border: isMobile ? "1.5px solid " + C.fawn : undefined,
           borderRadius: isMobile ? 16 : 0,
         }}>
-          {filtered.length === 0 ? (
+          {/* `archivedList` counts here too — otherwise archiving the last
+              live thread renders "No threads yet" over an Archived group
+              that never gets a chance to draw. */}
+          {filtered.length === 0 && archivedList.length === 0 ? (
             <div style={{ padding: "40px 20px", textAlign: "center" }}>
               <MessageSquare size={28} style={{ color: C.smoke, marginBottom: 10 }}/>
               <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No threads yet.</p>
             </div>
-          ) : filtered.map(c => {
-            const isActive = c.id === activeId;
-            const meta = statusMeta[c.status] || statusMeta.completed;
-            const Ic = meta.icon;
-            return (
-              <button key={c.id} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative" }}>
-                {/* Active accent bar — desktop only, left edge */}
-                {isActive && !isMobile && (
-                  <span style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 3, borderRadius: 999, background: C.green }}/>
-                )}
-                {c.unread && <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", width: 7, height: 7, borderRadius: "50%", background: C.green, boxShadow: "0 0 0 3px " + C.greenMist }}/>}
-                <ConversationItemThumb item={c.item} size={48} emojiSize={32}/>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 2 }}>
-                    <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.item.title}</p>
-                    <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.ash, flexShrink: 0 }}>{c.lastTime}</span>
-                  </div>
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
-                    <User size={10}/> {c.buyer.name}
-                    <Star size={10} style={{ color: C.amber, marginLeft: 4 }} fill={C.amber}/> {c.buyer.rating.toFixed(1)}
+          ) : (
+            <>
+              {filtered.map(c => renderThreadRow(c))}
+
+              {filtered.length === 0 && (
+                <div style={{ padding: "28px 20px", textAlign: "center" }}>
+                  <MessageSquare size={24} style={{ color: C.smoke, marginBottom: 8 }}/>
+                  <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No threads in your inbox.</p>
+                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, marginTop: 2 }}>
+                    Your archived conversations are below.
                   </p>
-                  <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: c.unread ? 700 : 500, color: c.unread ? C.ink : C.mink, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.lastMsg}</p>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.color, letterSpacing: "0.04em" }}>
-                    <Ic size={10}/> {meta.label}
-                  </span>
                 </div>
-              </button>
-            );
-          })}
+              )}
+
+              {/* Archived — collapsed, at the very bottom, the way WhatsApp
+                  and Telegram park theirs. Open one to read it; Unarchive
+                  puts it back in the inbox. */}
+              {archivedList.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setShowArchived(v => !v)}
+                    style={{ width: "100%", textAlign: "left", padding: "11px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: C.sand, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    {showArchived ? <ChevronUp size={14} style={{ color: C.mink }}/> : <ChevronDown size={14} style={{ color: C.mink }}/>}
+                    <Archive size={12} style={{ color: C.mink }}/>
+                    <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                      Archived
+                    </span>
+                    <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash, marginLeft: "auto" }}>
+                      {archivedList.length} thread{archivedList.length !== 1 ? "s" : ""}
+                    </span>
+                  </button>
+                  {showArchived && archivedList.map(c => (
+                    <div key={c.id} style={{ position: "relative" }}>
+                      {renderThreadRow(c, true)}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); unarchiveThread(c); }}
+                        title="Move back to inbox"
+                        style={{ position: "absolute", right: 14, bottom: 12, display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 10, fontWeight: 800, cursor: "pointer" }}
+                      >
+                        <RefreshCw size={10}/> Unarchive
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {archivedLoading && archivedList.length === 0 && (
+                <div style={{ padding: "10px 18px", borderTop: "1px solid " + C.fawn, background: C.sand }}>
+                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash }}>Checking your archive…</p>
+                </div>
+              )}
+            </>
+          )}
         </div>
         )}
 
@@ -6621,6 +6766,26 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: isMobile ? 10 : 11, fontWeight: 800, padding: isMobile ? "3px 9px" : "4px 11px", borderRadius: 999, background: activeStatus.bg, color: activeStatus.color, flexShrink: 0 }}>
                   <activeStatus.icon size={isMobile ? 10 : 11}/> {activeStatus.label}
                 </span>
+              )}
+              {/* Tidy a finished thread away. Hidden while a pickup is still
+                  scheduled — archiving a pickup the seller has to show up
+                  for would hide the only place it's being coordinated. */}
+              {activeIsArchived ? (
+                <button
+                  onClick={() => unarchiveThread(active)}
+                  title="Move this thread back to your inbox"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, border: "1.5px solid " + C.green + "55", background: C.greenMist, color: C.greenDeep, fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}
+                >
+                  <RefreshCw size={11}/> Unarchive
+                </button>
+              ) : !["pickup-today", "pickup-scheduled"].includes(active.status) && (
+                <button
+                  onClick={() => archiveThread(active)}
+                  title="Archive this thread"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}
+                >
+                  <Archive size={11}/> Archive
+                </button>
               )}
             </div>
 
