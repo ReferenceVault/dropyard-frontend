@@ -14,16 +14,20 @@ import { useSocket } from "@/context/SocketContext";
 //
 // Production-suitable: <4px dot, no chrome, doesn't affect layout.
 export function SocketHealthDot({ className = "" }: { className?: string }) {
-  const { socket, connected } = useSocket();
+  const { socket, connected, lastError } = useSocket();
   const status = !socket ? "off" : connected ? "live" : "reconnecting";
 
   const color = status === "live" ? "#10b981" /* emerald-500 */
               : status === "reconnecting" ? "#f59e0b" /* amber-500 */
               : "#94a3b8" /* slate-400 */;
 
+  // Carry the handshake failure into the tooltip. Without it the dot says
+  // "reconnecting…" forever and gives no clue whether the cause is auth,
+  // CORS or a backend that isn't running — the three things that actually
+  // differ, and the whole reason messages stop arriving live.
   const label =
     status === "live" ? "Real-time updates: connected"
-    : status === "reconnecting" ? "Real-time updates: reconnecting…"
+    : status === "reconnecting" ? `Real-time updates: reconnecting…${lastError ? ` (${lastError})` : ""}`
     : "Real-time updates: not connected";
 
   return (

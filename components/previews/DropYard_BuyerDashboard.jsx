@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { apiRequest } from "@/lib/api";
 import { useSocket, useSocketEvent } from "@/context/SocketContext";
+import { formatPickupDateList, formatPickupWeekday } from "@/lib/pickupDates";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -1607,7 +1608,7 @@ async function shareListing(item) {
 /* ============================================================
    ITEM CARD  — works for drop / shelf
    ============================================================ */
-function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false }) {
+function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null }) {
   const [hovered, setHovered] = useState(false);
   const discount = item.op ? Math.round((1 - item.p / item.op) * 100) : null;
   let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = "Live Drop", cardAccent = C.green, ctaLabel = "Claim Now", CtaIcon = Check;
@@ -1641,7 +1642,12 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   // refuses a second claim from the same buyer ("you already have an offer on
   // this item"), so offering it would be an invitation to an error toast.
   const hasPendingOffer = offerPending === true && !isClaimed && !isPreview;
-  const ctaDisabled = isClaimed || isPreview || hasPendingOffer;
+  // The viewer is the seller. The card stays in the feed — this is how a
+  // seller sees their listing exactly as the neighbourhood sees it — but
+  // every buyer-side action comes off it: no claim (the backend refuses a
+  // self-claim), no save (watching your own item is meaningless). Opening
+  // the card still works; ItemDetail offers the Seller-view switch there.
+  const ctaDisabled = isOwn || isClaimed || isPreview || hasPendingOffer;
 
   return (
     <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 20, overflow: "hidden", border: "1px solid " + (fromPeek ? C.amber + "60" : hovered ? C.fawn : C.fawn + "80"), cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-3px)" : "translateY(0)", boxShadow: fromPeek ? (hovered ? "inset 4px 0 0 " + C.amber + ", 0 12px 32px rgba(31, 29, 25, 0.08)" : "inset 4px 0 0 " + C.amber + ", 0 1px 0 " + C.fawn + "60") : (hovered ? "0 12px 32px rgba(31, 29, 25, 0.08)" : "0 1px 0 " + C.fawn + "60"), animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
@@ -1665,6 +1671,10 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
           >
             <Share2 size={15} style={{ color: C.ink, strokeWidth: 2 }}/>
           </button>
+          {/* Save stays available on an own listing too. Watching your own
+              item is pointless, but it's allowed by the backend, so a seller
+              who saved one before now needs this heart to unsave it — and
+              the Saved page renders the same card. */}
           <button onClick={e => { e.stopPropagation(); onToggleSave(item.id); }} style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: saved ? C.paper : "rgba(255,255,255,0.95)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 2px 8px rgba(31,29,25,0.1)" }}>
             <Heart size={16} style={{ color: saved ? C.claret : C.ink, fill: saved ? C.claret : "none", strokeWidth: 2 }}/>
           </button>
@@ -1681,9 +1691,17 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
         {/* An offer the seller hasn't answered yet. Deliberately a badge and
             not the full-card overlay below: the item is still listed and still
             claimable — by this buyer at the listed price, and by anyone else. */}
-        {offerPending && !isClaimed && !isPreview && (
+        {offerPending && !isOwn && !isClaimed && !isPreview && (
           <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.paper, color: C.amberDeep, border: "1.5px solid " + C.amber + "55", display: "flex", alignItems: "center", gap: 4 }}>
             <Clock size={10}/> Offer pending
+          </span>
+        )}
+        {/* Also a badge rather than the full-card overlay: the item is live
+            and claimable by everyone else, so dimming the photo would
+            misreport its state to the only person who can't act on it. */}
+        {isOwn && (
+          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.paper, color: C.greenDeep, border: "1.5px solid " + C.green + "55", display: "flex", alignItems: "center", gap: 4 }}>
+            <Package size={10}/> Your listing
           </span>
         )}
         {isClaimed && (
@@ -1704,6 +1722,11 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
               <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, textAlign: "center", lineHeight: 1.4, maxWidth: 200 }}>You picked this up. Find it in your <b style={{ color: C.ink }}>History</b>.</p>
             ) : isClaimedByMe ? (
               <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, textAlign: "center", lineHeight: 1.4, maxWidth: 200 }}>Pickup pending. Track this in your <b style={{ color: C.greenDeep }}>Claims</b> tab.</p>
+            ) : isOwn ? (
+              // The seller's own item, claimed by a neighbour. "Notify me if
+              // it frees up" is the wrong offer to make the person who owns
+              // it — the pickup is theirs to run, from the Seller view.
+              <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, textAlign: "center", lineHeight: 1.4, maxWidth: 200 }}>A neighbour is picking this up. Arrange it from your <b style={{ color: C.ink }}>Seller view</b>.</p>
             ) : (
               <>
                 <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, textAlign: "center", lineHeight: 1.4, maxWidth: 200 }}>Another neighbour is picking this up. Item may become available if they don&rsquo;t collect.</p>
@@ -1740,27 +1763,38 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
         </div>
 
         <button
-          onClick={e => { e.stopPropagation(); if (ctaDisabled) { if (isPreview && onOpen) onOpen(); return; } if (onClaimNow) onClaimNow(); else if (onOpen) onOpen(); }}
-          disabled={isClaimed || hasPendingOffer}
+          onClick={e => {
+            e.stopPropagation();
+            // Own listing: the only action worth offering is the one that
+            // actually does something — jump to the Seller view to manage it.
+            // Falls back to opening the detail, which carries the same switch.
+            if (isOwn) { if (onSwitchRole) onSwitchRole(); else if (onOpen) onOpen(); return; }
+            if (ctaDisabled) { if (isPreview && onOpen) onOpen(); return; }
+            if (onClaimNow) onClaimNow(); else if (onOpen) onOpen();
+          }}
+          disabled={!isOwn && (isClaimed || hasPendingOffer)}
           className="cta-primary"
           style={{
             width: "100%",
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            padding: "10px 0", borderRadius: 12, border: "none",
-            background: isPreview ? C.sand : hasPendingOffer ? C.amberMist : cardAccent,
-            color: isPreview ? C.mink : hasPendingOffer ? C.amberDeep : "#fff",
+            padding: "10px 0", borderRadius: 12,
+            border: isOwn ? "1.5px solid " + C.fawn : "none",
+            background: isOwn ? C.paper : isPreview ? C.sand : hasPendingOffer ? C.amberMist : cardAccent,
+            color: isOwn ? C.ink : isPreview ? C.mink : hasPendingOffer ? C.amberDeep : "#fff",
             fontFamily: F.head, fontSize: 12, fontWeight: 800,
-            cursor: (isClaimed || hasPendingOffer) ? "not-allowed" : "pointer",
-            opacity: isClaimed ? 0.4 : 1,
+            cursor: (!isOwn && (isClaimed || hasPendingOffer)) ? "not-allowed" : "pointer",
+            opacity: (isClaimed && !isOwn) ? 0.4 : 1,
             marginTop: "auto",
-            boxShadow: (item.layer === "shelf" || isPreview || hasPendingOffer) ? "none" : "0 2px 0 " + cardAccent + "40",
+            boxShadow: (isOwn || item.layer === "shelf" || isPreview || hasPendingOffer) ? "none" : "0 2px 0 " + cardAccent + "40",
           }}
         >
-          {isPreview
-            ? <><Clock size={13}/> Opens {dropOpenDay()} {dropOpenHour()}</>
-            : hasPendingOffer
-              ? <><Clock size={13}/> Waiting for seller</>
-              : <><CtaIcon size={13}/> {ctaLabel}</>}
+          {isOwn
+            ? <><Package size={13}/> Manage in Seller view</>
+            : isPreview
+              ? <><Clock size={13}/> Opens {dropOpenDay()} {dropOpenHour()}</>
+              : hasPendingOffer
+                ? <><Clock size={13}/> Waiting for seller</>
+                : <><CtaIcon size={13}/> {ctaLabel}</>}
         </button>
       </div>
     </article>
@@ -1778,6 +1812,37 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
 function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
   const { isMobile } = useViewport();
   const isSaved = savedPreview.has(item.id);
+
+  // Multi-photo gallery, same mechanics as ItemDetail (BUG-066/068): hero +
+  // arrows + thumbnail strip, wrapping at both ends, arrow keys bound while
+  // this view is open. A Sneak Peek is the one look a buyer gets before
+  // Saturday, so showing one photo out of five was the costliest place to
+  // drop them.
+  const galleryPhotos = Array.isArray(item.photos) ? item.photos.filter(Boolean) : [];
+  const hasMultiplePhotos = galleryPhotos.length > 1;
+  const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+  const safeIdx = Math.min(activePhotoIdx, Math.max(0, galleryPhotos.length - 1));
+  const heroSrc = galleryPhotos[safeIdx] || item.img;
+  const goPrev = useCallback(() => {
+    if (galleryPhotos.length <= 1) return;
+    setActivePhotoIdx((idx) => (idx - 1 + galleryPhotos.length) % galleryPhotos.length);
+  }, [galleryPhotos.length]);
+  const goNext = useCallback(() => {
+    if (galleryPhotos.length <= 1) return;
+    setActivePhotoIdx((idx) => (idx + 1) % galleryPhotos.length);
+  }, [galleryPhotos.length]);
+  useEffect(() => {
+    if (!hasMultiplePhotos) return;
+    const onKey = (e) => {
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowLeft")  { e.preventDefault(); goPrev(); }
+      if (e.key === "ArrowRight") { e.preventDefault(); goNext(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hasMultiplePhotos, goPrev, goNext]);
+
   return (
     <div style={{ paddingBottom: 40 }}>
       <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.mink, marginBottom: 24 }}>
@@ -1790,11 +1855,35 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
           <div style={{ position: "relative", aspectRatio: "4/3", borderRadius: 24, background: "linear-gradient(135deg, " + C.amberMist + " 0%, " + C.sand + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn + "80", marginBottom: 24, overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at center, transparent 40%, " + C.amber + "12 100%)", pointerEvents: "none" }}/>
             <ItemImage
-              src={item.img}
+              src={heroSrc}
               emojiSize={160}
               imgStyle={{ filter: "saturate(0.85)", opacity: 0.92 }}
               spanStyle={{ filter: "saturate(0.85)", opacity: 0.92 }}
             />
+
+            {hasMultiplePhotos && (
+              <>
+                <button
+                  type="button"
+                  onClick={goPrev}
+                  aria-label="Previous photo"
+                  style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: isMobile ? 38 : 44, height: isMobile ? 38 : 44, borderRadius: "50%", border: "1px solid " + C.fawn, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(6px)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.ink, boxShadow: "0 2px 8px rgba(31,29,25,0.12)", zIndex: 2 }}
+                >
+                  <ChevronLeft size={isMobile ? 18 : 22} strokeWidth={2.4}/>
+                </button>
+                <button
+                  type="button"
+                  onClick={goNext}
+                  aria-label="Next photo"
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", width: isMobile ? 38 : 44, height: isMobile ? 38 : 44, borderRadius: "50%", border: "1px solid " + C.fawn, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(6px)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.ink, boxShadow: "0 2px 8px rgba(31,29,25,0.12)", zIndex: 2 }}
+                >
+                  <ChevronRight size={isMobile ? 18 : 22} strokeWidth={2.4}/>
+                </button>
+                <span style={{ position: "absolute", bottom: 14, right: 14, display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, background: "rgba(31,29,25,0.75)", backdropFilter: "blur(6px)", color: "#fff", fontFamily: F.head, fontSize: 11, fontWeight: 700 }}>
+                  {safeIdx + 1} / {galleryPhotos.length}
+                </span>
+              </>
+            )}
 
             {/* Drop-day banner — bigger version of the card badge */}
             <div style={{ position: "absolute", top: 18, left: 18, padding: "8px 14px", borderRadius: 999, background: C.amber, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 3px 10px " + C.amber + "55" }}>
@@ -1802,6 +1891,32 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
               DROPS {dropOpenDay().toUpperCase()} {dropOpenHourBadge()}
             </div>
           </div>
+
+          {/* Thumbnail strip — amber ring on the active thumb to stay inside
+              the Sneak Peek palette rather than ItemDetail's green. */}
+          {hasMultiplePhotos && (
+            <div className="preview-scroll" aria-label="Item photos" style={{ display: "flex", gap: isMobile ? 8 : 10, marginBottom: isMobile ? 16 : 24, marginTop: -8, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "thin" }}>
+              {galleryPhotos.map((src, i) => {
+                const isActive = i === safeIdx;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setActivePhotoIdx(i)}
+                    aria-label={`Show photo ${i + 1} of ${galleryPhotos.length}`}
+                    aria-pressed={isActive}
+                    style={{ flex: "0 0 auto", width: isMobile ? 64 : 78, height: isMobile ? 64 : 78, borderRadius: 12, border: isActive ? `2.5px solid ${C.amber}` : `1.5px solid ${C.fawn}`, boxShadow: isActive ? `0 4px 12px ${C.amber}33` : "none", padding: 0, background: C.paper, overflow: "hidden", cursor: "pointer", transition: "border-color 150ms, box-shadow 150ms, transform 150ms", transform: isActive ? "scale(1.02)" : "scale(1)" }}
+                  >
+                    <ItemImage
+                      src={src}
+                      emojiSize={28}
+                      imgStyle={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Why this is a preview — context strip */}
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "14px 16px", borderRadius: 14, background: C.amberMist, border: "1px solid " + C.amber + "1F", marginBottom: 18 }}>
@@ -1836,7 +1951,7 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
               </div>
             </div>
             <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.ash, fontStyle: "italic", marginTop: 14, lineHeight: 1.5 }}>
-              Final details, photos, condition notes and exact price will be posted {dropOpenDay()} by {dropOpenHour()}.
+              Final details, condition notes and exact price will be posted {dropOpenDay()} by {dropOpenHour()}.
             </p>
           </div>
         </div>
@@ -3019,14 +3134,15 @@ function buildPickupSlots(item) {
 
   let dayLabels = [];
   if (mode === "custom") {
+    // Same local-calendar parse as the summary above — these strings become
+    // the claim's `pickupSlot`, so a day's drift here is a pickup the seller
+    // never offered.
     dayLabels = custom
       .slice()
       .sort()
       .map((d) => {
-        const parsed = new Date(d + "T00:00:00");
-        return Number.isNaN(parsed.getTime())
-          ? null
-          : parsed.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+        const label = formatPickupWeekday(d);
+        return label === d ? null : label; // unparseable → drop the slot
       })
       .filter(Boolean);
   } else {
@@ -3062,9 +3178,10 @@ function formatPickupSummary(item) {
   if (mode === "anytime") {
     daySummary = "Any day by request";
   } else if (mode === "custom") {
-    if (custom.length === 0)        daySummary = "By request";
-    else if (custom.length <= 2)    daySummary = custom.map(d => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" })).join(", ");
-    else                            daySummary = new Date(custom[0]).toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " +" + (custom.length - 1) + " more";
+    // formatPickupDateList parses the stored calendar date locally. Doing
+    // this with `new Date(d)` printed the day BEFORE the one the seller
+    // picked for every viewer west of UTC.
+    daySummary = formatPickupDateList(custom);
   } else {
     // flexible (recurring weekdays)
     const weekdays = ["Mon","Tue","Wed","Thu","Fri"];
@@ -3086,9 +3203,9 @@ function formatPickupSummary(item) {
 }
 
 function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller, onViewSeller, savedIds, onToggleSave, accessToken = null, onGoToMessages = null, onClaimCreated = null, currentUserId = null, onSwitchRole = null }) {
-  // BUG-050 safety net — even with the buyer feed filtering own items out
-  // (in the parent useEffect), a deep link, watchlist row, or stale cache
-  // can still land a seller on their own item detail page. Detect that and
+  // Own listings are in the buyer feed by design, so a seller opening their
+  // own item detail is now the ordinary path, not just the deep-link /
+  // watchlist edge case it was when the feed filtered them out. Either way:
   // swap the Claim / Ask buttons for a "switch to Seller view" affordance.
   const isMyOwnItem = !!currentUserId && item?.seller?.id === currentUserId;
   const { isMobile } = useViewport();
@@ -3610,7 +3727,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
 /* ============================================================
    REGULAR SELLER PROFILE (non-Dedicated)
    ============================================================ */
-function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedIds, onToggleSave, itemsSource = null, state = "between" }) {
+function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedIds, onToggleSave, itemsSource = null, state = "between", currentUserId = null, onSwitchRole = null }) {
   // BUG-069 — RegularSellerProfile uses `__isMobile` inline (line further
   // down) but the destructure was missing here, causing a ReferenceError
   // the moment a buyer tapped "View profile" on any seller. Sister
@@ -3676,7 +3793,7 @@ function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedI
         <EmptyState illustration={<EmptySellerIllustration/>} title={"No active listings from " + firstName} message="Their stand is empty right now. Check back soon — neighbours list new items every week." accent={C.amber}/>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={savedIds.has(i.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"}/>)}
+          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={savedIds.has(i.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
         </div>
       )}
 
@@ -3693,7 +3810,7 @@ function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedI
 /* ============================================================
    SAVED PAGE
    ============================================================ */
-function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggleSave, onBrowse, onBack, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, state = "between" }) {
+function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggleSave, onBrowse, onBack, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, state = "between", currentUserId = null, onSwitchRole = null }) {
   // Authed users render directly from the watchlist API result (full Item
   // objects, including SOLD ones + ones the user owns themselves). Preview
   // mode falls back to filtering the demo pool by savedIds — the original
@@ -3708,7 +3825,7 @@ function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggle
         <EmptyState illustration={<EmptySavedIllustration/>} title="Nothing saved yet" message="Tap the heart on items you’re interested in — they’ll gather here so you can claim them when the Drop opens." cta="Browse Discover" onCtaClick={onBrowse} accent={C.amber}/>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)}/>)}
+          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
         </div>
       )}
     </>
@@ -4375,6 +4492,33 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   };
   const [loading, setLoading]           = useState(usingBackend && convListProp == null);
 
+  // ─── Archived threads ────────────────────────────────────────────────────
+  // Archiving had no destination: the button set `archivedByBuyer` and the
+  // inbox filtered those threads out, but nothing listed them, so a thread
+  // the buyer put away was simply gone — not in Messages, not in History.
+  // GET /api/conversations?archived=true is the other half of that flag, and
+  // this list is what the "Archived" group at the bottom of the inbox renders
+  // from. Separate from `convList` on purpose: the nav badge and the "N
+  // active threads" count describe the live inbox, and archived threads are
+  // deliberately not part of either.
+  const [archivedList, setArchivedList]       = useState([]);
+  const [showArchived, setShowArchived]       = useState(false);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  useEffect(() => {
+    if (!usingBackend) { setArchivedList([]); return; }
+    let cancelled = false;
+    setArchivedLoading(true);
+    apiRequest("/api/conversations?archived=true", { token: accessToken })
+      .then((data) => {
+        if (cancelled) return;
+        const list = Array.isArray(data?.conversations) ? data.conversations : [];
+        setArchivedList(list.map((api) => adaptBuyerConversation(api, myId)).filter(Boolean));
+      })
+      .catch(() => { if (!cancelled) setArchivedList([]); })
+      .finally(() => { if (!cancelled) setArchivedLoading(false); });
+    return () => { cancelled = true; };
+  }, [usingBackend, accessToken, myId]);
+
   const [activeMsgs, setActiveMsgs]     = useState(null);
   const [activeLoading, setActiveLoading] = useState(false);
 
@@ -4526,6 +4670,14 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
         body:   JSON.stringify({ body }),
       });
       setDraft("");
+      // Writing into an archived thread un-archives the sender's side server
+      // side, so mirror that here instead of leaving the row sitting under
+      // "Archived" with a message the buyer just sent as its preview.
+      const archived = archivedList.find(c => c.id === activeId);
+      if (archived) {
+        setArchivedList(prev => prev.filter(c => c.id !== activeId));
+        setConvList(prev => (prev.some(c => c.id === activeId) ? prev : [archived, ...prev]));
+      }
     } catch (err) {
       setErrorMsg("Send failed: " + (err?.message || "try again"));
       setTimeout(() => setErrorMsg(null), 4500);
@@ -4696,13 +4848,15 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
     earlierThreads.length > 0 ? earlierThreads.length + " earlier" : null,
   ].filter(Boolean).join(" · ");
 
-  // Put a thread away for good. The backend hides archived threads from the
-  // inbox (archivedByBuyer), and un-archives automatically if either side
-  // writes into it again, so this is a tidy-up, not a delete.
+  // Move a thread out of the inbox and into the Archived group below it.
+  // Not a delete and not one-way: it reappears here the moment either side
+  // writes into it (the backend clears the flag on send), and the buyer can
+  // bring it back by hand with Unarchive.
   async function archiveThread(conv) {
     if (!conv) return;
     const wasActive = conv.id === activeId;
     setConvList(prev => prev.filter(c => c.id !== conv.id));
+    setArchivedList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
     if (wasActive) { setActiveId(null); setMobileViewingId(null); }
     if (!usingBackend) return;
     try {
@@ -4711,16 +4865,42 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
         token:  accessToken,
         body:   JSON.stringify({ archived: true }),
       });
-      chatFlashOk("Thread archived. It'll come back if either of you writes again.");
+      chatFlashOk("Moved to Archived, at the bottom of this list.");
     } catch (err) {
       // Put it back — the row vanishing while the server still has it would
       // be a lie that survives until the next refetch.
       setConvList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
+      setArchivedList(prev => prev.filter(c => c.id !== conv.id));
       if (wasActive) setActiveId(conv.id);
       chatFlashErr("archive", err);
     }
   }
-  const active = conversations.find(c => c.id === activeId) || conversations[0];
+
+  // The way back. Same endpoint, `archived: false`.
+  async function unarchiveThread(conv) {
+    if (!conv) return;
+    setArchivedList(prev => prev.filter(c => c.id !== conv.id));
+    setConvList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
+    if (!usingBackend) return;
+    try {
+      await apiRequest("/api/conversations/" + encodeURIComponent(conv.id) + "/archive", {
+        method: "PATCH",
+        token:  accessToken,
+        body:   JSON.stringify({ archived: false }),
+      });
+      chatFlashOk("Back in your inbox.");
+    } catch (err) {
+      setArchivedList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
+      setConvList(prev => prev.filter(c => c.id !== conv.id));
+      chatFlashErr("unarchive", err);
+    }
+  }
+  // Selection can land on an archived thread — opening one is how you read it
+  // before deciding to bring it back — so resolve against both lists.
+  const activeIsArchived = archivedList.some(c => c.id === activeId);
+  const active = conversations.find(c => c.id === activeId)
+    || archivedList.find(c => c.id === activeId)
+    || conversations[0];
   const activeStatus = active ? statusMeta[active.status] : null;
   // Demo mode reads messages inline from the conversation; wired mode uses
   // the activeMsgs state populated by GET /:id/messages and socket pushes.
@@ -4925,7 +5105,10 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
           border: isMobile ? "1.5px solid " + C.fawn : undefined,
           borderRadius: isMobile ? 16 : 0,
         }}>
-          {conversations.length === 0 ? (
+          {/* `archivedList` counts here too — otherwise archiving your last
+              live thread renders "No threads" over an Archived group that
+              never gets a chance to draw. */}
+          {conversations.length === 0 && archivedList.length === 0 ? (
             <div style={{ padding: "40px 20px", textAlign: "center" }}>
               <MessageSquare size={28} style={{ color: C.smoke, marginBottom: 10 }}/>
               <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No threads.</p>
@@ -4965,6 +5148,48 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                   </button>
                   {showEarlier && earlierThreads.map(c => renderThreadRow(c, true))}
                 </>
+              )}
+
+              {/* Archived — threads the buyer put away by hand. Collapsed, at
+                  the very bottom, the way WhatsApp and Telegram park theirs.
+                  Open one to read it; Unarchive puts it back in the inbox. */}
+              {archivedList.length > 0 && (
+                <>
+                  <button
+                    onClick={() => setShowArchived(v => !v)}
+                    style={{ width: "100%", textAlign: "left", padding: "11px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: C.sand, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
+                  >
+                    {showArchived ? <ChevronUp size={14} style={{ color: C.mink }}/> : <ChevronDown size={14} style={{ color: C.mink }}/>}
+                    <Archive size={12} style={{ color: C.mink }}/>
+                    <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                      Archived
+                    </span>
+                    <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash, marginLeft: "auto" }}>
+                      {archivedList.length} thread{archivedList.length !== 1 ? "s" : ""}
+                    </span>
+                  </button>
+                  {showArchived && archivedList.map(c => (
+                    <div key={c.id} style={{ position: "relative" }}>
+                      {renderThreadRow(c, true)}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); unarchiveThread(c); }}
+                        title="Move back to inbox"
+                        style={{ position: "absolute", right: 14, bottom: 12, display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 10, fontWeight: 800, cursor: "pointer" }}
+                      >
+                        <RefreshCw size={10}/> Unarchive
+                      </button>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              {/* An empty inbox still needs to say where the archived ones
+                  went, otherwise archiving the last thread looks like it
+                  deleted everything. */}
+              {archivedLoading && archivedList.length === 0 && (
+                <div style={{ padding: "10px 18px", borderTop: "1px solid " + C.fawn, background: C.sand }}>
+                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash }}>Checking your archive…</p>
+                </div>
               )}
             </>
           )}
@@ -5010,7 +5235,15 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                   it before the 30-day window retires it on its own. Hidden
                   while a claim is live — archiving a pickup you still have to
                   show up for would hide the only place it's coordinated. */}
-              {!activeClaimByConv[active.id] && (
+              {activeIsArchived ? (
+                <button
+                  onClick={() => unarchiveThread(active)}
+                  title="Move this thread back to your inbox"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, border: "1.5px solid " + C.green + "55", background: C.greenMist, color: C.greenDeep, fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}
+                >
+                  <RefreshCw size={11}/> Unarchive
+                </button>
+              ) : !activeClaimByConv[active.id] && (
                 <button
                   onClick={() => archiveThread(active)}
                   title="Archive this thread"
@@ -5664,7 +5897,12 @@ function SellWithAICta({ onSwitchRole }) {
 /* ============================================================
    DISCOVER — Between Drops state
    ============================================================ */
-function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, reminded, onRemindMe, savedPreview, togglePreview, onSwitchRole, onPreviewItem, onSeeAllPreviews, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, itemsLoading = false, sneakPeekSource = null }) {
+function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, reminded, onRemindMe, savedPreview, togglePreview, onSwitchRole, onPreviewItem, onSeeAllPreviews, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, itemsLoading = false, sneakPeekSource = null, currentUserId = null }) {
+  // A seller's own listings are part of the feed (see the fetch in
+  // BuyerDashboard). This is what marks them so the card can drop its
+  // buyer-side actions — null for the unauthed preview routes, where every
+  // demo item carries sellerId: null and nothing matches.
+  const isOwnItem = (i) => !!currentUserId && i?.sellerId === currentUserId;
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("All");
@@ -5761,7 +5999,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           })()}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {liveUnifiedPool.map((item, i) => (
-              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} liveMode={true} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)}/>
+              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} liveMode={true} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
             ))}
           </div>
         </>
@@ -5776,7 +6014,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
             <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={betweenPool.length + " items you can grab today — Shelf carryovers available for pickup anytime."} pulse={true}/>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
               {betweenPool.map((item, i) => (
-                <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)}/>
+                <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
               ))}
             </div>
           </>
@@ -5789,7 +6027,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={shelfItems.length + " items ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {shelfItems.map((item, i) => (
-              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)}/>
+              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
             ))}
           </div>
         </>
@@ -6247,12 +6485,15 @@ export default function DropYardBuyerDashboard({
       .then(data => {
         if (cancelled) return;
         const list = Array.isArray(data?.items) ? data.items : [];
-        // Drop the seller's own items from the buyer feed — they can't claim
-        // or message themselves about their own listing (backend enforces
-        // both), so surfacing them only invites the "Couldn't send" toast.
-        // BUG-050. Sellers can still preview their item in Seller-mode UI.
-        const mineFiltered = user?.id ? list.filter((i) => i?.seller?.id !== user.id) : list;
-        setLiveItems(mineFiltered.map(adaptBuyerItem).filter(Boolean));
+        // A seller's own listings stay IN the buyer feed. They used to be
+        // filtered out here (BUG-050), which meant the one person who most
+        // wanted to see how their item reads to a buyer couldn't — and left
+        // them unable to tell a live listing from one that never published.
+        // What they can't do is transact with themselves, and that's handled
+        // where the actions are: ItemCard renders a "Your listing" card with
+        // no claim CTA, ItemDetail swaps in the Seller-view switch, and the
+        // backend refuses a self-claim either way.
+        setLiveItems(list.map(adaptBuyerItem).filter(Boolean));
       })
       .catch(() => { if (!cancelled) setLiveItems([]); })
       .finally(() => { if (!cancelled) setItemsLoading(false); });
@@ -6273,23 +6514,35 @@ export default function DropYardBuyerDashboard({
       .then(data => {
         if (cancelled) return;
         const list = Array.isArray(data?.items) ? data.items : [];
-        // Same self-filter as the main feed (BUG-050) — the seller's own
-        // queued items belong in the Seller-mode inventory, not the buyer
-        // Sneak Peek strip.
-        const mineFiltered = user?.id ? list.filter((i) => i?.seller?.id !== user.id) : list;
-        const adapted = mineFiltered.map((api, i) => {
-          const photos = Array.isArray(api?.photos) ? api.photos.filter(Boolean) : [];
+        // Own queued items are shown here too, same reasoning as the main
+        // feed above. Nothing on a Sneak Peek card transacts — it saves and
+        // it previews — so a seller seeing their own item lined up for
+        // Saturday is simply the truth about Saturday.
+        //
+        // Built on `adaptBuyerItem` rather than a hand-rolled subset. The old
+        // adapter kept eight fields and threw the rest of the payload away —
+        // including `photos`, which is why a Sneak Peek detail page showed a
+        // single image however many the seller uploaded. It also made these
+        // items structurally different from feed items, so a saved one could
+        // not be rendered by ItemCard on the Saved page. Now they are ordinary
+        // buyer items (status "preview", since they're DRAFT) with the two
+        // peek-only extras layered on top.
+        const adapted = list.map((api, i) => {
+          const base = adaptBuyerItem(api);
+          if (!base) return null;
           return {
-            id:       api.id ?? ("api-peek-" + i),
-            t:        api.title || "Item",
+            ...base,
+            id:       base.id ?? ("api-peek-" + i),
+            // Queued items aren't finally priced yet — the peek UI says
+            // "around $X" and reads this rather than `p`.
             estPrice: api.originalPrice ?? api.price ?? 0,
-            img:      photos[0] || CATEGORY_EMOJI[api.category] || "📦",
-            cat:      BUYER_ENUM_TO_CATEGORY[api.category] || "Other",
-            seller:   api.seller?.name || "Neighbour",
             hood:     api.seller?.neighborhood || "Nearby",
-            dist:     "Nearby",
+            // /sneak-peek doesn't select the seller's coords, so there's no
+            // distanceLabel to fall back from. Say "Nearby" rather than let
+            // the adapter print a neighbourhood name under "Distance".
+            dist:     api.distanceLabel || "Nearby",
           };
-        });
+        }).filter(Boolean);
         setSneakPeekFromApi(adapted);
       })
       .catch(() => { if (!cancelled) setSneakPeekFromApi([]); });
@@ -6311,9 +6564,9 @@ export default function DropYardBuyerDashboard({
   const [sellerBackItem, setSellerBackItem] = useState(null);
 
   // BUG-085 — consume the ?item=<id> deep link set by the public share page.
-  // Fetched individually rather than looked up in the feed: the feed is
-  // paginated and filters out the viewer's own items, so a shared item is
-  // frequently absent from it. A bad or removed id just leaves the buyer on
+  // Fetched individually rather than looked up in the feed: the feed only
+  // carries LIVE items for the current phase, so a shared item is frequently
+  // absent from it. A bad or removed id just leaves the buyer on
   // Discover — a shared link outliving its item is normal, not an error.
   // NO cancelled-flag here, deliberately. This effect used to set one in a
   // cleanup, and under React StrictMode (on by default in dev) that made the
@@ -6370,8 +6623,10 @@ export default function DropYardBuyerDashboard({
     // items the buyer had saved get refreshed with current state too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, itemsTick]);
-  // Sneak Peek "save for Saturday" — purely client-side today (no API).
-  // Same rationale: empty Set for authed users, demo IDs for /preview/buyer-dashboard.
+  // Sneak Peek "save for Saturday" — demo-only state now. For a signed-in
+  // buyer the peek heart writes to the real watchlist (see `peekSaved` /
+  // `peekToggle` below); this Set exists purely so /preview/buyer-dashboard,
+  // which has no token and no server, still demonstrates the interaction.
   const [savedPreview, setSavedPreview] = useState(() => accessToken ? new Set() : new Set([101, 104]));
   const [viewingPreview, setViewingPreview] = useState(null); // sneak peek item being previewed
   const [showSneakList, setShowSneakList] = useState(false); // full sneak peek list page
@@ -6673,17 +6928,25 @@ export default function DropYardBuyerDashboard({
   // call entirely for demo-only ids (numbers from the static `allItems` array)
   // since those don't exist on the server. Also keeps `savedItems` (the
   // SavedPage source) in sync so the page reflects toggles instantly.
+  // Everything the user can save from, in one pool: the Discover feed plus
+  // the Sneak Peek strip. Peek items are queued (DRAFT) so they never appear
+  // in /api/items, and leaving them out meant a peek save flipped the heart
+  // but put nothing on the Saved page until the next watchlist refetch.
+  const savableItem = (id) => {
+    const feed = Array.isArray(itemsForUI) ? itemsForUI : [];
+    const peek = Array.isArray(sneakPeekForUI) ? sneakPeekForUI : [];
+    return feed.find(it => it.id === id) || peek.find(it => it.id === id);
+  };
   const toggleSave = async (id) => {
     const wasSaved = savedIds.has(id);
     setSavedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
     // Keep savedItems aligned. Unsave → remove. Save → look up the full
-    // item in the buyer feed and append (so SavedPage shows it instantly
-    // without waiting for a watchlist refetch).
+    // item and append (so SavedPage shows it instantly without waiting for
+    // a watchlist refetch).
     if (wasSaved) {
       setSavedItems(prev => prev.filter(it => it.id !== id));
     } else {
-      const pool = Array.isArray(itemsForUI) ? itemsForUI : [];
-      const found = pool.find(it => it.id === id);
+      const found = savableItem(id);
       if (found) setSavedItems(prev => prev.some(it => it.id === id) ? prev : [found, ...prev]);
     }
     if (!accessToken) return;
@@ -6697,8 +6960,7 @@ export default function DropYardBuyerDashboard({
       // Rollback both savedIds and savedItems on failure.
       setSavedIds(prev => { const n = new Set(prev); if (wasSaved) n.add(id); else n.delete(id); return n; });
       if (wasSaved) {
-        const pool = Array.isArray(itemsForUI) ? itemsForUI : [];
-        const found = pool.find(it => it.id === id);
+        const found = savableItem(id);
         if (found) setSavedItems(prev => prev.some(it => it.id === id) ? prev : [found, ...prev]);
       } else {
         setSavedItems(prev => prev.filter(it => it.id !== id));
@@ -6706,6 +6968,17 @@ export default function DropYardBuyerDashboard({
     }
   };
   const togglePreview = (i) => setSavedPreview(prev => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+
+  // The Sneak Peek heart used to flip `savedPreview`, a Set that lived only
+  // in this component: the save never reached /api/watchlist, so it was
+  // missing from the Saved tab and gone on the next page load — the amber
+  // ring on the card with it. A queued item is an ordinary watchlist row
+  // (the backend takes any item id, whatever its status), so for a signed-in
+  // buyer the peek heart is now the same save as everywhere else, and the
+  // Saved tab lists it with its "Sneak Peek / Opens Saturday" card. The
+  // local Set stays behind for the token-less preview route.
+  const peekSaved  = accessToken ? savedIds   : savedPreview;
+  const peekToggle = accessToken ? toggleSave : togglePreview;
   const handleRemindMe = () => { setReminded(true); setToast(`We'll ping you ${dropOpenDay()} at ${dropOpenHour()}.`); };
 
   const handleClaimComplete = async (item, slot, realClaim = null) => {
@@ -6771,7 +7044,7 @@ export default function DropYardBuyerDashboard({
               `viewingItem` explicitly, otherwise the item would outrank the
               profile it's trying to open. */}
           {viewingSellerName && !viewingItem && (
-            <RegularSellerProfile sellerName={viewingSellerName} onBack={() => { setViewingSellerName(null); if (sellerBackItem) { setViewingItem(sellerBackItem); setSellerBackItem(null); } }} onSelect={setViewingItem} onClaimNow={setClaimItem} savedIds={savedIds} onToggleSave={toggleSave} itemsSource={itemsForUI} state={dropState}/>
+            <RegularSellerProfile sellerName={viewingSellerName} onBack={() => { setViewingSellerName(null); if (sellerBackItem) { setViewingItem(sellerBackItem); setSellerBackItem(null); } }} onSelect={setViewingItem} onClaimNow={setClaimItem} savedIds={savedIds} onToggleSave={toggleSave} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>
           )}
           {viewingItem && (
             <ItemDetail item={viewingItem} onBack={() => setViewingItem(null)} onClaimComplete={handleClaimComplete} onGoToClaims={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("claims"); }}  onViewSeller={(name) => { setSellerBackItem(viewingItem); setViewingItem(null); setViewingSellerName(name); }} savedIds={savedIds} onToggleSave={toggleSave} accessToken={accessToken} onGoToMessages={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("messages"); }} onClaimCreated={handleClaimCreated} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>
@@ -6780,13 +7053,13 @@ export default function DropYardBuyerDashboard({
           {!viewingItem && !viewingSellerName && (
             <>
               {page === "discover" && viewingPreview && (
-                <PreviewItemDetail item={viewingPreview} onBack={() => setViewingPreview(null)} savedPreview={savedPreview} togglePreview={togglePreview}/>
+                <PreviewItemDetail item={viewingPreview} onBack={() => setViewingPreview(null)} savedPreview={peekSaved} togglePreview={peekToggle}/>
               )}
               {page === "discover" && !viewingPreview && showSneakList && (
-                <SneakPeekListPage savedPreview={savedPreview} togglePreview={togglePreview} onPreviewItem={setViewingPreview} onBack={() => setShowSneakList(false)} sneakPeekSource={sneakPeekForUI}/>
+                <SneakPeekListPage savedPreview={peekSaved} togglePreview={peekToggle} onPreviewItem={setViewingPreview} onBack={() => setShowSneakList(false)} sneakPeekSource={sneakPeekForUI}/>
               )}
-              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={savedPreview} togglePreview={togglePreview} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI}/>}
-              {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState}/>}
+              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={peekSaved} togglePreview={peekToggle} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null}/>}
+              {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>}
               {page === "claims"   && <ClaimsPage claims={claims} setClaims={setClaims} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} onGoToMessages={() => setPage("messages")} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} accessToken={accessToken}/>}
               {page === "messages" && <MessagesPage user={user} accessToken={accessToken} claims={claims} onAcceptCounter={handleAcceptCounterByItemTitle} onDeclineCounter={handleDeclineCounterByItemTitle} openThreadId={openThreadId} onConsumeOpenThread={() => setOpenThreadId(null)} onBack={() => setPage("discover")} convList={convList} onConvListChange={setConvList}/>}
               {page === "history"  && <HistoryPage highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} accessToken={accessToken} onBack={() => setPage("discover")}/>}
@@ -6797,8 +7070,12 @@ export default function DropYardBuyerDashboard({
 
         <Toast message={toast} onClose={() => setToast(null)}/>
 
-        {/* Direct-from-card claim — bypasses item detail */}
-        {claimItem && (
+        {/* Direct-from-card claim — bypasses item detail. The own-listing
+            check is the last stop before the modal: cards no longer offer a
+            claim on your own item, but this path is reachable from the seller
+            profile and a stale feed too, and the backend's 400 would arrive
+            only after the buyer picked a slot. */}
+        {claimItem && !(user?.id && claimItem.seller?.id === user.id) && (
           <ClaimModal
             item={claimItem}
             onClose={() => setClaimItem(null)}
