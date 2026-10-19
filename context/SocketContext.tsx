@@ -12,11 +12,30 @@ import { useAuth } from "./AuthContext";
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
+// Same key api.ts and AuthContext write to. Read at handshake time rather
+// than captured in a closure, so every reconnect picks up whatever the
+// silent-refresh cycle last stored instead of replaying a dead token.
+const ACCESS_TOKEN_KEY = "dy_access_token";
+
+function readAccessToken(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  try {
+    return localStorage.getItem(ACCESS_TOKEN_KEY) || undefined;
+  } catch {
+    // Private mode / blocked storage — fall back to the cookie path.
+    return undefined;
+  }
+}
+
 interface SocketContextValue {
   // null while signed out or before initial connect. Components subscribe
   // through useSocketEvent(); the raw socket is exposed for one-off emit().
   socket: Socket | null;
   connected: boolean;
+  // Why the last connection attempt failed, or null when healthy. Surfaced
+  // in the health dot's tooltip — a socket that silently never connects is
+  // the hardest kind of outage to notice, because every page still loads.
+  lastError: string | null;
 }
 
 const SocketContext = createContext<SocketContextValue | null>(null);
@@ -46,21 +65,48 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.id) {
       setSocket(null);
       setConnected(false);
+      setLastError(null);
       return;
     }
 
     const s = io(SOCKET_URL, {
-      // Cookies are the auth surface — send dy_access on every handshake.
-      // No JWT in handshake.auth anymore; backend reads it from the Cookie
-      // header (with auth.token retained as a back-compat fallback for
-      // native/mobile clients).
+      // Two independent credentials, because either one alone has a failure
+      // mode that takes realtime down silently:
+      //
+      //   withCredentials  — sends the dy_access cookie. Works when the
+      //                      cookie's Secure/SameSite/Domain attributes line
+      //                      up with the deployment. Those attributes are
+      //                      derived from NODE_ENV (see backend cookies.ts),
+      //                      so a prod box that never sets NODE_ENV issues a
+      //                      cookie the browser won't attach here — and the
+      //                      handshake fails with "Missing auth token" while
+      //                      every REST call keeps working, because those
+      //                      carry a Bearer token instead. That asymmetry is
+      //                      exactly what "pages load but nothing is live"
+      //                      looks like.
+      //   auth callback    — sends the same JWT the REST layer uses. A
+      //                      function, not an object: socket.io invokes it on
+      //                      every connection attempt, so each reconnect
+      //                      reads the token the silent-refresh cycle just
+      //                      wrote instead of replaying a 15-minute-old one.
+      //
+      // The backend accepts either (socket.ts reads the cookie first, then
+      // handshake.auth.token), so realtime now survives a cookie problem.
       withCredentials:        true,
-      transports:             ["websocket", "polling"],
+      auth:                   (cb) => cb({ token: readAccessToken() }),
+      // Default order, deliberately: open on HTTP long-polling, then upgrade
+      // to a real WebSocket once it's proven to work. Forcing "websocket"
+      // first means a reverse proxy that doesn't pass the Upgrade/Connection
+      // headers — the default nginx `proxy_pass` does not — fails the
+      // handshake outright. Polling traverses any proxy, so realtime degrades
+      // to a slightly chattier transport instead of disappearing.
+      transports:             ["polling", "websocket"],
       reconnection:           true,
       reconnectionAttempts:   Infinity,
       reconnectionDelay:      1000,
@@ -72,8 +118,15 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     s.on("connect", () => {
       setConnected(true);
+      setLastError(null);
       // eslint-disable-next-line no-console
-      console.info("[socket] connected", s.id);
+      console.info("[socket] connected", s.id, "via", s.io.engine.transport.name);
+      // Log the upgrade too — "connected via polling" that never upgrades is
+      // the fingerprint of a proxy missing the WebSocket upgrade headers.
+      s.io.engine.on("upgrade", (t: { name: string }) => {
+        // eslint-disable-next-line no-console
+        console.info("[socket] upgraded to", t.name);
+      });
     });
     s.on("disconnect", (reason) => {
       setConnected(false);
@@ -81,8 +134,9 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       console.info("[socket] disconnected:", reason);
     });
     s.on("connect_error", (err) => {
-      // Most common cause: token expired between sessions or backend down.
-      // Auto-reconnect will pick up the fresh cookie next attempt.
+      // Most common causes: no credential reached the handshake, the origin
+      // isn't in the backend's ALLOWED_ORIGINS, or the backend is down.
+      setLastError(err.message || "connection failed");
       // eslint-disable-next-line no-console
       console.warn("[socket] connect_error:", err.message);
     });
@@ -98,7 +152,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
   }, [user?.id]);
 
   return (
-    <SocketContext.Provider value={{ socket, connected }}>
+    <SocketContext.Provider value={{ socket, connected, lastError }}>
       {children}
     </SocketContext.Provider>
   );
