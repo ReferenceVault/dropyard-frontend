@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
 import { apiRequest } from "@/lib/api";
 import { useSocket, useSocketEvent } from "@/context/SocketContext";
+import { formatPickupDateList, formatPickupWeekday } from "@/lib/pickupDates";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -3133,14 +3134,15 @@ function buildPickupSlots(item) {
 
   let dayLabels = [];
   if (mode === "custom") {
+    // Same local-calendar parse as the summary above — these strings become
+    // the claim's `pickupSlot`, so a day's drift here is a pickup the seller
+    // never offered.
     dayLabels = custom
       .slice()
       .sort()
       .map((d) => {
-        const parsed = new Date(d + "T00:00:00");
-        return Number.isNaN(parsed.getTime())
-          ? null
-          : parsed.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+        const label = formatPickupWeekday(d);
+        return label === d ? null : label; // unparseable → drop the slot
       })
       .filter(Boolean);
   } else {
@@ -3176,9 +3178,10 @@ function formatPickupSummary(item) {
   if (mode === "anytime") {
     daySummary = "Any day by request";
   } else if (mode === "custom") {
-    if (custom.length === 0)        daySummary = "By request";
-    else if (custom.length <= 2)    daySummary = custom.map(d => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" })).join(", ");
-    else                            daySummary = new Date(custom[0]).toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " +" + (custom.length - 1) + " more";
+    // formatPickupDateList parses the stored calendar date locally. Doing
+    // this with `new Date(d)` printed the day BEFORE the one the seller
+    // picked for every viewer west of UTC.
+    daySummary = formatPickupDateList(custom);
   } else {
     // flexible (recurring weekdays)
     const weekdays = ["Mon","Tue","Wed","Thu","Fri"];

@@ -7,6 +7,7 @@ import { useSocketEvent } from "@/context/SocketContext";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { useAuth } from "@/context/AuthContext";
 import { useDropCycle } from "@/context/DropCycleContext";
+import { formatPickupDateList, formatPickupDateLong } from "@/lib/pickupDates";
 import {
   dropCloseMoment,
   nextDropMoment,
@@ -3094,7 +3095,7 @@ function AISetup({ onComplete, onBack, settings, onSave }) {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {pickupCustom.map(d => (
                       <div key={d} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, background: C.greenMist, border: "1px solid " + C.green + "25" }}>
-                        <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.greenDeep }}>{d}</span>
+                        <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.greenDeep }}>{formatPickupDateLong(d)}</span>
                         <button onClick={() => setPickupCustom(p => p.filter(x => x !== d))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}>
                           <X size={11} style={{ color: C.greenDeep }}/>
                         </button>
@@ -3824,7 +3825,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {pickupCustom.map(d => (
                           <div key={d} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, background: C.greenMist, border: "1px solid " + C.green + "25" }}>
-                            <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.greenDeep }}>{d}</span>
+                            <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.greenDeep }}>{formatPickupDateLong(d)}</span>
                             <button onClick={() => setPickupCustom(p => p.filter(x => x !== d))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}>
                               <X size={11} style={{ color: C.greenDeep }}/>
                             </button>
@@ -7805,7 +7806,7 @@ function ItemDetailView({ item, onBack, onEdit, accessToken: _accessToken }) {
                 <DetailRow label="Windows" value={item.raw.pickupWindows.join(", ")}/>
               )}
               {Array.isArray(item.raw?.pickupCustomDates) && item.raw.pickupCustomDates.length > 0 && (
-                <DetailRow label="Dates" value={item.raw.pickupCustomDates.join(", ")}/>
+                <DetailRow label="Dates" value={item.raw.pickupCustomDates.map(formatPickupDateLong).join(", ")}/>
               )}
             </DetailSection>
           )}
@@ -8369,7 +8370,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {pickupCustom.map(d => (
                           <div key={d} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, background: C.greenMist, border: "1px solid " + C.green + "25" }}>
-                            <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.greenDeep }}>{d}</span>
+                            <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.greenDeep }}>{formatPickupDateLong(d)}</span>
                             <button onClick={() => setPickupCustom(p => p.filter(x => x !== d))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}>
                               <X size={11} style={{ color: C.greenDeep }}/>
                             </button>
@@ -8590,9 +8591,10 @@ function formatPickupSummary(aiSettings) {
   if (mode === "anytime") {
     daySummary = "Any day";
   } else if (mode === "custom") {
-    if (custom.length === 0) daySummary = "By request";
-    else if (custom.length <= 2) daySummary = custom.map(d => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" })).join(", ");
-    else daySummary = new Date(custom[0]).toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " +" + (custom.length - 1) + " more";
+    // Shared with the buyer's identical summary. Parsed from calendar parts,
+    // not `new Date(d)`, which reads a bare date as UTC midnight and so
+    // printed the previous day for every seller in the Americas.
+    daySummary = formatPickupDateList(custom);
   } else {
     const weekdays = ["Mon","Tue","Wed","Thu","Fri"];
     const weekend  = ["Sat","Sun"];
