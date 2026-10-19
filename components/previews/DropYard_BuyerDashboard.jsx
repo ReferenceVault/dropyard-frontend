@@ -1811,6 +1811,37 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
 function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
   const { isMobile } = useViewport();
   const isSaved = savedPreview.has(item.id);
+
+  // Multi-photo gallery, same mechanics as ItemDetail (BUG-066/068): hero +
+  // arrows + thumbnail strip, wrapping at both ends, arrow keys bound while
+  // this view is open. A Sneak Peek is the one look a buyer gets before
+  // Saturday, so showing one photo out of five was the costliest place to
+  // drop them.
+  const galleryPhotos = Array.isArray(item.photos) ? item.photos.filter(Boolean) : [];
+  const hasMultiplePhotos = galleryPhotos.length > 1;
+  const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+  const safeIdx = Math.min(activePhotoIdx, Math.max(0, galleryPhotos.length - 1));
+  const heroSrc = galleryPhotos[safeIdx] || item.img;
+  const goPrev = useCallback(() => {
+    if (galleryPhotos.length <= 1) return;
+    setActivePhotoIdx((idx) => (idx - 1 + galleryPhotos.length) % galleryPhotos.length);
+  }, [galleryPhotos.length]);
+  const goNext = useCallback(() => {
+    if (galleryPhotos.length <= 1) return;
+    setActivePhotoIdx((idx) => (idx + 1) % galleryPhotos.length);
+  }, [galleryPhotos.length]);
+  useEffect(() => {
+    if (!hasMultiplePhotos) return;
+    const onKey = (e) => {
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (e.key === "ArrowLeft")  { e.preventDefault(); goPrev(); }
+      if (e.key === "ArrowRight") { e.preventDefault(); goNext(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hasMultiplePhotos, goPrev, goNext]);
+
   return (
     <div style={{ paddingBottom: 40 }}>
       <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.mink, marginBottom: 24 }}>
@@ -1823,11 +1854,35 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
           <div style={{ position: "relative", aspectRatio: "4/3", borderRadius: 24, background: "linear-gradient(135deg, " + C.amberMist + " 0%, " + C.sand + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn + "80", marginBottom: 24, overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at center, transparent 40%, " + C.amber + "12 100%)", pointerEvents: "none" }}/>
             <ItemImage
-              src={item.img}
+              src={heroSrc}
               emojiSize={160}
               imgStyle={{ filter: "saturate(0.85)", opacity: 0.92 }}
               spanStyle={{ filter: "saturate(0.85)", opacity: 0.92 }}
             />
+
+            {hasMultiplePhotos && (
+              <>
+                <button
+                  type="button"
+                  onClick={goPrev}
+                  aria-label="Previous photo"
+                  style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: isMobile ? 38 : 44, height: isMobile ? 38 : 44, borderRadius: "50%", border: "1px solid " + C.fawn, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(6px)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.ink, boxShadow: "0 2px 8px rgba(31,29,25,0.12)", zIndex: 2 }}
+                >
+                  <ChevronLeft size={isMobile ? 18 : 22} strokeWidth={2.4}/>
+                </button>
+                <button
+                  type="button"
+                  onClick={goNext}
+                  aria-label="Next photo"
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", width: isMobile ? 38 : 44, height: isMobile ? 38 : 44, borderRadius: "50%", border: "1px solid " + C.fawn, background: "rgba(255,255,255,0.92)", backdropFilter: "blur(6px)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.ink, boxShadow: "0 2px 8px rgba(31,29,25,0.12)", zIndex: 2 }}
+                >
+                  <ChevronRight size={isMobile ? 18 : 22} strokeWidth={2.4}/>
+                </button>
+                <span style={{ position: "absolute", bottom: 14, right: 14, display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, background: "rgba(31,29,25,0.75)", backdropFilter: "blur(6px)", color: "#fff", fontFamily: F.head, fontSize: 11, fontWeight: 700 }}>
+                  {safeIdx + 1} / {galleryPhotos.length}
+                </span>
+              </>
+            )}
 
             {/* Drop-day banner — bigger version of the card badge */}
             <div style={{ position: "absolute", top: 18, left: 18, padding: "8px 14px", borderRadius: 999, background: C.amber, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 900, letterSpacing: "0.1em", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 3px 10px " + C.amber + "55" }}>
@@ -1835,6 +1890,32 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
               DROPS {dropOpenDay().toUpperCase()} {dropOpenHourBadge()}
             </div>
           </div>
+
+          {/* Thumbnail strip — amber ring on the active thumb to stay inside
+              the Sneak Peek palette rather than ItemDetail's green. */}
+          {hasMultiplePhotos && (
+            <div className="preview-scroll" aria-label="Item photos" style={{ display: "flex", gap: isMobile ? 8 : 10, marginBottom: isMobile ? 16 : 24, marginTop: -8, overflowX: "auto", paddingBottom: 6, scrollbarWidth: "thin" }}>
+              {galleryPhotos.map((src, i) => {
+                const isActive = i === safeIdx;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setActivePhotoIdx(i)}
+                    aria-label={`Show photo ${i + 1} of ${galleryPhotos.length}`}
+                    aria-pressed={isActive}
+                    style={{ flex: "0 0 auto", width: isMobile ? 64 : 78, height: isMobile ? 64 : 78, borderRadius: 12, border: isActive ? `2.5px solid ${C.amber}` : `1.5px solid ${C.fawn}`, boxShadow: isActive ? `0 4px 12px ${C.amber}33` : "none", padding: 0, background: C.paper, overflow: "hidden", cursor: "pointer", transition: "border-color 150ms, box-shadow 150ms, transform 150ms", transform: isActive ? "scale(1.02)" : "scale(1)" }}
+                  >
+                    <ItemImage
+                      src={src}
+                      emojiSize={28}
+                      imgStyle={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Why this is a preview — context strip */}
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "14px 16px", borderRadius: 14, background: C.amberMist, border: "1px solid " + C.amber + "1F", marginBottom: 18 }}>
@@ -1869,7 +1950,7 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
               </div>
             </div>
             <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.ash, fontStyle: "italic", marginTop: 14, lineHeight: 1.5 }}>
-              Final details, photos, condition notes and exact price will be posted {dropOpenDay()} by {dropOpenHour()}.
+              Final details, condition notes and exact price will be posted {dropOpenDay()} by {dropOpenHour()}.
             </p>
           </div>
         </div>
@@ -6318,20 +6399,31 @@ export default function DropYardBuyerDashboard({
         // feed above. Nothing on a Sneak Peek card transacts — it saves and
         // it previews — so a seller seeing their own item lined up for
         // Saturday is simply the truth about Saturday.
+        //
+        // Built on `adaptBuyerItem` rather than a hand-rolled subset. The old
+        // adapter kept eight fields and threw the rest of the payload away —
+        // including `photos`, which is why a Sneak Peek detail page showed a
+        // single image however many the seller uploaded. It also made these
+        // items structurally different from feed items, so a saved one could
+        // not be rendered by ItemCard on the Saved page. Now they are ordinary
+        // buyer items (status "preview", since they're DRAFT) with the two
+        // peek-only extras layered on top.
         const adapted = list.map((api, i) => {
-          const photos = Array.isArray(api?.photos) ? api.photos.filter(Boolean) : [];
+          const base = adaptBuyerItem(api);
+          if (!base) return null;
           return {
-            id:       api.id ?? ("api-peek-" + i),
-            t:        api.title || "Item",
+            ...base,
+            id:       base.id ?? ("api-peek-" + i),
+            // Queued items aren't finally priced yet — the peek UI says
+            // "around $X" and reads this rather than `p`.
             estPrice: api.originalPrice ?? api.price ?? 0,
-            img:      photos[0] || CATEGORY_EMOJI[api.category] || "📦",
-            cat:      BUYER_ENUM_TO_CATEGORY[api.category] || "Other",
-            seller:   api.seller?.name || "Neighbour",
-            sellerId: api.seller?.id || null,
             hood:     api.seller?.neighborhood || "Nearby",
-            dist:     "Nearby",
+            // /sneak-peek doesn't select the seller's coords, so there's no
+            // distanceLabel to fall back from. Say "Nearby" rather than let
+            // the adapter print a neighbourhood name under "Distance".
+            dist:     api.distanceLabel || "Nearby",
           };
-        });
+        }).filter(Boolean);
         setSneakPeekFromApi(adapted);
       })
       .catch(() => { if (!cancelled) setSneakPeekFromApi([]); });
@@ -6412,8 +6504,10 @@ export default function DropYardBuyerDashboard({
     // items the buyer had saved get refreshed with current state too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken, itemsTick]);
-  // Sneak Peek "save for Saturday" — purely client-side today (no API).
-  // Same rationale: empty Set for authed users, demo IDs for /preview/buyer-dashboard.
+  // Sneak Peek "save for Saturday" — demo-only state now. For a signed-in
+  // buyer the peek heart writes to the real watchlist (see `peekSaved` /
+  // `peekToggle` below); this Set exists purely so /preview/buyer-dashboard,
+  // which has no token and no server, still demonstrates the interaction.
   const [savedPreview, setSavedPreview] = useState(() => accessToken ? new Set() : new Set([101, 104]));
   const [viewingPreview, setViewingPreview] = useState(null); // sneak peek item being previewed
   const [showSneakList, setShowSneakList] = useState(false); // full sneak peek list page
@@ -6715,17 +6809,25 @@ export default function DropYardBuyerDashboard({
   // call entirely for demo-only ids (numbers from the static `allItems` array)
   // since those don't exist on the server. Also keeps `savedItems` (the
   // SavedPage source) in sync so the page reflects toggles instantly.
+  // Everything the user can save from, in one pool: the Discover feed plus
+  // the Sneak Peek strip. Peek items are queued (DRAFT) so they never appear
+  // in /api/items, and leaving them out meant a peek save flipped the heart
+  // but put nothing on the Saved page until the next watchlist refetch.
+  const savableItem = (id) => {
+    const feed = Array.isArray(itemsForUI) ? itemsForUI : [];
+    const peek = Array.isArray(sneakPeekForUI) ? sneakPeekForUI : [];
+    return feed.find(it => it.id === id) || peek.find(it => it.id === id);
+  };
   const toggleSave = async (id) => {
     const wasSaved = savedIds.has(id);
     setSavedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
     // Keep savedItems aligned. Unsave → remove. Save → look up the full
-    // item in the buyer feed and append (so SavedPage shows it instantly
-    // without waiting for a watchlist refetch).
+    // item and append (so SavedPage shows it instantly without waiting for
+    // a watchlist refetch).
     if (wasSaved) {
       setSavedItems(prev => prev.filter(it => it.id !== id));
     } else {
-      const pool = Array.isArray(itemsForUI) ? itemsForUI : [];
-      const found = pool.find(it => it.id === id);
+      const found = savableItem(id);
       if (found) setSavedItems(prev => prev.some(it => it.id === id) ? prev : [found, ...prev]);
     }
     if (!accessToken) return;
@@ -6739,8 +6841,7 @@ export default function DropYardBuyerDashboard({
       // Rollback both savedIds and savedItems on failure.
       setSavedIds(prev => { const n = new Set(prev); if (wasSaved) n.add(id); else n.delete(id); return n; });
       if (wasSaved) {
-        const pool = Array.isArray(itemsForUI) ? itemsForUI : [];
-        const found = pool.find(it => it.id === id);
+        const found = savableItem(id);
         if (found) setSavedItems(prev => prev.some(it => it.id === id) ? prev : [found, ...prev]);
       } else {
         setSavedItems(prev => prev.filter(it => it.id !== id));
@@ -6748,6 +6849,17 @@ export default function DropYardBuyerDashboard({
     }
   };
   const togglePreview = (i) => setSavedPreview(prev => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+
+  // The Sneak Peek heart used to flip `savedPreview`, a Set that lived only
+  // in this component: the save never reached /api/watchlist, so it was
+  // missing from the Saved tab and gone on the next page load — the amber
+  // ring on the card with it. A queued item is an ordinary watchlist row
+  // (the backend takes any item id, whatever its status), so for a signed-in
+  // buyer the peek heart is now the same save as everywhere else, and the
+  // Saved tab lists it with its "Sneak Peek / Opens Saturday" card. The
+  // local Set stays behind for the token-less preview route.
+  const peekSaved  = accessToken ? savedIds   : savedPreview;
+  const peekToggle = accessToken ? toggleSave : togglePreview;
   const handleRemindMe = () => { setReminded(true); setToast(`We'll ping you ${dropOpenDay()} at ${dropOpenHour()}.`); };
 
   const handleClaimComplete = async (item, slot, realClaim = null) => {
@@ -6822,12 +6934,12 @@ export default function DropYardBuyerDashboard({
           {!viewingItem && !viewingSellerName && (
             <>
               {page === "discover" && viewingPreview && (
-                <PreviewItemDetail item={viewingPreview} onBack={() => setViewingPreview(null)} savedPreview={savedPreview} togglePreview={togglePreview}/>
+                <PreviewItemDetail item={viewingPreview} onBack={() => setViewingPreview(null)} savedPreview={peekSaved} togglePreview={peekToggle}/>
               )}
               {page === "discover" && !viewingPreview && showSneakList && (
-                <SneakPeekListPage savedPreview={savedPreview} togglePreview={togglePreview} onPreviewItem={setViewingPreview} onBack={() => setShowSneakList(false)} sneakPeekSource={sneakPeekForUI}/>
+                <SneakPeekListPage savedPreview={peekSaved} togglePreview={peekToggle} onPreviewItem={setViewingPreview} onBack={() => setShowSneakList(false)} sneakPeekSource={sneakPeekForUI}/>
               )}
-              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={savedPreview} togglePreview={togglePreview} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null}/>}
+              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={peekSaved} togglePreview={peekToggle} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null}/>}
               {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>}
               {page === "claims"   && <ClaimsPage claims={claims} setClaims={setClaims} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} onGoToMessages={() => setPage("messages")} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} accessToken={accessToken}/>}
               {page === "messages" && <MessagesPage user={user} accessToken={accessToken} claims={claims} onAcceptCounter={handleAcceptCounterByItemTitle} onDeclineCounter={handleDeclineCounterByItemTitle} openThreadId={openThreadId} onConsumeOpenThread={() => setOpenThreadId(null)} onBack={() => setPage("discover")} convList={convList} onConvListChange={setConvList}/>}
