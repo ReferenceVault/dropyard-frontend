@@ -1607,7 +1607,7 @@ async function shareListing(item) {
 /* ============================================================
    ITEM CARD  — works for drop / shelf
    ============================================================ */
-function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false }) {
+function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null }) {
   const [hovered, setHovered] = useState(false);
   const discount = item.op ? Math.round((1 - item.p / item.op) * 100) : null;
   let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = "Live Drop", cardAccent = C.green, ctaLabel = "Claim Now", CtaIcon = Check;
@@ -1641,7 +1641,12 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   // refuses a second claim from the same buyer ("you already have an offer on
   // this item"), so offering it would be an invitation to an error toast.
   const hasPendingOffer = offerPending === true && !isClaimed && !isPreview;
-  const ctaDisabled = isClaimed || isPreview || hasPendingOffer;
+  // The viewer is the seller. The card stays in the feed — this is how a
+  // seller sees their listing exactly as the neighbourhood sees it — but
+  // every buyer-side action comes off it: no claim (the backend refuses a
+  // self-claim), no save (watching your own item is meaningless). Opening
+  // the card still works; ItemDetail offers the Seller-view switch there.
+  const ctaDisabled = isOwn || isClaimed || isPreview || hasPendingOffer;
 
   return (
     <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 20, overflow: "hidden", border: "1px solid " + (fromPeek ? C.amber + "60" : hovered ? C.fawn : C.fawn + "80"), cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-3px)" : "translateY(0)", boxShadow: fromPeek ? (hovered ? "inset 4px 0 0 " + C.amber + ", 0 12px 32px rgba(31, 29, 25, 0.08)" : "inset 4px 0 0 " + C.amber + ", 0 1px 0 " + C.fawn + "60") : (hovered ? "0 12px 32px rgba(31, 29, 25, 0.08)" : "0 1px 0 " + C.fawn + "60"), animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
@@ -1665,6 +1670,10 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
           >
             <Share2 size={15} style={{ color: C.ink, strokeWidth: 2 }}/>
           </button>
+          {/* Save stays available on an own listing too. Watching your own
+              item is pointless, but it's allowed by the backend, so a seller
+              who saved one before now needs this heart to unsave it — and
+              the Saved page renders the same card. */}
           <button onClick={e => { e.stopPropagation(); onToggleSave(item.id); }} style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: saved ? C.paper : "rgba(255,255,255,0.95)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 2px 8px rgba(31,29,25,0.1)" }}>
             <Heart size={16} style={{ color: saved ? C.claret : C.ink, fill: saved ? C.claret : "none", strokeWidth: 2 }}/>
           </button>
@@ -1681,9 +1690,17 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
         {/* An offer the seller hasn't answered yet. Deliberately a badge and
             not the full-card overlay below: the item is still listed and still
             claimable — by this buyer at the listed price, and by anyone else. */}
-        {offerPending && !isClaimed && !isPreview && (
+        {offerPending && !isOwn && !isClaimed && !isPreview && (
           <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.paper, color: C.amberDeep, border: "1.5px solid " + C.amber + "55", display: "flex", alignItems: "center", gap: 4 }}>
             <Clock size={10}/> Offer pending
+          </span>
+        )}
+        {/* Also a badge rather than the full-card overlay: the item is live
+            and claimable by everyone else, so dimming the photo would
+            misreport its state to the only person who can't act on it. */}
+        {isOwn && (
+          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.paper, color: C.greenDeep, border: "1.5px solid " + C.green + "55", display: "flex", alignItems: "center", gap: 4 }}>
+            <Package size={10}/> Your listing
           </span>
         )}
         {isClaimed && (
@@ -1704,6 +1721,11 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
               <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, textAlign: "center", lineHeight: 1.4, maxWidth: 200 }}>You picked this up. Find it in your <b style={{ color: C.ink }}>History</b>.</p>
             ) : isClaimedByMe ? (
               <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, textAlign: "center", lineHeight: 1.4, maxWidth: 200 }}>Pickup pending. Track this in your <b style={{ color: C.greenDeep }}>Claims</b> tab.</p>
+            ) : isOwn ? (
+              // The seller's own item, claimed by a neighbour. "Notify me if
+              // it frees up" is the wrong offer to make the person who owns
+              // it — the pickup is theirs to run, from the Seller view.
+              <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, textAlign: "center", lineHeight: 1.4, maxWidth: 200 }}>A neighbour is picking this up. Arrange it from your <b style={{ color: C.ink }}>Seller view</b>.</p>
             ) : (
               <>
                 <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, textAlign: "center", lineHeight: 1.4, maxWidth: 200 }}>Another neighbour is picking this up. Item may become available if they don&rsquo;t collect.</p>
@@ -1740,27 +1762,38 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
         </div>
 
         <button
-          onClick={e => { e.stopPropagation(); if (ctaDisabled) { if (isPreview && onOpen) onOpen(); return; } if (onClaimNow) onClaimNow(); else if (onOpen) onOpen(); }}
-          disabled={isClaimed || hasPendingOffer}
+          onClick={e => {
+            e.stopPropagation();
+            // Own listing: the only action worth offering is the one that
+            // actually does something — jump to the Seller view to manage it.
+            // Falls back to opening the detail, which carries the same switch.
+            if (isOwn) { if (onSwitchRole) onSwitchRole(); else if (onOpen) onOpen(); return; }
+            if (ctaDisabled) { if (isPreview && onOpen) onOpen(); return; }
+            if (onClaimNow) onClaimNow(); else if (onOpen) onOpen();
+          }}
+          disabled={!isOwn && (isClaimed || hasPendingOffer)}
           className="cta-primary"
           style={{
             width: "100%",
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            padding: "10px 0", borderRadius: 12, border: "none",
-            background: isPreview ? C.sand : hasPendingOffer ? C.amberMist : cardAccent,
-            color: isPreview ? C.mink : hasPendingOffer ? C.amberDeep : "#fff",
+            padding: "10px 0", borderRadius: 12,
+            border: isOwn ? "1.5px solid " + C.fawn : "none",
+            background: isOwn ? C.paper : isPreview ? C.sand : hasPendingOffer ? C.amberMist : cardAccent,
+            color: isOwn ? C.ink : isPreview ? C.mink : hasPendingOffer ? C.amberDeep : "#fff",
             fontFamily: F.head, fontSize: 12, fontWeight: 800,
-            cursor: (isClaimed || hasPendingOffer) ? "not-allowed" : "pointer",
-            opacity: isClaimed ? 0.4 : 1,
+            cursor: (!isOwn && (isClaimed || hasPendingOffer)) ? "not-allowed" : "pointer",
+            opacity: (isClaimed && !isOwn) ? 0.4 : 1,
             marginTop: "auto",
-            boxShadow: (item.layer === "shelf" || isPreview || hasPendingOffer) ? "none" : "0 2px 0 " + cardAccent + "40",
+            boxShadow: (isOwn || item.layer === "shelf" || isPreview || hasPendingOffer) ? "none" : "0 2px 0 " + cardAccent + "40",
           }}
         >
-          {isPreview
-            ? <><Clock size={13}/> Opens {dropOpenDay()} {dropOpenHour()}</>
-            : hasPendingOffer
-              ? <><Clock size={13}/> Waiting for seller</>
-              : <><CtaIcon size={13}/> {ctaLabel}</>}
+          {isOwn
+            ? <><Package size={13}/> Manage in Seller view</>
+            : isPreview
+              ? <><Clock size={13}/> Opens {dropOpenDay()} {dropOpenHour()}</>
+              : hasPendingOffer
+                ? <><Clock size={13}/> Waiting for seller</>
+                : <><CtaIcon size={13}/> {ctaLabel}</>}
         </button>
       </div>
     </article>
@@ -3086,9 +3119,9 @@ function formatPickupSummary(item) {
 }
 
 function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller, onViewSeller, savedIds, onToggleSave, accessToken = null, onGoToMessages = null, onClaimCreated = null, currentUserId = null, onSwitchRole = null }) {
-  // BUG-050 safety net — even with the buyer feed filtering own items out
-  // (in the parent useEffect), a deep link, watchlist row, or stale cache
-  // can still land a seller on their own item detail page. Detect that and
+  // Own listings are in the buyer feed by design, so a seller opening their
+  // own item detail is now the ordinary path, not just the deep-link /
+  // watchlist edge case it was when the feed filtered them out. Either way:
   // swap the Claim / Ask buttons for a "switch to Seller view" affordance.
   const isMyOwnItem = !!currentUserId && item?.seller?.id === currentUserId;
   const { isMobile } = useViewport();
@@ -3610,7 +3643,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
 /* ============================================================
    REGULAR SELLER PROFILE (non-Dedicated)
    ============================================================ */
-function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedIds, onToggleSave, itemsSource = null, state = "between" }) {
+function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedIds, onToggleSave, itemsSource = null, state = "between", currentUserId = null, onSwitchRole = null }) {
   // BUG-069 — RegularSellerProfile uses `__isMobile` inline (line further
   // down) but the destructure was missing here, causing a ReferenceError
   // the moment a buyer tapped "View profile" on any seller. Sister
@@ -3676,7 +3709,7 @@ function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedI
         <EmptyState illustration={<EmptySellerIllustration/>} title={"No active listings from " + firstName} message="Their stand is empty right now. Check back soon — neighbours list new items every week." accent={C.amber}/>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={savedIds.has(i.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"}/>)}
+          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={savedIds.has(i.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
         </div>
       )}
 
@@ -3693,7 +3726,7 @@ function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedI
 /* ============================================================
    SAVED PAGE
    ============================================================ */
-function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggleSave, onBrowse, onBack, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, state = "between" }) {
+function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggleSave, onBrowse, onBack, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, state = "between", currentUserId = null, onSwitchRole = null }) {
   // Authed users render directly from the watchlist API result (full Item
   // objects, including SOLD ones + ones the user owns themselves). Preview
   // mode falls back to filtering the demo pool by savedIds — the original
@@ -3708,7 +3741,7 @@ function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggle
         <EmptyState illustration={<EmptySavedIllustration/>} title="Nothing saved yet" message="Tap the heart on items you’re interested in — they’ll gather here so you can claim them when the Drop opens." cta="Browse Discover" onCtaClick={onBrowse} accent={C.amber}/>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)}/>)}
+          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
         </div>
       )}
     </>
@@ -5664,7 +5697,12 @@ function SellWithAICta({ onSwitchRole }) {
 /* ============================================================
    DISCOVER — Between Drops state
    ============================================================ */
-function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, reminded, onRemindMe, savedPreview, togglePreview, onSwitchRole, onPreviewItem, onSeeAllPreviews, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, itemsLoading = false, sneakPeekSource = null }) {
+function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, reminded, onRemindMe, savedPreview, togglePreview, onSwitchRole, onPreviewItem, onSeeAllPreviews, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, itemsLoading = false, sneakPeekSource = null, currentUserId = null }) {
+  // A seller's own listings are part of the feed (see the fetch in
+  // BuyerDashboard). This is what marks them so the card can drop its
+  // buyer-side actions — null for the unauthed preview routes, where every
+  // demo item carries sellerId: null and nothing matches.
+  const isOwnItem = (i) => !!currentUserId && i?.sellerId === currentUserId;
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("All");
@@ -5761,7 +5799,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           })()}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {liveUnifiedPool.map((item, i) => (
-              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} liveMode={true} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)}/>
+              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} liveMode={true} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
             ))}
           </div>
         </>
@@ -5776,7 +5814,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
             <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={betweenPool.length + " items you can grab today — Shelf carryovers available for pickup anytime."} pulse={true}/>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
               {betweenPool.map((item, i) => (
-                <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)}/>
+                <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
               ))}
             </div>
           </>
@@ -5789,7 +5827,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={shelfItems.length + " items ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {shelfItems.map((item, i) => (
-              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)}/>
+              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
             ))}
           </div>
         </>
@@ -6247,12 +6285,15 @@ export default function DropYardBuyerDashboard({
       .then(data => {
         if (cancelled) return;
         const list = Array.isArray(data?.items) ? data.items : [];
-        // Drop the seller's own items from the buyer feed — they can't claim
-        // or message themselves about their own listing (backend enforces
-        // both), so surfacing them only invites the "Couldn't send" toast.
-        // BUG-050. Sellers can still preview their item in Seller-mode UI.
-        const mineFiltered = user?.id ? list.filter((i) => i?.seller?.id !== user.id) : list;
-        setLiveItems(mineFiltered.map(adaptBuyerItem).filter(Boolean));
+        // A seller's own listings stay IN the buyer feed. They used to be
+        // filtered out here (BUG-050), which meant the one person who most
+        // wanted to see how their item reads to a buyer couldn't — and left
+        // them unable to tell a live listing from one that never published.
+        // What they can't do is transact with themselves, and that's handled
+        // where the actions are: ItemCard renders a "Your listing" card with
+        // no claim CTA, ItemDetail swaps in the Seller-view switch, and the
+        // backend refuses a self-claim either way.
+        setLiveItems(list.map(adaptBuyerItem).filter(Boolean));
       })
       .catch(() => { if (!cancelled) setLiveItems([]); })
       .finally(() => { if (!cancelled) setItemsLoading(false); });
@@ -6273,11 +6314,11 @@ export default function DropYardBuyerDashboard({
       .then(data => {
         if (cancelled) return;
         const list = Array.isArray(data?.items) ? data.items : [];
-        // Same self-filter as the main feed (BUG-050) — the seller's own
-        // queued items belong in the Seller-mode inventory, not the buyer
-        // Sneak Peek strip.
-        const mineFiltered = user?.id ? list.filter((i) => i?.seller?.id !== user.id) : list;
-        const adapted = mineFiltered.map((api, i) => {
+        // Own queued items are shown here too, same reasoning as the main
+        // feed above. Nothing on a Sneak Peek card transacts — it saves and
+        // it previews — so a seller seeing their own item lined up for
+        // Saturday is simply the truth about Saturday.
+        const adapted = list.map((api, i) => {
           const photos = Array.isArray(api?.photos) ? api.photos.filter(Boolean) : [];
           return {
             id:       api.id ?? ("api-peek-" + i),
@@ -6286,6 +6327,7 @@ export default function DropYardBuyerDashboard({
             img:      photos[0] || CATEGORY_EMOJI[api.category] || "📦",
             cat:      BUYER_ENUM_TO_CATEGORY[api.category] || "Other",
             seller:   api.seller?.name || "Neighbour",
+            sellerId: api.seller?.id || null,
             hood:     api.seller?.neighborhood || "Nearby",
             dist:     "Nearby",
           };
@@ -6311,9 +6353,9 @@ export default function DropYardBuyerDashboard({
   const [sellerBackItem, setSellerBackItem] = useState(null);
 
   // BUG-085 — consume the ?item=<id> deep link set by the public share page.
-  // Fetched individually rather than looked up in the feed: the feed is
-  // paginated and filters out the viewer's own items, so a shared item is
-  // frequently absent from it. A bad or removed id just leaves the buyer on
+  // Fetched individually rather than looked up in the feed: the feed only
+  // carries LIVE items for the current phase, so a shared item is frequently
+  // absent from it. A bad or removed id just leaves the buyer on
   // Discover — a shared link outliving its item is normal, not an error.
   // NO cancelled-flag here, deliberately. This effect used to set one in a
   // cleanup, and under React StrictMode (on by default in dev) that made the
@@ -6771,7 +6813,7 @@ export default function DropYardBuyerDashboard({
               `viewingItem` explicitly, otherwise the item would outrank the
               profile it's trying to open. */}
           {viewingSellerName && !viewingItem && (
-            <RegularSellerProfile sellerName={viewingSellerName} onBack={() => { setViewingSellerName(null); if (sellerBackItem) { setViewingItem(sellerBackItem); setSellerBackItem(null); } }} onSelect={setViewingItem} onClaimNow={setClaimItem} savedIds={savedIds} onToggleSave={toggleSave} itemsSource={itemsForUI} state={dropState}/>
+            <RegularSellerProfile sellerName={viewingSellerName} onBack={() => { setViewingSellerName(null); if (sellerBackItem) { setViewingItem(sellerBackItem); setSellerBackItem(null); } }} onSelect={setViewingItem} onClaimNow={setClaimItem} savedIds={savedIds} onToggleSave={toggleSave} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>
           )}
           {viewingItem && (
             <ItemDetail item={viewingItem} onBack={() => setViewingItem(null)} onClaimComplete={handleClaimComplete} onGoToClaims={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("claims"); }}  onViewSeller={(name) => { setSellerBackItem(viewingItem); setViewingItem(null); setViewingSellerName(name); }} savedIds={savedIds} onToggleSave={toggleSave} accessToken={accessToken} onGoToMessages={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("messages"); }} onClaimCreated={handleClaimCreated} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>
@@ -6785,8 +6827,8 @@ export default function DropYardBuyerDashboard({
               {page === "discover" && !viewingPreview && showSneakList && (
                 <SneakPeekListPage savedPreview={savedPreview} togglePreview={togglePreview} onPreviewItem={setViewingPreview} onBack={() => setShowSneakList(false)} sneakPeekSource={sneakPeekForUI}/>
               )}
-              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={savedPreview} togglePreview={togglePreview} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI}/>}
-              {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState}/>}
+              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={savedPreview} togglePreview={togglePreview} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null}/>}
+              {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>}
               {page === "claims"   && <ClaimsPage claims={claims} setClaims={setClaims} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} onGoToMessages={() => setPage("messages")} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} accessToken={accessToken}/>}
               {page === "messages" && <MessagesPage user={user} accessToken={accessToken} claims={claims} onAcceptCounter={handleAcceptCounterByItemTitle} onDeclineCounter={handleDeclineCounterByItemTitle} openThreadId={openThreadId} onConsumeOpenThread={() => setOpenThreadId(null)} onBack={() => setPage("discover")} convList={convList} onConvListChange={setConvList}/>}
               {page === "history"  && <HistoryPage highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} accessToken={accessToken} onBack={() => setPage("discover")}/>}
@@ -6797,8 +6839,12 @@ export default function DropYardBuyerDashboard({
 
         <Toast message={toast} onClose={() => setToast(null)}/>
 
-        {/* Direct-from-card claim — bypasses item detail */}
-        {claimItem && (
+        {/* Direct-from-card claim — bypasses item detail. The own-listing
+            check is the last stop before the modal: cards no longer offer a
+            claim on your own item, but this path is reachable from the seller
+            profile and a stale feed too, and the backend's 400 would arrive
+            only after the buyer picked a slot. */}
+        {claimItem && !(user?.id && claimItem.seller?.id === user.id) && (
           <ClaimModal
             item={claimItem}
             onClose={() => setClaimItem(null)}
