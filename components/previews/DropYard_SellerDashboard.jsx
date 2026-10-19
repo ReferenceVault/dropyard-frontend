@@ -5549,6 +5549,23 @@ function relativeTimeShort(iso) {
 // Lifted from SellerMessagesView to module scope so the dashboard root can
 // adapt the conversation list before SellerMessagesView even mounts (the nav
 // badge needs to count from this lifted state). Seller-perspective adapter.
+/**
+ * Square item thumbnail for the Messages inbox: the first uploaded photo when
+ * there is one, the category emoji when there isn't. Mirrors the conditional
+ * the Inventory rows already use, kept in one place because the thread list
+ * and the thread header both need it at different sizes.
+ */
+function ConversationItemThumb({ item, size, emojiSize }) {
+  const photo = Array.isArray(item?.photos) ? item.photos.find(Boolean) : null;
+  return (
+    <div style={{ width: size, height: size, borderRadius: 12, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
+      {photo
+        ? <img src={photo} alt={item?.title || "Item"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+        : <span style={{ fontSize: emojiSize }}>{item?.img}</span>}
+    </div>
+  );
+}
+
 function adaptSellerConversation(api, myId) {
   if (!api) return null;
   // Seller view only shows conversations where the current user IS the seller.
@@ -5570,6 +5587,13 @@ function adaptSellerConversation(api, myId) {
     item: {
       title: api.item?.title || "Item",
       price: api.item?.price ?? 0,
+      // The thread showed a category emoji for every item, however many
+      // photos the seller had uploaded. /api/conversations has always sent
+      // the item's resolved `photos` — this adapter simply never read them,
+      // so the listing a buyer is negotiating over was unrecognisable at a
+      // glance in the inbox. `img` stays as the emoji fallback for items
+      // with no photo, matching the Inventory rows.
+      photos: Array.isArray(api.item?.photos) ? api.item.photos.filter(Boolean) : [],
       img:   CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
       layer,
       // Raw backend status (LIVE / CLAIMED / SOLD). Composer locks once
@@ -6515,7 +6539,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                   <span style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 3, borderRadius: 999, background: C.green }}/>
                 )}
                 {c.unread && <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", width: 7, height: 7, borderRadius: "50%", background: C.green, boxShadow: "0 0 0 3px " + C.greenMist }}/>}
-                <div style={{ fontSize: 32, width: 48, height: 48, borderRadius: 12, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn }}>{c.item.img}</div>
+                <ConversationItemThumb item={c.item} size={48} emojiSize={32}/>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 2 }}>
                     <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.item.title}</p>
@@ -6552,7 +6576,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
               </button>
             )}
             <div style={{ padding: isMobile ? "12px 14px" : "16px 20px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", gap: isMobile ? 12 : 14, flexWrap: "wrap" }}>
-              <div style={{ fontSize: isMobile ? 26 : 30, width: isMobile ? 40 : 44, height: isMobile ? 40 : 44, borderRadius: 12, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn }}>{active.item.img}</div>
+              <ConversationItemThumb item={active.item} size={isMobile ? 40 : 44} emojiSize={isMobile ? 26 : 30}/>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 15, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{active.item.title}</p>
                 <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, marginTop: 2, flexWrap: "wrap" }}>
