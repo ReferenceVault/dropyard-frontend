@@ -6565,10 +6565,14 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   }
 
   return (
-    <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
+    // Fills the content area instead of being a 1160px card inside it: a
+    // column whose header is fixed and whose panes take the remaining height.
+    // `minHeight: 0` on the children is what lets them scroll rather than
+    // stretching this container past the viewport.
+    <div className="fade-in" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       {/* Page header — hidden on mobile when inside a thread so the conversation gets full screen */}
       {(!isMobile || !mobileViewingId) && (
-      <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 2 : 4 }}>
+      <div style={{ padding: isMobile ? "12px 16px 8px" : "16px 28px 10px", position: "relative", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
           <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.aiMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
             <MessageSquare size={isMobile ? 18 : 20} style={{ color: C.ai }} strokeWidth={2.2}/>
@@ -6587,7 +6591,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
 
       {/* Success toast — celebration banner when an offer/counter is accepted. */}
       {successMsg && (
-        <div className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "44", marginBottom: 16, boxShadow: "0 2px 0 " + C.green + "20" }}>
+        <div className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "44", margin: isMobile ? "0 16px 12px" : "0 28px 12px", flexShrink: 0, boxShadow: "0 2px 0 " + C.green + "20" }}>
           <CheckCircle size={18} style={{ color: C.greenDeep }}/>
           <p style={{ fontSize: 13, fontWeight: 700, color: C.greenDeep, fontFamily: F.body, flex: 1 }}>{successMsg}</p>
           <button onClick={() => setSuccessMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.greenDeep }}/></button>
@@ -6596,7 +6600,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
 
       {/* Error toast */}
       {errorMsg && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", margin: isMobile ? "0 16px 12px" : "0 28px 12px", flexShrink: 0 }}>
           <AlertCircle size={18} style={{ color: C.claret }} />
           <p style={{ fontSize: 13, fontWeight: 600, color: C.claret, fontFamily: F.body, flex: 1 }}>{errorMsg}</p>
           <button onClick={() => setErrorMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
@@ -6605,7 +6609,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
 
       {/* Loading indicator while inbox fetches */}
       {usingBackend && loading && (
-        <div style={{ padding: 40, textAlign: "center" }}>
+        <div style={{ padding: 40, textAlign: "center", flexShrink: 0 }}>
           <p style={{ fontSize: 13, color: C.ash, fontFamily: F.body }}>Loading conversations…</p>
         </div>
       )}
@@ -6623,22 +6627,29 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
         display: isMobile ? "flex" : "grid",
         flexDirection: isMobile ? "column" : undefined,
         gridTemplateColumns: isMobile ? undefined : "380px 1fr",
-        gap: isMobile ? 0 : 20,
-        height: isMobile ? "auto" : 680,
-        minHeight: isMobile ? "60vh" : undefined,
-        border: isMobile ? "none" : "1.5px solid " + C.fawn,
-        borderRadius: isMobile ? 0 : 20,
-        overflow: isMobile ? "visible" : "hidden",
-        background: isMobile ? "transparent" : C.paper,
+        // No gap and no outer border on desktop: the two panes meet at the
+        // list's own borderRight, the way a mail client reads. The 20px gap
+        // and rounded 1.5px frame made this look like a widget dropped onto
+        // a page rather than the page itself.
+        gap: 0,
+        // Fills whatever height is left under the header instead of a fixed
+        // 680px box with dead white space beneath it. `minHeight: 0` lets it
+        // shrink below its content so the panes inside scroll.
+        flex: "1 1 auto",
+        minHeight: 0,
+        borderTop: "1px solid " + C.fawn,
+        overflow: "hidden",
+        background: C.paper,
       }}>
         {/* Conversation list — hidden on mobile when inside a thread */}
         {(!isMobile || !mobileViewingId) && (
         <div style={{
+          // The only divider between the two panes now that the outer frame
+          // is gone. Mobile keeps neither — the list IS the screen there.
           borderRight: isMobile ? "none" : "1px solid " + C.fawn,
           overflowY: "auto",
-          background: isMobile ? C.paper : undefined,
-          border: isMobile ? "1.5px solid " + C.fawn : undefined,
-          borderRadius: isMobile ? 16 : 0,
+          minHeight: 0,
+          background: C.paper,
         }}>
           {/* `archivedList` counts here too — otherwise archiving the last
               live thread renders "No threads yet" over an Archived group
@@ -6709,11 +6720,13 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
           <div style={{
             display: "flex", flexDirection: "column", minWidth: 0,
             background: C.paper,
-            border: isMobile ? "1.5px solid " + C.fawn : undefined,
-            borderRadius: isMobile ? 16 : 0,
             overflow: "hidden",
-            minHeight: isMobile ? "70vh" : undefined,
-            height: isMobile ? "calc(100vh - 200px)" : undefined,
+            // Desktop: a grid item stretches to the row height on its own.
+            // Mobile: fill the flex parent rather than the old hardcoded
+            // `calc(100vh - 200px)`, which guessed at the chrome above it and
+            // left a gap whenever it guessed wrong.
+            flex: isMobile ? "1 1 auto" : undefined,
+            minHeight: 0,
           }}>
             {isMobile && (
               <button onClick={() => setMobileViewingId(null)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", border: "none", borderBottom: "1px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
@@ -6894,7 +6907,11 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
               );
             })()}
 
-            <div style={{ flex: 1, padding: isMobile ? "14px 14px" : "18px 20px", overflowY: "auto", background: C.sand + "60" }}>
+            {/* `minHeight: 0` is what makes this the pane that scrolls. A flex
+                child defaults to min-height:auto, so without it the message
+                list grows to its content and pushes the composer off the
+                bottom instead of scrolling inside its own box. */}
+            <div style={{ flex: 1, minHeight: 0, padding: isMobile ? "14px 14px" : "18px 20px", overflowY: "auto", background: C.sand + "60" }}>
               {usingBackend && activeLoading && (
                 <p style={{ fontSize: 12, color: C.ash, fontFamily: F.body, textAlign: "center", padding: "20px 0" }}>Loading thread…</p>
               )}
@@ -6907,8 +6924,21 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             {/* Quick-reply templates — covers the 80% of routine replies in one tap.
                 Tapping populates the draft input (instead of sending) so the seller
                 can tweak before sending. */}
-            <div style={{ borderTop: "1px solid " + C.fawn, background: C.paper }}>
-              <div style={{ display: "flex", gap: 6, padding: isMobile ? "10px 12px 0" : "12px 16px 0", overflowX: "auto", scrollbarWidth: "none" }}>
+            <div style={{ borderTop: "1px solid " + C.fawn, background: C.paper, flexShrink: 0 }}>
+              {/* Chips wrap on desktop instead of scrolling off the edge. The
+                  row was overflowX:auto with the scrollbar hidden, so the
+                  last template ("Last price is $X") was simply cut in half
+                  against the panel edge with nothing to say it was there. On
+                  mobile a horizontal swipe is natural, so scrolling stays —
+                  with trailing padding so the last chip clears the edge. */}
+              <div style={{
+                display: "flex",
+                flexWrap: isMobile ? "nowrap" : "wrap",
+                gap: 6,
+                padding: isMobile ? "10px 12px 0" : "12px 16px 0",
+                overflowX: isMobile ? "auto" : "visible",
+                scrollbarWidth: "none",
+              }}>
                 {[
                   "Yes, still available — when works?",
                   "Sorry, just sold",
@@ -10709,7 +10739,7 @@ export default function DropYardSellerDashboard({
               the JS `isMobile` flag caused the sidebar to render in SSR HTML
               (defaults to desktop) and pop out on hydration, shifting layout. */}
           <Sidebar activeView={view} onNav={safeNav} aiPlan={aiPlan} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount}/>
-          <main className="dy-seller-main">
+          <main className={"dy-seller-main" + (view === "messages" ? " dy-seller-main--flush" : "")}>
             {view === "overview" && <Overview onNav={safeNav} user={user} sellerItems={sellerItems} accessToken={accessToken}/>}
             {view === "items" && <MyItemsView onNav={safeNav} onEdit={goToEdit} onView={goToView} sellerItems={sellerItems} onItemsChange={onItemsChange} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
             {view === "questions" && <QuestionsView onNav={safeNav} accessToken={accessToken}/>}
