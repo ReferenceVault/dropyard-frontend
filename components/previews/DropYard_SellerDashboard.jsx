@@ -5029,11 +5029,8 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                   </div>
                 </div>
 
-                {lc === "shelf" && !dropIsLive && (
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.amberDeep, fontStyle: "italic", display: "flex", alignItems: "center", gap: 4 }}>
-                    <Calendar size={10}/> Will be featured in Saturday&rsquo;s Drop
-                  </p>
-                )}
+                {/* Mobile twin of the same label, removed for the same
+                    reason — a Shelf item is not queued for the Drop. */}
 
                 <div style={{ display: "flex", gap: 6, alignItems: "center", paddingTop: 10, borderTop: "1px dashed " + C.fawn }}>
                   {lc === "draft" && (
@@ -5113,16 +5110,18 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                 >
                   {item.t}
                 </button>
-                {(item.views > 0 || item.saves > 0 || (lc === "shelf" && item.shelfDays) || (lc === "shelf" && !dropIsLive)) && (
+                {/* "In Saturday's Drop" used to sit here on every Shelf item
+                    while the Drop wasn't live, directly contradicting the
+                    STATUS column beside it. Shelf is the always-available
+                    carryover pool — those items are browsable every day and
+                    are not queued for the Drop, so the label misreported the
+                    placement the seller had chosen. The Queued-for-Drop items
+                    carry their own "Queued for Saturday" status already. */}
+                {(item.views > 0 || item.saves > 0 || (lc === "shelf" && item.shelfDays)) && (
                   <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 10, fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink }}>
                     {item.views > 0 && (<span style={{ display: "flex", alignItems: "center", gap: 3 }}><Eye size={10}/> {item.views}</span>)}
                     {item.saves > 0 && (<span style={{ display: "flex", alignItems: "center", gap: 3 }}><Heart size={10}/> {item.saves}</span>)}
                     {lc === "shelf" && item.shelfDays && (<span>{item.shelfDays}d on Shelf</span>)}
-                    {lc === "shelf" && !dropIsLive && (
-                      <span style={{ color: C.amberDeep, display: "flex", alignItems: "center", gap: 3, fontStyle: "italic" }}>
-                        <Calendar size={10}/> In Saturday&apos;s Drop
-                      </span>
-                    )}
                   </div>
                 )}
               </div>
