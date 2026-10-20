@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiRequest, uploadItemPhoto } from "@/lib/api";
-import { useSocketEvent } from "@/context/SocketContext";
+import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { useAuth } from "@/context/AuthContext";
 import { useDropCycle } from "@/context/DropCycleContext";
@@ -509,7 +509,13 @@ function SwitchToBuyerButton({ onClick }) {
 // hover, premium icon tile with subtle elevation, smooth transitions.
 // In `collapsed` (rail) mode, renders icon-only with the label in `title`
 // as a native tooltip.
-function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showBadge, messageBadge = 0, collapsed = false }) {
+// `showBadge` (the amber "3/5" AI-credit pill on Settings) is gone. It was a
+// hardcoded string, not a count: every free seller saw "3/5" whether they had
+// used AI nothing times or fifty. There is no credit tracking behind it —
+// no column, no route, no counter anywhere in the backend — so it could only
+// ever be decoration that read as data. If per-seller AI credits are built
+// later, this comes back reading a real number.
+function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, countBadge = 0, collapsed = false }) {
   const [hover, setHover] = useState(false);
   const bg = active
     ? accentMist
@@ -557,16 +563,7 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
         }}>
           <Icon size={16} style={{ color: active ? "#fff" : C.mink }} strokeWidth={2.2}/>
         </span>
-        {showBadge && (
-          <span style={{
-            position: "absolute",
-            top: 4, right: 6,
-            width: 6, height: 6, borderRadius: "50%",
-            background: C.amberDeep,
-            boxShadow: "0 0 0 2px " + C.paper,
-          }}/>
-        )}
-        {messageBadge > 0 && (
+        {countBadge > 0 && (
           <span style={{
             position: "absolute",
             top: 2, right: 4,
@@ -576,7 +573,7 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
             fontFamily: F.head, fontSize: 9, fontWeight: 800,
             display: "inline-flex", alignItems: "center", justifyContent: "center",
             boxShadow: "0 0 0 2px " + C.paper,
-          }}>{messageBadge > 99 ? "99+" : messageBadge}</span>
+          }}>{countBadge > 99 ? "99+" : countBadge}</span>
         )}
       </button>
     );
@@ -650,24 +647,9 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
         {item.label}
       </span>
 
-      {/* Badge (e.g. AI usage 3/5) */}
-      {showBadge && (
-        <span style={{
-          fontSize: 9,
-          fontWeight: 800,
-          padding: "2px 7px",
-          borderRadius: 999,
-          background: C.amberMist,
-          color: C.amberDeep,
-          fontFamily: F.head,
-        }}>
-          3/5
-        </span>
-      )}
-
-      {/* Unread messages badge (Sidebar Messages item) — claret to distinguish
-          from the amber AI-usage badge above. */}
-      {messageBadge > 0 && (
+      {/* Count badge — unread messages on Messages, unanswered questions on
+          Inventory. */}
+      {countBadge > 0 && (
         <span style={{
           fontSize: 10,
           fontWeight: 800,
@@ -678,12 +660,12 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
           fontFamily: F.head,
           lineHeight: 1.2,
         }}>
-          {messageBadge > 99 ? "99+" : messageBadge}
+          {countBadge > 99 ? "99+" : countBadge}
         </span>
       )}
 
-      {/* Sliding chevron on active OR hover (not when badge is showing) */}
-      {!showBadge && messageBadge === 0 && (active || hover) && (
+      {/* Sliding chevron on active OR hover (not when a count badge is showing) */}
+      {countBadge === 0 && (active || hover) && (
         <ChevronRight
           size={13}
           style={{
@@ -702,10 +684,11 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
 // Mobile primary nav — fixed to the bottom of the viewport, replaces the
 // sidebar on small screens. 5 tabs with the Sell action elevated to a green
 // pill so creating listings is one thumb-tap away. Respects iOS safe-area.
-function MobileBottomNav({ activeView, onNav, messagesUnread = 0 }) {
+function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPending = 0 }) {
   const navItems = [
     { id: "overview",   label: "Home",     icon: LayoutGrid,    matches: ["overview"] },
-    { id: "items",      label: "Items",    icon: Box,           matches: ["items","orders","claims","pickups","edit-item","item-detail"] },
+    // Same badge as the desktop sidebar — Questions lives under Items.
+    { id: "items",      label: "Items",    icon: Box,           matches: ["items","orders","claims","pickups","edit-item","item-detail"], badge: questionsPending > 0 ? questionsPending : null },
     { id: "add-manual", label: "Sell",     icon: Plus,          matches: ["add-manual","add-chooser","add-ai","ai-setup","ai-photos"], primary: true },
     { id: "messages",   label: "Messages", icon: MessageSquare, matches: ["messages"], badge: messagesUnread > 0 ? messagesUnread : null },
     { id: "history",    label: "You",      icon: User,          matches: ["history","settings","ai-plan"] },
@@ -797,7 +780,10 @@ function MobileBottomNav({ activeView, onNav, messagesUnread = 0 }) {
   );
 }
 
-function Sidebar({ activeView, onNav, aiPlan, onSwitchRole, collapsed = false, messagesUnread = 0 }) {
+// `aiPlan` was only ever read to decide whether to show the "3/5" pill, so it
+// leaves with it. AIPlanView still takes it — that view is where a real plan
+// state would belong.
+function Sidebar({ activeView, onNav, onSwitchRole, collapsed = false, messagesUnread = 0, questionsPending = 0 }) {
   const sections = [
     { header: "ACTIVITY", items: [
       { id: "overview",  label: "Overview",  icon: LayoutGrid },
@@ -899,8 +885,11 @@ function Sidebar({ activeView, onNav, aiPlan, onSwitchRole, collapsed = false, m
                       accentMist={ab}
                       Icon={Ic}
                       onClick={() => handleClick(item)}
-                      showBadge={item.group === "settings" && aiPlan === "free"}
-                      messageBadge={item.id === "messages" ? messagesUnread : 0}
+                      // Unanswered questions ride on Inventory, which is where
+                      // the Questions tab lives. Before this the count existed
+                      // only on that tab's own header — a seller anywhere else
+                      // in the dashboard had no way to know one had arrived.
+                      countBadge={item.id === "messages" ? messagesUnread : item.id === "inventory" ? questionsPending : 0}
                       collapsed
                     />
                   );
@@ -979,7 +968,6 @@ function Sidebar({ activeView, onNav, aiPlan, onSwitchRole, collapsed = false, m
                     accentMist={ab}
                     Icon={Ic}
                     onClick={() => handleClick(item)}
-                    showBadge={item.group === "settings" && aiPlan === "free"}
                   />
                 );
               })}
@@ -1064,7 +1052,18 @@ function labelForView(view) {
   return (view || "").charAt(0).toUpperCase() + (view || "").slice(1).replace(/-/g, " ");
 }
 
-function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, onSwitchRole, messagesUnread = 0, onOpenMessages = null }) {
+function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, onSwitchRole, messagesUnread = 0, questionsPending = 0, onOpenMessages = null, onOpenQuestions = null }) {
+  // The bell counts everything waiting on the seller, not just messages.
+  // Clicking goes wherever the work actually is: questions when those are
+  // the only thing outstanding, the inbox otherwise.
+  const bellCount = messagesUnread + questionsPending;
+  const bellTarget = messagesUnread === 0 && questionsPending > 0 ? onOpenQuestions : onOpenMessages;
+  const bellTitle = bellCount === 0
+    ? "Notifications"
+    : [
+        messagesUnread > 0 ? messagesUnread + " unread message" + (messagesUnread === 1 ? "" : "s") : null,
+        questionsPending > 0 ? questionsPending + " unanswered question" + (questionsPending === 1 ? "" : "s") : null,
+      ].filter(Boolean).join(" · ");
   // No `useViewport()` here on purpose — layout flips between mobile/desktop
   // happen entirely via CSS media queries on the `.dy-seller-topnav*` classes
   // defined in globals.css. Gating layout on a JS hook produced a first-paint
@@ -1139,14 +1138,14 @@ function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, 
           </span>
         )}
         <button
-          title={messagesUnread > 0 ? messagesUnread + " unread message" + (messagesUnread === 1 ? "" : "s") : "Notifications"}
-          aria-label="Notifications"
+          title={bellTitle}
+          aria-label={bellTitle}
           className="dy-seller-topnav__bell"
-          onClick={() => onOpenMessages && onOpenMessages()}
+          onClick={() => bellTarget && bellTarget()}
           onMouseEnter={e => { e.currentTarget.style.background = C.sand; }}
           onMouseLeave={e => { e.currentTarget.style.background = C.paper; }}>
           <Bell size={16} style={{ color: C.mink }} strokeWidth={2.2}/>
-          {messagesUnread > 0 ? (
+          {bellCount > 0 ? (
             <span style={{
               position: "absolute", top: 4, right: 4,
               minWidth: 16, height: 16, padding: "0 4px",
@@ -1154,7 +1153,7 @@ function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, 
               fontFamily: F.head, fontSize: 9, fontWeight: 800,
               display: "inline-flex", alignItems: "center", justifyContent: "center",
               border: "2px solid " + C.paper,
-            }}>{messagesUnread > 99 ? "99+" : messagesUnread}</span>
+            }}>{bellCount > 99 ? "99+" : bellCount}</span>
           ) : null}
         </button>
         {/* BUG-064 — socket health pulse for at-a-glance real-time status. */}
@@ -1315,7 +1314,7 @@ function ActionItems({ pickupsToday, pickupsWeek, messages, drafts, onNav }) {
   );
 }
 
-function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draftsCount, recap, onNav, onShare }) {
+function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draftsCount, recap, upcomingPickups = 0, onNav, onShare }) {
   const { isMobile } = useViewport();
   // Both must format on the Drop's clock, not the viewer's. Without timeZone
   // the 8 a.m. Toronto opening renders as the local equivalent — "5:30 p.m."
@@ -1356,23 +1355,42 @@ function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draf
               <Calendar size={11} strokeWidth={2.3}/> Next Drop · {dayLabel} {timeLabel} ({countdown})
             </p>
           </div>
+          {/* "See pickups" used to show unconditionally, but the Orders page
+              it opens lists PROPOSED and ACCEPTED claims only. Once a Drop has
+              wrapped, a sold item is PICKED_UP — in neither bucket — so the
+              seller landed on a page with two empty sections and no way to
+              reach what they just sold. Completed pickups live in History.
+              The button only appears when a pickup is actually still due. */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: 0, minWidth: 220 }}>
-            <button onClick={() => onNav("pickups")} className="cta-primary" style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: "13px 22px", borderRadius: 999, border: "none", cursor: "pointer",
-              fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
-              background: "linear-gradient(180deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
-              color: "#fff",
-              boxShadow: "0 2px 0 " + C.greenDeep + ", " + _SH_SM,
-            }}>
-              <Truck size={14} strokeWidth={2.4}/> See pickups
-            </button>
-            <button onClick={() => onNav("history")} style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: "12px 22px", borderRadius: 999, border: "1.5px solid " + C.green + "40",
-              cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800,
-              background: C.paper, color: C.greenDeep,
-            }}>
+            {upcomingPickups > 0 && (
+              <button onClick={() => onNav("pickups")} className="cta-primary" style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                padding: "13px 22px", borderRadius: 999, border: "none", cursor: "pointer",
+                fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
+                background: "linear-gradient(180deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
+                color: "#fff",
+                boxShadow: "0 2px 0 " + C.greenDeep + ", " + _SH_SM,
+              }}>
+                <Truck size={14} strokeWidth={2.4}/> See pickups ({upcomingPickups})
+              </button>
+            )}
+            <button onClick={() => onNav("history")} className={upcomingPickups > 0 ? undefined : "cta-primary"} style={
+              upcomingPickups > 0
+                ? {
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    padding: "12px 22px", borderRadius: 999, border: "1.5px solid " + C.green + "40",
+                    cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800,
+                    background: C.paper, color: C.greenDeep,
+                  }
+                : {
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    padding: "13px 22px", borderRadius: 999, border: "none", cursor: "pointer",
+                    fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
+                    background: "linear-gradient(180deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
+                    color: "#fff",
+                    boxShadow: "0 2px 0 " + C.greenDeep + ", " + _SH_SM,
+                  }
+            }>
               <Award size={13} strokeWidth={2.4}/> Open history
             </button>
           </div>
@@ -2442,7 +2460,9 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
         </p>
       </div>
 
-      {/* Phase-aware hero */}
+      {/* Phase-aware hero. upcomingPickups is pickupsWeek alone — that is every
+          ACCEPTED claim, and pickupsToday is a subset of it, so the two must
+          not be added together. */}
       {dropPhase === "between" && (
         <BetweenHero
           now={now}
@@ -2452,6 +2472,7 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
           shelfCount={shelfCount}
           draftsCount={draftsCount}
           recap={lastDropRecap}
+          upcomingPickups={actionBuckets.pickupsWeek}
           onNav={onNav}
           onShare={handleShare}
         />
@@ -4225,7 +4246,7 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
    post straight onto the listing, so this is a publishing surface, not a
    private inbox — the copy says so in a few places to keep that obvious.
    ====================================================================== */
-function QuestionsView({ onNav, accessToken = null }) {
+function QuestionsView({ onNav, accessToken = null, onQuestionsChanged = null }) {
   const { isMobile } = useViewport();
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading]     = useState(!!accessToken);
@@ -4260,6 +4281,8 @@ function QuestionsView({ onNav, accessToken = null }) {
       // refetching the whole list on every reply.
       setQuestions((prev) => prev.filter((x) => x.id !== q.id));
       setDrafts((d) => { const next = { ...d }; delete next[q.id]; return next; });
+      // Drop the sidebar/bell badge in the same beat.
+      if (onQuestionsChanged) onQuestionsChanged();
       setSuccessMsg("Answer posted to " + (q.item?.title || "the listing") + ".");
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err) {
@@ -5006,11 +5029,8 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                   </div>
                 </div>
 
-                {lc === "shelf" && !dropIsLive && (
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.amberDeep, fontStyle: "italic", display: "flex", alignItems: "center", gap: 4 }}>
-                    <Calendar size={10}/> Will be featured in Saturday&rsquo;s Drop
-                  </p>
-                )}
+                {/* Mobile twin of the same label, removed for the same
+                    reason — a Shelf item is not queued for the Drop. */}
 
                 <div style={{ display: "flex", gap: 6, alignItems: "center", paddingTop: 10, borderTop: "1px dashed " + C.fawn }}>
                   {lc === "draft" && (
@@ -5090,16 +5110,18 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                 >
                   {item.t}
                 </button>
-                {(item.views > 0 || item.saves > 0 || (lc === "shelf" && item.shelfDays) || (lc === "shelf" && !dropIsLive)) && (
+                {/* "In Saturday's Drop" used to sit here on every Shelf item
+                    while the Drop wasn't live, directly contradicting the
+                    STATUS column beside it. Shelf is the always-available
+                    carryover pool — those items are browsable every day and
+                    are not queued for the Drop, so the label misreported the
+                    placement the seller had chosen. The Queued-for-Drop items
+                    carry their own "Queued for Saturday" status already. */}
+                {(item.views > 0 || item.saves > 0 || (lc === "shelf" && item.shelfDays)) && (
                   <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 10, fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink }}>
                     {item.views > 0 && (<span style={{ display: "flex", alignItems: "center", gap: 3 }}><Eye size={10}/> {item.views}</span>)}
                     {item.saves > 0 && (<span style={{ display: "flex", alignItems: "center", gap: 3 }}><Heart size={10}/> {item.saves}</span>)}
                     {lc === "shelf" && item.shelfDays && (<span>{item.shelfDays}d on Shelf</span>)}
-                    {lc === "shelf" && !dropIsLive && (
-                      <span style={{ color: C.amberDeep, display: "flex", alignItems: "center", gap: 3, fontStyle: "italic" }}>
-                        <Calendar size={10}/> In Saturday&apos;s Drop
-                      </span>
-                    )}
                   </div>
                 )}
               </div>
@@ -5550,19 +5572,37 @@ function relativeTimeShort(iso) {
 // adapt the conversation list before SellerMessagesView even mounts (the nav
 // badge needs to count from this lifted state). Seller-perspective adapter.
 /**
- * Square item thumbnail for the Messages inbox: the first uploaded photo when
- * there is one, the category emoji when there isn't. Mirrors the conditional
- * the Inventory rows already use, kept in one place because the thread list
- * and the thread header both need it at different sizes.
+ * Square item thumbnail: the first uploaded photo when there is one, the
+ * category emoji when there isn't. Every list that shows an item — Messages,
+ * History, Inventory — needs the same conditional, and each one that grew its
+ * own copy ended up showing a generic emoji because its adapter had quietly
+ * dropped `photos` from the payload. One component, so the next list that
+ * needs a thumbnail can't reintroduce that.
+ *
+ * `photos` is the array off the API item; `fallback` is the emoji to show
+ * when it's empty. `background` and `radius` vary per surface.
  */
-function ConversationItemThumb({ item, size, emojiSize }) {
-  const photo = Array.isArray(item?.photos) ? item.photos.find(Boolean) : null;
+function ItemThumb({ photos, fallback, alt, size, emojiSize, radius = 12, background = C.sand }) {
+  const photo = Array.isArray(photos) ? photos.find(Boolean) : null;
   return (
-    <div style={{ width: size, height: size, borderRadius: 12, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
+    <div style={{ width: size, height: size, borderRadius: radius, background, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
       {photo
-        ? <img src={photo} alt={item?.title || "Item"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
-        : <span style={{ fontSize: emojiSize }}>{item?.img}</span>}
+        ? <img src={photo} alt={alt || "Item"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+        : <span style={{ fontSize: emojiSize }}>{fallback}</span>}
     </div>
+  );
+}
+
+/** Messages-inbox wrapper — takes the adapted conversation's `item`. */
+function ConversationItemThumb({ item, size, emojiSize }) {
+  return (
+    <ItemThumb
+      photos={item?.photos}
+      fallback={item?.img}
+      alt={item?.title}
+      size={size}
+      emojiSize={emojiSize}
+    />
   );
 }
 
@@ -6052,6 +6092,20 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   const [activeMsgs, setActiveMsgs]     = useState(null);
   const [activeLoading, setActiveLoading] = useState(false);
 
+  // Refetch the open thread when the socket comes back. Messages that landed
+  // while it was down were pushed to a listener nobody was holding, and the
+  // thread fetch only re-runs when you switch threads — so they stayed
+  // missing until a reload. Bumped on the false→true edge only, so an already
+  // healthy connection never refetches.
+  const { connected: msgSocketConnected } = useSocket();
+  const [threadTick, setThreadTick] = useState(0);
+  const msgWasConnectedRef = useRef(msgSocketConnected);
+  useEffect(() => {
+    const was = msgWasConnectedRef.current;
+    msgWasConnectedRef.current = msgSocketConnected;
+    if (msgSocketConnected && !was) setThreadTick((t) => t + 1);
+  }, [msgSocketConnected]);
+
   // BUG-055 — active PROPOSED claims indexed by conversationId. Powers the
   // in-chat "Pending offer" banner so the seller can Accept/Counter/Decline
   // without leaving the conversation view. Refreshes on every claim:updated
@@ -6225,7 +6279,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       .finally(() => { if (!cancelled) setActiveLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, usingBackend, accessToken]);
+  }, [activeId, usingBackend, accessToken, threadTick]);
 
   // Real-time push: a new message landed somewhere
   // Live push: append to the OPEN thread + mark read on the server. Inbox
@@ -6266,14 +6320,27 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     if (!activeId) return;
     setSending(true);
     try {
-      await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
+      const res = await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
         method: "POST",
         token:  accessToken,
         body:   JSON.stringify({ body }),
       });
-      // The socket emit echoes back to me, which appends via the message:new
-      // handler. No optimistic add needed.
       setDraft("");
+      // Append from the POST response rather than waiting for the socket to
+      // echo it back. The echo does fire — the backend emits message:new to
+      // the sender as well as the recipient — but relying on it alone meant
+      // the sender's own message only appeared if the socket happened to be
+      // connected and the event wasn't missed. When it wasn't, the message
+      // was saved and invisible until something refetched the thread, which
+      // is what "I typed it and it took several refreshes to show up" is.
+      // The socket handler dedupes on message id, so the echo is a no-op.
+      if (res?.message) {
+        setActiveMsgs((prev) => {
+          const list = prev || [];
+          if (list.some((m) => m.id === res.message.id)) return list;
+          return [...list, adaptMessage(res.message)];
+        });
+      }
       // Writing into an archived thread un-archives the sender's side server
       // side, so mirror that here instead of leaving the row under "Archived"
       // with a message the seller just sent as its preview.
@@ -6565,10 +6632,14 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   }
 
   return (
-    <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
+    // Fills the content area instead of being a 1160px card inside it: a
+    // column whose header is fixed and whose panes take the remaining height.
+    // `minHeight: 0` on the children is what lets them scroll rather than
+    // stretching this container past the viewport.
+    <div className="fade-in" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       {/* Page header — hidden on mobile when inside a thread so the conversation gets full screen */}
       {(!isMobile || !mobileViewingId) && (
-      <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 2 : 4 }}>
+      <div style={{ padding: isMobile ? "12px 16px 8px" : "16px 28px 10px", position: "relative", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
           <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.aiMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
             <MessageSquare size={isMobile ? 18 : 20} style={{ color: C.ai }} strokeWidth={2.2}/>
@@ -6587,7 +6658,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
 
       {/* Success toast — celebration banner when an offer/counter is accepted. */}
       {successMsg && (
-        <div className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "44", marginBottom: 16, boxShadow: "0 2px 0 " + C.green + "20" }}>
+        <div className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "44", margin: isMobile ? "0 16px 12px" : "0 28px 12px", flexShrink: 0, boxShadow: "0 2px 0 " + C.green + "20" }}>
           <CheckCircle size={18} style={{ color: C.greenDeep }}/>
           <p style={{ fontSize: 13, fontWeight: 700, color: C.greenDeep, fontFamily: F.body, flex: 1 }}>{successMsg}</p>
           <button onClick={() => setSuccessMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.greenDeep }}/></button>
@@ -6596,7 +6667,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
 
       {/* Error toast */}
       {errorMsg && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", margin: isMobile ? "0 16px 12px" : "0 28px 12px", flexShrink: 0 }}>
           <AlertCircle size={18} style={{ color: C.claret }} />
           <p style={{ fontSize: 13, fontWeight: 600, color: C.claret, fontFamily: F.body, flex: 1 }}>{errorMsg}</p>
           <button onClick={() => setErrorMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
@@ -6605,7 +6676,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
 
       {/* Loading indicator while inbox fetches */}
       {usingBackend && loading && (
-        <div style={{ padding: 40, textAlign: "center" }}>
+        <div style={{ padding: 40, textAlign: "center", flexShrink: 0 }}>
           <p style={{ fontSize: 13, color: C.ash, fontFamily: F.body }}>Loading conversations…</p>
         </div>
       )}
@@ -6623,22 +6694,29 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
         display: isMobile ? "flex" : "grid",
         flexDirection: isMobile ? "column" : undefined,
         gridTemplateColumns: isMobile ? undefined : "380px 1fr",
-        gap: isMobile ? 0 : 20,
-        height: isMobile ? "auto" : 680,
-        minHeight: isMobile ? "60vh" : undefined,
-        border: isMobile ? "none" : "1.5px solid " + C.fawn,
-        borderRadius: isMobile ? 0 : 20,
-        overflow: isMobile ? "visible" : "hidden",
-        background: isMobile ? "transparent" : C.paper,
+        // No gap and no outer border on desktop: the two panes meet at the
+        // list's own borderRight, the way a mail client reads. The 20px gap
+        // and rounded 1.5px frame made this look like a widget dropped onto
+        // a page rather than the page itself.
+        gap: 0,
+        // Fills whatever height is left under the header instead of a fixed
+        // 680px box with dead white space beneath it. `minHeight: 0` lets it
+        // shrink below its content so the panes inside scroll.
+        flex: "1 1 auto",
+        minHeight: 0,
+        borderTop: "1px solid " + C.fawn,
+        overflow: "hidden",
+        background: C.paper,
       }}>
         {/* Conversation list — hidden on mobile when inside a thread */}
         {(!isMobile || !mobileViewingId) && (
         <div style={{
+          // The only divider between the two panes now that the outer frame
+          // is gone. Mobile keeps neither — the list IS the screen there.
           borderRight: isMobile ? "none" : "1px solid " + C.fawn,
           overflowY: "auto",
-          background: isMobile ? C.paper : undefined,
-          border: isMobile ? "1.5px solid " + C.fawn : undefined,
-          borderRadius: isMobile ? 16 : 0,
+          minHeight: 0,
+          background: C.paper,
         }}>
           {/* `archivedList` counts here too — otherwise archiving the last
               live thread renders "No threads yet" over an Archived group
@@ -6709,11 +6787,13 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
           <div style={{
             display: "flex", flexDirection: "column", minWidth: 0,
             background: C.paper,
-            border: isMobile ? "1.5px solid " + C.fawn : undefined,
-            borderRadius: isMobile ? 16 : 0,
             overflow: "hidden",
-            minHeight: isMobile ? "70vh" : undefined,
-            height: isMobile ? "calc(100vh - 200px)" : undefined,
+            // Desktop: a grid item stretches to the row height on its own.
+            // Mobile: fill the flex parent rather than the old hardcoded
+            // `calc(100vh - 200px)`, which guessed at the chrome above it and
+            // left a gap whenever it guessed wrong.
+            flex: isMobile ? "1 1 auto" : undefined,
+            minHeight: 0,
           }}>
             {isMobile && (
               <button onClick={() => setMobileViewingId(null)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", border: "none", borderBottom: "1px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
@@ -6894,7 +6974,11 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
               );
             })()}
 
-            <div style={{ flex: 1, padding: isMobile ? "14px 14px" : "18px 20px", overflowY: "auto", background: C.sand + "60" }}>
+            {/* `minHeight: 0` is what makes this the pane that scrolls. A flex
+                child defaults to min-height:auto, so without it the message
+                list grows to its content and pushes the composer off the
+                bottom instead of scrolling inside its own box. */}
+            <div style={{ flex: 1, minHeight: 0, padding: isMobile ? "14px 14px" : "18px 20px", overflowY: "auto", background: C.sand + "60" }}>
               {usingBackend && activeLoading && (
                 <p style={{ fontSize: 12, color: C.ash, fontFamily: F.body, textAlign: "center", padding: "20px 0" }}>Loading thread…</p>
               )}
@@ -6907,8 +6991,21 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             {/* Quick-reply templates — covers the 80% of routine replies in one tap.
                 Tapping populates the draft input (instead of sending) so the seller
                 can tweak before sending. */}
-            <div style={{ borderTop: "1px solid " + C.fawn, background: C.paper }}>
-              <div style={{ display: "flex", gap: 6, padding: isMobile ? "10px 12px 0" : "12px 16px 0", overflowX: "auto", scrollbarWidth: "none" }}>
+            <div style={{ borderTop: "1px solid " + C.fawn, background: C.paper, flexShrink: 0 }}>
+              {/* Chips wrap on desktop instead of scrolling off the edge. The
+                  row was overflowX:auto with the scrollbar hidden, so the
+                  last template ("Last price is $X") was simply cut in half
+                  against the panel edge with nothing to say it was there. On
+                  mobile a horizontal swipe is natural, so scrolling stays —
+                  with trailing padding so the last chip clears the edge. */}
+              <div style={{
+                display: "flex",
+                flexWrap: isMobile ? "nowrap" : "wrap",
+                gap: 6,
+                padding: isMobile ? "10px 12px 0" : "12px 16px 0",
+                overflowX: isMobile ? "auto" : "visible",
+                scrollbarWidth: "none",
+              }}>
                 {[
                   "Yes, still available — when works?",
                   "Sorry, just sold",
@@ -7244,6 +7341,19 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
           <MapPin size={32} style={{ color: "#e2e8f0", marginBottom: 12 }} />
           <p style={{ fontSize: 15, fontWeight: 700, color: C.ash, fontFamily: F.body }}>No pickups scheduled</p>
           <p style={{ fontSize: 12, color: C.smoke, marginTop: 4, fontFamily: F.body }}>When buyers claim items and schedule pickup, they will appear here.</p>
+          {/* This list only holds ACCEPTED claims, so a seller who has just
+              completed a sale sees nothing here and has no idea the record
+              exists. Point them at History rather than ending the page. */}
+          {onNav && (
+            <button onClick={() => onNav("history")} style={{
+              marginTop: 14, padding: "9px 18px", borderRadius: 999,
+              border: "1.5px solid " + C.green + "40", background: C.paper,
+              color: C.greenDeep, cursor: "pointer",
+              fontFamily: F.head, fontSize: 12.5, fontWeight: 800,
+            }}>
+              See completed pickups in History
+            </button>
+          )}
         </div>
       )}
 
@@ -7413,7 +7523,15 @@ function HistoryTxRow({ tx, idx, isMobile = false, isOpen = false, onToggle = nu
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 12 : 14 }}>
-        <div style={{ width: isMobile ? 46 : 56, height: isMobile ? 46 : 56, borderRadius: isMobile ? 12 : 14, background: "linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")", border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 28, flexShrink: 0 }}>{tx.img}</div>
+        <ItemThumb
+          photos={tx.photos}
+          fallback={tx.img}
+          alt={tx.title}
+          size={isMobile ? 46 : 56}
+          emojiSize={isMobile ? 22 : 28}
+          radius={isMobile ? 12 : 14}
+          background={"linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")"}
+        />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
             <p style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 15, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? "100%" : undefined }}>{tx.title}</p>
@@ -7565,6 +7683,11 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
       title:  api.item?.title || "Item",
       price:  soldPrice,
       asking: typeof api.item?.originalPrice === "number" ? api.item.originalPrice : listedPrice,
+      // /api/claims/incoming already returns the item's resolved photos; this
+      // adapter went straight to the category emoji and dropped them, so every
+      // completed sale in History showed a generic box. `img` stays as the
+      // fallback for items that genuinely have no photo.
+      photos: Array.isArray(api.item?.photos) ? api.item.photos.filter(Boolean) : [],
       img:    CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
       cat:    ENUM_TO_CATEGORY_LABEL[api.item?.category] || "Other",
       buyer:  api.buyer?.name || api.buyer?.email || "Buyer",
@@ -10671,6 +10794,29 @@ export default function DropYardSellerDashboard({
     [convList],
   );
 
+  // ─── Unanswered questions, lifted to the root ───────────────────────────
+  // QuestionsView fetched this for itself, so the count only existed while
+  // that tab was mounted. Owned here instead, it feeds the sidebar badge and
+  // the bell from every view — and the socket keeps it live, so a question
+  // arriving while the seller is on Overview shows up without a refresh.
+  const [questionsPending, setQuestionsPending] = useState(0);
+  const [questionsTick, setQuestionsTick] = useState(0);
+  useSocketEvent("question:new", () => setQuestionsTick((t) => t + 1));
+  useEffect(() => {
+    if (!accessToken) { setQuestionsPending(0); return; }
+    let cancelled = false;
+    apiRequest("/api/questions/pending", { token: accessToken })
+      .then((data) => {
+        if (cancelled) return;
+        setQuestionsPending(Array.isArray(data?.questions) ? data.questions.length : 0);
+      })
+      .catch(() => { if (!cancelled) setQuestionsPending(0); });
+    return () => { cancelled = true; };
+  }, [accessToken, questionsTick]);
+  // Answering one is the other way the count moves. QuestionsView calls this
+  // after a successful PATCH so the badge drops without waiting for a refetch.
+  const onQuestionsChanged = useCallback(() => setQuestionsTick((t) => t + 1), []);
+
   // Browser-level notification on incoming message. Gated to authed seller +
   // granted permission + not currently viewing the active thread.
   useSocketEvent("message:new", (payload) => {
@@ -10701,18 +10847,20 @@ export default function DropYardSellerDashboard({
           onToggleSidebar={() => setSidebarCollapsed(c => !c)}
           onSwitchRole={onSwitchRole}
           messagesUnread={messagesUnreadCount}
+          questionsPending={questionsPending}
           onOpenMessages={() => safeNav("messages")}
+          onOpenQuestions={() => safeNav("questions")}
         />
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
           {/* Desktop sidebar — rendered always so SSR/client markup matches; CSS
               media query (`.dy-desktop-sidebar`) hides it on mobile. Gating on
               the JS `isMobile` flag caused the sidebar to render in SSR HTML
               (defaults to desktop) and pop out on hydration, shifting layout. */}
-          <Sidebar activeView={view} onNav={safeNav} aiPlan={aiPlan} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount}/>
-          <main className="dy-seller-main">
+          <Sidebar activeView={view} onNav={safeNav} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount} questionsPending={questionsPending}/>
+          <main className={"dy-seller-main" + (view === "messages" ? " dy-seller-main--flush" : "")}>
             {view === "overview" && <Overview onNav={safeNav} user={user} sellerItems={sellerItems} accessToken={accessToken}/>}
             {view === "items" && <MyItemsView onNav={safeNav} onEdit={goToEdit} onView={goToView} sellerItems={sellerItems} onItemsChange={onItemsChange} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
-            {view === "questions" && <QuestionsView onNav={safeNav} accessToken={accessToken}/>}
+            {view === "questions" && <QuestionsView onNav={safeNav} accessToken={accessToken} onQuestionsChanged={onQuestionsChanged}/>}
             {view === "item-detail" && <ItemDetailView item={editingItem} onBack={() => setView("items")} onEdit={() => setView("edit-item")} accessToken={accessToken}/>}
             {view === "orders" && <OrdersView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated}/>}
             {view === "claims" && <ClaimsView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated}/>}
@@ -10742,7 +10890,7 @@ export default function DropYardSellerDashboard({
           </main>
         </div>
         {/* Always render. CSS hides on desktop. See globals.css `.dy-mobile-bottom-nav`. */}
-        <MobileBottomNav activeView={view} onNav={safeNav} messagesUnread={messagesUnreadCount}/>
+        <MobileBottomNav activeView={view} onNav={safeNav} messagesUnread={messagesUnreadCount} questionsPending={questionsPending}/>
       </div>
       {showOnboarding && (
         <SellerOnboardingModal

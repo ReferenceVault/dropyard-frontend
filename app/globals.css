@@ -195,6 +195,30 @@ body {
   }
 }
 
+/* Messages is a full-bleed view. Every other view is a document that scrolls
+   inside the padded content area; a mail client is a fixed frame whose two
+   panes scroll independently, so it takes the whole area edge to edge and
+   supplies its own padding. Without this the thread sat in a bordered card
+   with dead white space beneath it, and the quick-reply chips were clipped
+   by the card's edge. */
+.dy-seller-main--flush {
+  padding: 0;
+  /* A flex column rather than a scroll container: the view inside claims the
+     remaining height with `flex: 1`, which resolves without relying on a
+     percentage height against a flex item. `overflow: hidden` hands the
+     scrolling to the two panes, so the page itself never scrolls and the
+     composer stays on the bottom edge. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+@media (max-width: 768px) {
+  /* Bottom allowance stays — the mobile nav still floats over this view. */
+  .dy-seller-main--flush {
+    padding: 0 0 calc(76px + env(safe-area-inset-bottom, 0));
+  }
+}
+
 /* BUG-064 — pulse animation for SocketHealthDot during reconnect. */
 @keyframes dropyard-pulse {
   0%, 100% { opacity: 1;    transform: scale(1); }

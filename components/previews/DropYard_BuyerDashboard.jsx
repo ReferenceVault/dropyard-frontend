@@ -34,6 +34,7 @@ import {
   Star, Shield, Send, ArrowRight, ArrowLeft, Home, Tag, Bell, MessageCircle,
   CalendarDays, Compass, Archive, RefreshCw, Eye, Info, TrendingDown,
   DollarSign, AlertCircle, CheckCircle, Share2, Award, Leaf,
+  Mail,
   Banknote,
   Phone,
   LogOut,
@@ -107,6 +108,36 @@ function adaptBuyerConversation(api, myId) {
 // "N active threads" count — a three-month-old thread whose claim auto-expired
 // is history, not something the buyer is in the middle of.
 const ACTIVE_WINDOW_DAYS = 30;
+
+// ─── "I've read that answer" state ──────────────────────────────────────────
+// A seller's answer is posted on the item page, which the buyer who asked has
+// no reason to revisit — so the reply they were waiting for sat there unseen.
+// The badge that fixes that needs to know what has already been read.
+//
+// This lives in localStorage rather than the database: it's a per-viewer
+// convenience, not shared state, and the cost of getting it wrong is a badge
+// reappearing on a second device. Keyed question id -> the answeredAt it was
+// read at, so a seller editing their answer surfaces it again.
+const ANSWER_SEEN_KEY = "dy_seen_answers";
+function answerStamp(q) {
+  return q?.answeredAt ? String(q.answeredAt) : "answered";
+}
+function readSeenAnswers() {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(ANSWER_SEEN_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    // Private mode, blocked storage, or corrupt JSON — every answer simply
+    // reads as unseen, which is the safe direction to fail in.
+    return {};
+  }
+}
+function writeSeenAnswers(map) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(ANSWER_SEEN_KEY, JSON.stringify(map)); } catch { /* ignore */ }
+}
 function isWithinActiveWindow(iso, days = ACTIVE_WINDOW_DAYS) {
   if (!iso) return false;
   const ms = new Date(iso).getTime();
@@ -1608,12 +1639,17 @@ async function shareListing(item) {
 /* ============================================================
    ITEM CARD  — works for drop / shelf
    ============================================================ */
-function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null }) {
+function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null, answerReady = false }) {
   const [hovered, setHovered] = useState(false);
   const discount = item.op ? Math.round((1 - item.p / item.op) * 100) : null;
   let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = "Live Drop", cardAccent = C.green, ctaLabel = "Claim Now", CtaIcon = Check;
   if (item.layer === "shelf" && !liveMode) {
-    badgeBg = C.amberMist; badgeColor = C.amberDeep; badgeLabel = "On the Shelf"; cardAccent = C.amber;
+    // No badge. A Shelf item outside a live Drop only ever appears under the
+    // "Available now" header, and every card in that section is one — so the
+    // pill repeated the heading on each card and said nothing the heading
+    // hadn't. The amber accent stays: that's the Shelf's colour, and it still
+    // tells a saved Shelf item apart from a queued one at a glance.
+    badgeBg = C.amberMist; badgeColor = C.amberDeep; badgeLabel = null; cardAccent = C.amber;
   }
   // Queued for the next Drop — browsable, not claimable yet. "Live Drop" here
   // contradicted the disabled CTA right below it on the same card.
@@ -1679,9 +1715,11 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             <Heart size={16} style={{ color: saved ? C.claret : C.ink, fill: saved ? C.claret : "none", strokeWidth: 2 }}/>
           </button>
         </div>
-        <span style={{ position: "absolute", top: 14, left: 14, fontFamily: F.head, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: C.paper, color: badgeColor, border: "1.5px solid " + badgeColor + "30" }}>
-          {badgeLabel}
-        </span>
+        {badgeLabel && (
+          <span style={{ position: "absolute", top: 14, left: 14, fontFamily: F.head, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: C.paper, color: badgeColor, border: "1.5px solid " + badgeColor + "30" }}>
+            {badgeLabel}
+          </span>
+        )}
 
         {item.priceDrop && (
           <span style={{ position: "absolute", bottom: 14, left: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.green, color: "#fff", display: "flex", alignItems: "center", gap: 4 }}>
@@ -1694,6 +1732,15 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
         {offerPending && !isOwn && !isClaimed && !isPreview && (
           <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.paper, color: C.amberDeep, border: "1.5px solid " + C.amber + "55", display: "flex", alignItems: "center", gap: 4 }}>
             <Clock size={10}/> Offer pending
+          </span>
+        )}
+        {/* The seller answered a question this buyer asked, and they haven't
+            read it. Sits top-left under the layer badge so it survives
+            alongside the offer-pending / price-drop badges below. Clears the
+            moment the item detail opens — that's where the answer is. */}
+        {answerReady && (
+          <span style={{ position: "absolute", top: badgeLabel ? 46 : 14, left: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.ai, color: "#fff", display: "flex", alignItems: "center", gap: 4, boxShadow: "0 2px 8px rgba(31,29,25,0.18)" }}>
+            <Mail size={10} strokeWidth={2.6}/> Seller replied
           </span>
         )}
         {/* Also a badge rather than the full-card overlay: the item is live
@@ -2037,11 +2084,17 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
         <ArrowLeft size={14}/> Back
       </button>
 
-      {/* Header */}
+      {/* Header — the same filled pill the Discover strip now uses, so
+          "See all sneak peeks" doesn't land on a weaker version of the
+          header it was clicked from. Stays an <h1> because this is a page,
+          not a section of one, so SectionHeader's <h2> isn't right here. */}
       <div style={{ marginBottom: 28 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ width: 22, height: 2.5, background: C.amber, borderRadius: 2 }}/>
-          <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.16em", textTransform: "uppercase" }}>Sneak peek</p>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "6px 14px 6px 11px", background: C.amber, borderRadius: 999, boxShadow: "0 2px 10px " + C.amber + "55" }}>
+          <span style={{ position: "relative", display: "inline-flex", width: 10, height: 10 }}>
+            <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "#fff", opacity: 0.6, animation: "pulseLive 1.5s ease-in-out infinite" }}/>
+            <span style={{ position: "relative", width: 10, height: 10, borderRadius: "50%", background: "#fff", boxShadow: "0 0 0 2px " + C.amber }}/>
+          </span>
+          <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 900, color: "#fff", letterSpacing: "0.18em", textTransform: "uppercase" }}>Sneak peek</span>
         </div>
         <h1 style={{ fontFamily: F.head, fontSize: 32, fontWeight: 900, color: C.ink, letterSpacing: "-0.025em", lineHeight: 1.1, marginBottom: 6 }}>Dropping this Saturday</h1>
         <p style={{ fontFamily: F.body, fontSize: 15, fontWeight: 500, color: C.mink, maxWidth: 640 }}>
@@ -2169,25 +2222,21 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
   if (source.length === 0) return null;
 
   return (
-    <section className="fade-in" style={{ paddingTop: 44 }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 22, flexWrap: "wrap", rowGap: 12 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ width: 22, height: 2.5, background: C.amber, borderRadius: 2 }}/>
-            <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.16em", textTransform: "uppercase" }}>Sneak peek</p>
-          </div>
-          <h2 style={{ fontFamily: F.head, fontSize: 26, fontWeight: 900, color: C.ink, letterSpacing: "-0.022em", lineHeight: 1.1, marginBottom: 4 }}>
-            Dropping this Saturday
-          </h2>
-          <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, maxWidth: 560 }}>
-            A curated preview of what neighbours are bringing. Save anything that catches your eye and we'll highlight it the moment the Drop opens.
-          </p>
-        </div>
-        <button onClick={onSeeAllPreviews} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 999, border: "1.5px solid " + C.smoke, background: C.paper, fontSize: 13, fontWeight: 800, color: C.ink, cursor: "pointer", fontFamily: F.head, whiteSpace: "nowrap" }}>
-          See all sneak peeks <ChevronRight size={14}/>
-        </button>
-      </div>
+    <section className="fade-in">
+      {/* Was a hand-rolled header — a thin amber rule plus small amber text —
+          which read as a caption next to "Available now" and "Live Drop",
+          both of which use SectionHeader's filled pill. Same component now,
+          so the three sections carry equal weight and can't drift apart
+          again. Amber keeps it the Sneak Peek colour, and the pulse reads as
+          anticipation for something that hasn't opened yet. */}
+      <SectionHeader
+        eyebrow="Sneak peek"
+        eyebrowBg={C.amber}
+        pulse={true}
+        title="Dropping this Saturday"
+        subtitle="A curated preview of what neighbours are bringing. Save anything that catches your eye and we'll highlight it the moment the Drop opens."
+        action={{ label: "See all sneak peeks", onClick: onSeeAllPreviews }}
+      />
 
       {/* Horizontal scroll of item preview cards */}
       <div className="preview-scroll" style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 12, paddingTop: 4, scrollbarWidth: "thin", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", scrollPadding: "0 16px" }}>
@@ -3810,7 +3859,7 @@ function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedI
 /* ============================================================
    SAVED PAGE
    ============================================================ */
-function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggleSave, onBrowse, onBack, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, state = "between", currentUserId = null, onSwitchRole = null }) {
+function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggleSave, onBrowse, onBack, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, state = "between", currentUserId = null, onSwitchRole = null, answeredIds = new Set() }) {
   // Authed users render directly from the watchlist API result (full Item
   // objects, including SOLD ones + ones the user owns themselves). Preview
   // mode falls back to filtering the demo pool by savedIds — the original
@@ -3825,7 +3874,7 @@ function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggle
         <EmptyState illustration={<EmptySavedIllustration/>} title="Nothing saved yet" message="Tap the heart on items you’re interested in — they’ll gather here so you can claim them when the Drop opens." cta="Browse Discover" onCtaClick={onBrowse} accent={C.amber}/>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
+          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} answerReady={answeredIds.has(i.id)} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
         </div>
       )}
     </>
@@ -4522,6 +4571,20 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   const [activeMsgs, setActiveMsgs]     = useState(null);
   const [activeLoading, setActiveLoading] = useState(false);
 
+  // Refetch the open thread when the socket comes back. Messages that landed
+  // while it was down were pushed to a listener nobody was holding, and the
+  // thread fetch only re-runs when you switch threads — so they stayed
+  // missing until a reload. Bumped on the false→true edge only, so an already
+  // healthy connection never refetches.
+  const { connected: msgSocketConnected } = useSocket();
+  const [threadTick, setThreadTick] = useState(0);
+  const msgWasConnectedRef = useRef(msgSocketConnected);
+  useEffect(() => {
+    const was = msgWasConnectedRef.current;
+    msgWasConnectedRef.current = msgSocketConnected;
+    if (msgSocketConnected && !was) setThreadTick((t) => t + 1);
+  }, [msgSocketConnected]);
+
   // Auto-open the thread the parent asked us to open. Title-match against the
   // current conversation list; if no match (e.g. the thread doesn't exist yet)
   // we still consume the request so we don't keep trying.
@@ -4617,7 +4680,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
       .finally(() => { if (!cancelled) setActiveLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, usingBackend, accessToken]);
+  }, [activeId, usingBackend, accessToken, threadTick]);
 
   // Live push: append to the OPEN thread + mark read on the server. Inbox
   // preview + unread badge updates now live at the dashboard root so they
@@ -4664,12 +4727,24 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
     if (!activeId) return;
     setSending(true);
     try {
-      await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
+      const res = await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
         method: "POST",
         token:  accessToken,
         body:   JSON.stringify({ body }),
       });
       setDraft("");
+      // Append from the POST response instead of waiting for the socket echo.
+      // Same reason as the seller side: the echo fires, but a message that is
+      // only ever rendered by a socket event is invisible whenever that event
+      // is missed — saved on the server, absent from the thread until a
+      // refetch. The socket handler dedupes on id, so the echo is a no-op.
+      if (res?.message) {
+        setActiveMsgs((prev) => {
+          const list = prev || [];
+          if (list.some((m) => m.id === res.message.id)) return list;
+          return [...list, adaptMessage(res.message)];
+        });
+      }
       // Writing into an archived thread un-archives the sender's side server
       // side, so mirror that here instead of leaving the row sitting under
       // "Archived" with a message the buyer just sent as its preview.
@@ -5897,7 +5972,7 @@ function SellWithAICta({ onSwitchRole }) {
 /* ============================================================
    DISCOVER — Between Drops state
    ============================================================ */
-function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, reminded, onRemindMe, savedPreview, togglePreview, onSwitchRole, onPreviewItem, onSeeAllPreviews, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, itemsLoading = false, sneakPeekSource = null, currentUserId = null }) {
+function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, reminded, onRemindMe, savedPreview, togglePreview, onSwitchRole, onPreviewItem, onSeeAllPreviews, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, itemsLoading = false, sneakPeekSource = null, currentUserId = null, answeredIds = new Set() }) {
   // A seller's own listings are part of the feed (see the fetch in
   // BuyerDashboard). This is what marks them so the card can drop its
   // buyer-side actions — null for the unauthed preview routes, where every
@@ -5999,7 +6074,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           })()}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {liveUnifiedPool.map((item, i) => (
-              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} liveMode={true} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
+              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} liveMode={true} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
             ))}
           </div>
         </>
@@ -6011,10 +6086,10 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
         const betweenPool = [...shelfItems].sort((a, b) => (a.id * 7 % 13) - (b.id * 7 % 13));
         return (
           <>
-            <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={betweenPool.length + " items you can grab today — Shelf carryovers available for pickup anytime."} pulse={true}/>
+            <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={betweenPool.length + " items you can grab today — Shelf items available for pickup anytime."} pulse={true}/>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
               {betweenPool.map((item, i) => (
-                <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
+                <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
               ))}
             </div>
           </>
@@ -6027,7 +6102,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={shelfItems.length + " items ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {shelfItems.map((item, i) => (
-              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
+              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
             ))}
           </div>
         </>
@@ -6923,6 +6998,62 @@ export default function DropYardBuyerDashboard({
     return done;
   }, [claims]);
 
+  // ─── Questions this buyer asked, and which answers are still unread ──────
+  // The seller's reply lands on the public item page. Nothing pointed the
+  // buyer back at it, so the only way to find out was to reopen the listing
+  // and read the thread again. These drive an envelope badge on the item's
+  // card, which is where the buyer actually is.
+  const [myQuestions, setMyQuestions] = useState([]);
+  const [questionsTick, setQuestionsTick] = useState(0);
+  const [seenAnswers, setSeenAnswers] = useState({});
+  useSocketEvent("question:answered", () => setQuestionsTick((t) => t + 1));
+  // localStorage isn't available during SSR, so seed after mount.
+  useEffect(() => { setSeenAnswers(readSeenAnswers()); }, []);
+  useEffect(() => {
+    if (!accessToken) { setMyQuestions([]); return; }
+    let cancelled = false;
+    apiRequest("/api/questions/mine", { token: accessToken })
+      .then((data) => {
+        if (cancelled) return;
+        setMyQuestions(Array.isArray(data?.questions) ? data.questions : []);
+      })
+      .catch(() => { if (!cancelled) setMyQuestions([]); });
+    return () => { cancelled = true; };
+  }, [accessToken, questionsTick]);
+
+  const answeredIds = useMemo(() => {
+    const waiting = new Set();
+    for (const q of myQuestions) {
+      if (!q.answer || !q.itemId) continue;
+      if (seenAnswers[q.id] === answerStamp(q)) continue;
+      waiting.add(q.itemId);
+    }
+    return waiting;
+  }, [myQuestions, seenAnswers]);
+
+  // Opening the item is reading the answer — that's where the Q&A renders.
+  // Driven off `viewingItem` at the root rather than a callback threaded into
+  // ItemDetail, because every route into the detail view (card, deep link,
+  // watchlist, seller profile) goes through this one piece of state.
+  const markAnswersSeen = useCallback((itemId) => {
+    if (!itemId) return;
+    setSeenAnswers((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const q of myQuestions) {
+        if (q.itemId !== itemId || !q.answer) continue;
+        const stamp = answerStamp(q);
+        if (next[q.id] !== stamp) { next[q.id] = stamp; changed = true; }
+      }
+      if (!changed) return prev;
+      writeSeenAnswers(next);
+      return next;
+    });
+  }, [myQuestions]);
+  useEffect(() => {
+    if (viewingItem?.id) markAnswersSeen(viewingItem.id);
+  }, [viewingItem?.id, markAnswersSeen]);
+
   // Optimistic toggle: flip the local Set immediately so the heart animates,
   // then POST/DELETE in the background. Roll back on failure. Skip the network
   // call entirely for demo-only ids (numbers from the static `allItems` array)
@@ -6993,7 +7124,14 @@ export default function DropYardBuyerDashboard({
     const insertedClaim = realClaim
       ? { ...(adaptBuyerClaim(realClaim) || {}), date: day, time: time, addr: "Address sent via WhatsApp" }
       : { id: insertId, itemId: item.id, e: item.img, t: item.title, price: item.price, seller: item.seller.name, status: "offer-pending", date: day, time: time, addr: "Address sent via WhatsApp", channel: item.layer };
-    setClaims(prev => [insertedClaim, ...prev]);
+    // Upsert, not prepend. ClaimModal does two things after its POST returns
+    // 201: calls onClaimCreated (which bumps claimsTick and refetches
+    // /api/claims/mine, already containing the new claim) and calls onConfirm,
+    // which lands here. A blind prepend then added a second copy under the
+    // same backend id — React's "two children with the same key" — until the
+    // next refetch happened to replace the array. The socket's claim:new
+    // bumps the same tick, so the race had two ways to fire.
+    setClaims(prev => [insertedClaim, ...prev.filter(c => c.id !== insertedClaim.id)]);
     // BUG-055 — bump the items tick so Discover refetches immediately. Socket
     // event also fires (claim:new emits to both parties post-redesign), but
     // this guarantees the refresh even if the socket is briefly disconnected.
@@ -7058,8 +7196,8 @@ export default function DropYardBuyerDashboard({
               {page === "discover" && !viewingPreview && showSneakList && (
                 <SneakPeekListPage savedPreview={peekSaved} togglePreview={peekToggle} onPreviewItem={setViewingPreview} onBack={() => setShowSneakList(false)} sneakPeekSource={sneakPeekForUI}/>
               )}
-              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={peekSaved} togglePreview={peekToggle} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null}/>}
-              {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>}
+              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={peekSaved} togglePreview={peekToggle} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null} answeredIds={answeredIds}/>}
+              {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole} answeredIds={answeredIds}/>}
               {page === "claims"   && <ClaimsPage claims={claims} setClaims={setClaims} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} onGoToMessages={() => setPage("messages")} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} accessToken={accessToken}/>}
               {page === "messages" && <MessagesPage user={user} accessToken={accessToken} claims={claims} onAcceptCounter={handleAcceptCounterByItemTitle} onDeclineCounter={handleDeclineCounterByItemTitle} openThreadId={openThreadId} onConsumeOpenThread={() => setOpenThreadId(null)} onBack={() => setPage("discover")} convList={convList} onConvListChange={setConvList}/>}
               {page === "history"  && <HistoryPage highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} accessToken={accessToken} onBack={() => setPage("discover")}/>}
