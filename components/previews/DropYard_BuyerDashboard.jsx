@@ -2077,11 +2077,17 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
         <ArrowLeft size={14}/> Back
       </button>
 
-      {/* Header */}
+      {/* Header — the same filled pill the Discover strip now uses, so
+          "See all sneak peeks" doesn't land on a weaker version of the
+          header it was clicked from. Stays an <h1> because this is a page,
+          not a section of one, so SectionHeader's <h2> isn't right here. */}
       <div style={{ marginBottom: 28 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-          <span style={{ width: 22, height: 2.5, background: C.amber, borderRadius: 2 }}/>
-          <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.16em", textTransform: "uppercase" }}>Sneak peek</p>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "6px 14px 6px 11px", background: C.amber, borderRadius: 999, boxShadow: "0 2px 10px " + C.amber + "55" }}>
+          <span style={{ position: "relative", display: "inline-flex", width: 10, height: 10 }}>
+            <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "#fff", opacity: 0.6, animation: "pulseLive 1.5s ease-in-out infinite" }}/>
+            <span style={{ position: "relative", width: 10, height: 10, borderRadius: "50%", background: "#fff", boxShadow: "0 0 0 2px " + C.amber }}/>
+          </span>
+          <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 900, color: "#fff", letterSpacing: "0.18em", textTransform: "uppercase" }}>Sneak peek</span>
         </div>
         <h1 style={{ fontFamily: F.head, fontSize: 32, fontWeight: 900, color: C.ink, letterSpacing: "-0.025em", lineHeight: 1.1, marginBottom: 6 }}>Dropping this Saturday</h1>
         <p style={{ fontFamily: F.body, fontSize: 15, fontWeight: 500, color: C.mink, maxWidth: 640 }}>
@@ -2209,25 +2215,21 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
   if (source.length === 0) return null;
 
   return (
-    <section className="fade-in" style={{ paddingTop: 44 }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, marginBottom: 22, flexWrap: "wrap", rowGap: 12 }}>
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span style={{ width: 22, height: 2.5, background: C.amber, borderRadius: 2 }}/>
-            <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.16em", textTransform: "uppercase" }}>Sneak peek</p>
-          </div>
-          <h2 style={{ fontFamily: F.head, fontSize: 26, fontWeight: 900, color: C.ink, letterSpacing: "-0.022em", lineHeight: 1.1, marginBottom: 4 }}>
-            Dropping this Saturday
-          </h2>
-          <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, maxWidth: 560 }}>
-            A curated preview of what neighbours are bringing. Save anything that catches your eye and we'll highlight it the moment the Drop opens.
-          </p>
-        </div>
-        <button onClick={onSeeAllPreviews} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 999, border: "1.5px solid " + C.smoke, background: C.paper, fontSize: 13, fontWeight: 800, color: C.ink, cursor: "pointer", fontFamily: F.head, whiteSpace: "nowrap" }}>
-          See all sneak peeks <ChevronRight size={14}/>
-        </button>
-      </div>
+    <section className="fade-in">
+      {/* Was a hand-rolled header — a thin amber rule plus small amber text —
+          which read as a caption next to "Available now" and "Live Drop",
+          both of which use SectionHeader's filled pill. Same component now,
+          so the three sections carry equal weight and can't drift apart
+          again. Amber keeps it the Sneak Peek colour, and the pulse reads as
+          anticipation for something that hasn't opened yet. */}
+      <SectionHeader
+        eyebrow="Sneak peek"
+        eyebrowBg={C.amber}
+        pulse={true}
+        title="Dropping this Saturday"
+        subtitle="A curated preview of what neighbours are bringing. Save anything that catches your eye and we'll highlight it the moment the Drop opens."
+        action={{ label: "See all sneak peeks", onClick: onSeeAllPreviews }}
+      />
 
       {/* Horizontal scroll of item preview cards */}
       <div className="preview-scroll" style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 12, paddingTop: 4, scrollbarWidth: "thin", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch", scrollPadding: "0 16px" }}>
