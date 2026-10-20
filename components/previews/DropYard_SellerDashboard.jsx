@@ -509,7 +509,13 @@ function SwitchToBuyerButton({ onClick }) {
 // hover, premium icon tile with subtle elevation, smooth transitions.
 // In `collapsed` (rail) mode, renders icon-only with the label in `title`
 // as a native tooltip.
-function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showBadge, countBadge = 0, collapsed = false }) {
+// `showBadge` (the amber "3/5" AI-credit pill on Settings) is gone. It was a
+// hardcoded string, not a count: every free seller saw "3/5" whether they had
+// used AI nothing times or fifty. There is no credit tracking behind it —
+// no column, no route, no counter anywhere in the backend — so it could only
+// ever be decoration that read as data. If per-seller AI credits are built
+// later, this comes back reading a real number.
+function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, countBadge = 0, collapsed = false }) {
   const [hover, setHover] = useState(false);
   const bg = active
     ? accentMist
@@ -557,15 +563,6 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
         }}>
           <Icon size={16} style={{ color: active ? "#fff" : C.mink }} strokeWidth={2.2}/>
         </span>
-        {showBadge && (
-          <span style={{
-            position: "absolute",
-            top: 4, right: 6,
-            width: 6, height: 6, borderRadius: "50%",
-            background: C.amberDeep,
-            boxShadow: "0 0 0 2px " + C.paper,
-          }}/>
-        )}
         {countBadge > 0 && (
           <span style={{
             position: "absolute",
@@ -650,23 +647,8 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
         {item.label}
       </span>
 
-      {/* Badge (e.g. AI usage 3/5) */}
-      {showBadge && (
-        <span style={{
-          fontSize: 9,
-          fontWeight: 800,
-          padding: "2px 7px",
-          borderRadius: 999,
-          background: C.amberMist,
-          color: C.amberDeep,
-          fontFamily: F.head,
-        }}>
-          3/5
-        </span>
-      )}
-
-      {/* Unread messages badge (Sidebar Messages item) — claret to distinguish
-          from the amber AI-usage badge above. */}
+      {/* Count badge — unread messages on Messages, unanswered questions on
+          Inventory. */}
       {countBadge > 0 && (
         <span style={{
           fontSize: 10,
@@ -682,8 +664,8 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
         </span>
       )}
 
-      {/* Sliding chevron on active OR hover (not when badge is showing) */}
-      {!showBadge && countBadge === 0 && (active || hover) && (
+      {/* Sliding chevron on active OR hover (not when a count badge is showing) */}
+      {countBadge === 0 && (active || hover) && (
         <ChevronRight
           size={13}
           style={{
@@ -798,7 +780,10 @@ function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPendi
   );
 }
 
-function Sidebar({ activeView, onNav, aiPlan, onSwitchRole, collapsed = false, messagesUnread = 0, questionsPending = 0 }) {
+// `aiPlan` was only ever read to decide whether to show the "3/5" pill, so it
+// leaves with it. AIPlanView still takes it — that view is where a real plan
+// state would belong.
+function Sidebar({ activeView, onNav, onSwitchRole, collapsed = false, messagesUnread = 0, questionsPending = 0 }) {
   const sections = [
     { header: "ACTIVITY", items: [
       { id: "overview",  label: "Overview",  icon: LayoutGrid },
@@ -900,7 +885,6 @@ function Sidebar({ activeView, onNav, aiPlan, onSwitchRole, collapsed = false, m
                       accentMist={ab}
                       Icon={Ic}
                       onClick={() => handleClick(item)}
-                      showBadge={item.group === "settings" && aiPlan === "free"}
                       // Unanswered questions ride on Inventory, which is where
                       // the Questions tab lives. Before this the count existed
                       // only on that tab's own header — a seller anywhere else
@@ -984,7 +968,6 @@ function Sidebar({ activeView, onNav, aiPlan, onSwitchRole, collapsed = false, m
                     accentMist={ab}
                     Icon={Ic}
                     onClick={() => handleClick(item)}
-                    showBadge={item.group === "settings" && aiPlan === "free"}
                   />
                 );
               })}
@@ -10847,7 +10830,7 @@ export default function DropYardSellerDashboard({
               media query (`.dy-desktop-sidebar`) hides it on mobile. Gating on
               the JS `isMobile` flag caused the sidebar to render in SSR HTML
               (defaults to desktop) and pop out on hydration, shifting layout. */}
-          <Sidebar activeView={view} onNav={safeNav} aiPlan={aiPlan} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount} questionsPending={questionsPending}/>
+          <Sidebar activeView={view} onNav={safeNav} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount} questionsPending={questionsPending}/>
           <main className={"dy-seller-main" + (view === "messages" ? " dy-seller-main--flush" : "")}>
             {view === "overview" && <Overview onNav={safeNav} user={user} sellerItems={sellerItems} accessToken={accessToken}/>}
             {view === "items" && <MyItemsView onNav={safeNav} onEdit={goToEdit} onView={goToView} sellerItems={sellerItems} onItemsChange={onItemsChange} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
