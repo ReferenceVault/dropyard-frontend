@@ -1644,7 +1644,12 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   const discount = item.op ? Math.round((1 - item.p / item.op) * 100) : null;
   let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = "Live Drop", cardAccent = C.green, ctaLabel = "Claim Now", CtaIcon = Check;
   if (item.layer === "shelf" && !liveMode) {
-    badgeBg = C.amberMist; badgeColor = C.amberDeep; badgeLabel = "On the Shelf"; cardAccent = C.amber;
+    // No badge. A Shelf item outside a live Drop only ever appears under the
+    // "Available now" header, and every card in that section is one — so the
+    // pill repeated the heading on each card and said nothing the heading
+    // hadn't. The amber accent stays: that's the Shelf's colour, and it still
+    // tells a saved Shelf item apart from a queued one at a glance.
+    badgeBg = C.amberMist; badgeColor = C.amberDeep; badgeLabel = null; cardAccent = C.amber;
   }
   // Queued for the next Drop — browsable, not claimable yet. "Live Drop" here
   // contradicted the disabled CTA right below it on the same card.
@@ -1710,9 +1715,11 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             <Heart size={16} style={{ color: saved ? C.claret : C.ink, fill: saved ? C.claret : "none", strokeWidth: 2 }}/>
           </button>
         </div>
-        <span style={{ position: "absolute", top: 14, left: 14, fontFamily: F.head, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: C.paper, color: badgeColor, border: "1.5px solid " + badgeColor + "30" }}>
-          {badgeLabel}
-        </span>
+        {badgeLabel && (
+          <span style={{ position: "absolute", top: 14, left: 14, fontFamily: F.head, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: C.paper, color: badgeColor, border: "1.5px solid " + badgeColor + "30" }}>
+            {badgeLabel}
+          </span>
+        )}
 
         {item.priceDrop && (
           <span style={{ position: "absolute", bottom: 14, left: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.green, color: "#fff", display: "flex", alignItems: "center", gap: 4 }}>
@@ -1732,7 +1739,7 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             alongside the offer-pending / price-drop badges below. Clears the
             moment the item detail opens — that's where the answer is. */}
         {answerReady && (
-          <span style={{ position: "absolute", top: 46, left: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.ai, color: "#fff", display: "flex", alignItems: "center", gap: 4, boxShadow: "0 2px 8px rgba(31,29,25,0.18)" }}>
+          <span style={{ position: "absolute", top: badgeLabel ? 46 : 14, left: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.ai, color: "#fff", display: "flex", alignItems: "center", gap: 4, boxShadow: "0 2px 8px rgba(31,29,25,0.18)" }}>
             <Mail size={10} strokeWidth={2.6}/> Seller replied
           </span>
         )}
@@ -4564,6 +4571,20 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   const [activeMsgs, setActiveMsgs]     = useState(null);
   const [activeLoading, setActiveLoading] = useState(false);
 
+  // Refetch the open thread when the socket comes back. Messages that landed
+  // while it was down were pushed to a listener nobody was holding, and the
+  // thread fetch only re-runs when you switch threads — so they stayed
+  // missing until a reload. Bumped on the false→true edge only, so an already
+  // healthy connection never refetches.
+  const { connected: msgSocketConnected } = useSocket();
+  const [threadTick, setThreadTick] = useState(0);
+  const msgWasConnectedRef = useRef(msgSocketConnected);
+  useEffect(() => {
+    const was = msgWasConnectedRef.current;
+    msgWasConnectedRef.current = msgSocketConnected;
+    if (msgSocketConnected && !was) setThreadTick((t) => t + 1);
+  }, [msgSocketConnected]);
+
   // Auto-open the thread the parent asked us to open. Title-match against the
   // current conversation list; if no match (e.g. the thread doesn't exist yet)
   // we still consume the request so we don't keep trying.
@@ -4659,7 +4680,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
       .finally(() => { if (!cancelled) setActiveLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, usingBackend, accessToken]);
+  }, [activeId, usingBackend, accessToken, threadTick]);
 
   // Live push: append to the OPEN thread + mark read on the server. Inbox
   // preview + unread badge updates now live at the dashboard root so they
@@ -4706,12 +4727,24 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
     if (!activeId) return;
     setSending(true);
     try {
-      await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
+      const res = await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
         method: "POST",
         token:  accessToken,
         body:   JSON.stringify({ body }),
       });
       setDraft("");
+      // Append from the POST response instead of waiting for the socket echo.
+      // Same reason as the seller side: the echo fires, but a message that is
+      // only ever rendered by a socket event is invisible whenever that event
+      // is missed — saved on the server, absent from the thread until a
+      // refetch. The socket handler dedupes on id, so the echo is a no-op.
+      if (res?.message) {
+        setActiveMsgs((prev) => {
+          const list = prev || [];
+          if (list.some((m) => m.id === res.message.id)) return list;
+          return [...list, adaptMessage(res.message)];
+        });
+      }
       // Writing into an archived thread un-archives the sender's side server
       // side, so mirror that here instead of leaving the row sitting under
       // "Archived" with a message the buyer just sent as its preview.
@@ -6053,7 +6086,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
         const betweenPool = [...shelfItems].sort((a, b) => (a.id * 7 % 13) - (b.id * 7 % 13));
         return (
           <>
-            <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={betweenPool.length + " items you can grab today — Shelf carryovers available for pickup anytime."} pulse={true}/>
+            <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={betweenPool.length + " items you can grab today — Shelf items available for pickup anytime."} pulse={true}/>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
               {betweenPool.map((item, i) => (
                 <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>

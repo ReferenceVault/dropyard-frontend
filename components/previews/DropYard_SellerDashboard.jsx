@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { apiRequest, uploadItemPhoto } from "@/lib/api";
-import { useSocketEvent } from "@/context/SocketContext";
+import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { useAuth } from "@/context/AuthContext";
 import { useDropCycle } from "@/context/DropCycleContext";
@@ -6092,6 +6092,20 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   const [activeMsgs, setActiveMsgs]     = useState(null);
   const [activeLoading, setActiveLoading] = useState(false);
 
+  // Refetch the open thread when the socket comes back. Messages that landed
+  // while it was down were pushed to a listener nobody was holding, and the
+  // thread fetch only re-runs when you switch threads — so they stayed
+  // missing until a reload. Bumped on the false→true edge only, so an already
+  // healthy connection never refetches.
+  const { connected: msgSocketConnected } = useSocket();
+  const [threadTick, setThreadTick] = useState(0);
+  const msgWasConnectedRef = useRef(msgSocketConnected);
+  useEffect(() => {
+    const was = msgWasConnectedRef.current;
+    msgWasConnectedRef.current = msgSocketConnected;
+    if (msgSocketConnected && !was) setThreadTick((t) => t + 1);
+  }, [msgSocketConnected]);
+
   // BUG-055 — active PROPOSED claims indexed by conversationId. Powers the
   // in-chat "Pending offer" banner so the seller can Accept/Counter/Decline
   // without leaving the conversation view. Refreshes on every claim:updated
@@ -6265,7 +6279,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       .finally(() => { if (!cancelled) setActiveLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, usingBackend, accessToken]);
+  }, [activeId, usingBackend, accessToken, threadTick]);
 
   // Real-time push: a new message landed somewhere
   // Live push: append to the OPEN thread + mark read on the server. Inbox
@@ -6306,14 +6320,27 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     if (!activeId) return;
     setSending(true);
     try {
-      await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
+      const res = await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
         method: "POST",
         token:  accessToken,
         body:   JSON.stringify({ body }),
       });
-      // The socket emit echoes back to me, which appends via the message:new
-      // handler. No optimistic add needed.
       setDraft("");
+      // Append from the POST response rather than waiting for the socket to
+      // echo it back. The echo does fire — the backend emits message:new to
+      // the sender as well as the recipient — but relying on it alone meant
+      // the sender's own message only appeared if the socket happened to be
+      // connected and the event wasn't missed. When it wasn't, the message
+      // was saved and invisible until something refetched the thread, which
+      // is what "I typed it and it took several refreshes to show up" is.
+      // The socket handler dedupes on message id, so the echo is a no-op.
+      if (res?.message) {
+        setActiveMsgs((prev) => {
+          const list = prev || [];
+          if (list.some((m) => m.id === res.message.id)) return list;
+          return [...list, adaptMessage(res.message)];
+        });
+      }
       // Writing into an archived thread un-archives the sender's side server
       // side, so mirror that here instead of leaving the row under "Archived"
       // with a message the seller just sent as its preview.
