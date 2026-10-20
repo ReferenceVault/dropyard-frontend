@@ -6993,7 +6993,14 @@ export default function DropYardBuyerDashboard({
     const insertedClaim = realClaim
       ? { ...(adaptBuyerClaim(realClaim) || {}), date: day, time: time, addr: "Address sent via WhatsApp" }
       : { id: insertId, itemId: item.id, e: item.img, t: item.title, price: item.price, seller: item.seller.name, status: "offer-pending", date: day, time: time, addr: "Address sent via WhatsApp", channel: item.layer };
-    setClaims(prev => [insertedClaim, ...prev]);
+    // Upsert, not prepend. ClaimModal does two things after its POST returns
+    // 201: calls onClaimCreated (which bumps claimsTick and refetches
+    // /api/claims/mine, already containing the new claim) and calls onConfirm,
+    // which lands here. A blind prepend then added a second copy under the
+    // same backend id — React's "two children with the same key" — until the
+    // next refetch happened to replace the array. The socket's claim:new
+    // bumps the same tick, so the race had two ways to fire.
+    setClaims(prev => [insertedClaim, ...prev.filter(c => c.id !== insertedClaim.id)]);
     // BUG-055 — bump the items tick so Discover refetches immediately. Socket
     // event also fires (claim:new emits to both parties post-redesign), but
     // this guarantees the refresh even if the socket is briefly disconnected.

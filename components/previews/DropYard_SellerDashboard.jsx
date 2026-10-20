@@ -5572,19 +5572,37 @@ function relativeTimeShort(iso) {
 // adapt the conversation list before SellerMessagesView even mounts (the nav
 // badge needs to count from this lifted state). Seller-perspective adapter.
 /**
- * Square item thumbnail for the Messages inbox: the first uploaded photo when
- * there is one, the category emoji when there isn't. Mirrors the conditional
- * the Inventory rows already use, kept in one place because the thread list
- * and the thread header both need it at different sizes.
+ * Square item thumbnail: the first uploaded photo when there is one, the
+ * category emoji when there isn't. Every list that shows an item — Messages,
+ * History, Inventory — needs the same conditional, and each one that grew its
+ * own copy ended up showing a generic emoji because its adapter had quietly
+ * dropped `photos` from the payload. One component, so the next list that
+ * needs a thumbnail can't reintroduce that.
+ *
+ * `photos` is the array off the API item; `fallback` is the emoji to show
+ * when it's empty. `background` and `radius` vary per surface.
  */
-function ConversationItemThumb({ item, size, emojiSize }) {
-  const photo = Array.isArray(item?.photos) ? item.photos.find(Boolean) : null;
+function ItemThumb({ photos, fallback, alt, size, emojiSize, radius = 12, background = C.sand }) {
+  const photo = Array.isArray(photos) ? photos.find(Boolean) : null;
   return (
-    <div style={{ width: size, height: size, borderRadius: 12, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
+    <div style={{ width: size, height: size, borderRadius: radius, background, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
       {photo
-        ? <img src={photo} alt={item?.title || "Item"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
-        : <span style={{ fontSize: emojiSize }}>{item?.img}</span>}
+        ? <img src={photo} alt={alt || "Item"} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+        : <span style={{ fontSize: emojiSize }}>{fallback}</span>}
     </div>
+  );
+}
+
+/** Messages-inbox wrapper — takes the adapted conversation's `item`. */
+function ConversationItemThumb({ item, size, emojiSize }) {
+  return (
+    <ItemThumb
+      photos={item?.photos}
+      fallback={item?.img}
+      alt={item?.title}
+      size={size}
+      emojiSize={emojiSize}
+    />
   );
 }
 
@@ -7478,7 +7496,15 @@ function HistoryTxRow({ tx, idx, isMobile = false, isOpen = false, onToggle = nu
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 12 : 14 }}>
-        <div style={{ width: isMobile ? 46 : 56, height: isMobile ? 46 : 56, borderRadius: isMobile ? 12 : 14, background: "linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")", border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 28, flexShrink: 0 }}>{tx.img}</div>
+        <ItemThumb
+          photos={tx.photos}
+          fallback={tx.img}
+          alt={tx.title}
+          size={isMobile ? 46 : 56}
+          emojiSize={isMobile ? 22 : 28}
+          radius={isMobile ? 12 : 14}
+          background={"linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")"}
+        />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
             <p style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 15, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? "100%" : undefined }}>{tx.title}</p>
@@ -7630,6 +7656,11 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
       title:  api.item?.title || "Item",
       price:  soldPrice,
       asking: typeof api.item?.originalPrice === "number" ? api.item.originalPrice : listedPrice,
+      // /api/claims/incoming already returns the item's resolved photos; this
+      // adapter went straight to the category emoji and dropped them, so every
+      // completed sale in History showed a generic box. `img` stays as the
+      // fallback for items that genuinely have no photo.
+      photos: Array.isArray(api.item?.photos) ? api.item.photos.filter(Boolean) : [],
       img:    CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
       cat:    ENUM_TO_CATEGORY_LABEL[api.item?.category] || "Other",
       buyer:  api.buyer?.name || api.buyer?.email || "Buyer",
