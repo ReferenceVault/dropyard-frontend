@@ -1315,7 +1315,7 @@ function ActionItems({ pickupsToday, pickupsWeek, messages, drafts, onNav }) {
   );
 }
 
-function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draftsCount, recap, onNav, onShare }) {
+function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draftsCount, recap, upcomingPickups = 0, onNav, onShare }) {
   const { isMobile } = useViewport();
   // Both must format on the Drop's clock, not the viewer's. Without timeZone
   // the 8 a.m. Toronto opening renders as the local equivalent — "5:30 p.m."
@@ -1356,23 +1356,42 @@ function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draf
               <Calendar size={11} strokeWidth={2.3}/> Next Drop · {dayLabel} {timeLabel} ({countdown})
             </p>
           </div>
+          {/* "See pickups" used to show unconditionally, but the Orders page
+              it opens lists PROPOSED and ACCEPTED claims only. Once a Drop has
+              wrapped, a sold item is PICKED_UP — in neither bucket — so the
+              seller landed on a page with two empty sections and no way to
+              reach what they just sold. Completed pickups live in History.
+              The button only appears when a pickup is actually still due. */}
           <div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: 0, minWidth: 220 }}>
-            <button onClick={() => onNav("pickups")} className="cta-primary" style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: "13px 22px", borderRadius: 999, border: "none", cursor: "pointer",
-              fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
-              background: "linear-gradient(180deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
-              color: "#fff",
-              boxShadow: "0 2px 0 " + C.greenDeep + ", " + _SH_SM,
-            }}>
-              <Truck size={14} strokeWidth={2.4}/> See pickups
-            </button>
-            <button onClick={() => onNav("history")} style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: "12px 22px", borderRadius: 999, border: "1.5px solid " + C.green + "40",
-              cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800,
-              background: C.paper, color: C.greenDeep,
-            }}>
+            {upcomingPickups > 0 && (
+              <button onClick={() => onNav("pickups")} className="cta-primary" style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                padding: "13px 22px", borderRadius: 999, border: "none", cursor: "pointer",
+                fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
+                background: "linear-gradient(180deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
+                color: "#fff",
+                boxShadow: "0 2px 0 " + C.greenDeep + ", " + _SH_SM,
+              }}>
+                <Truck size={14} strokeWidth={2.4}/> See pickups ({upcomingPickups})
+              </button>
+            )}
+            <button onClick={() => onNav("history")} className={upcomingPickups > 0 ? undefined : "cta-primary"} style={
+              upcomingPickups > 0
+                ? {
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    padding: "12px 22px", borderRadius: 999, border: "1.5px solid " + C.green + "40",
+                    cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800,
+                    background: C.paper, color: C.greenDeep,
+                  }
+                : {
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                    padding: "13px 22px", borderRadius: 999, border: "none", cursor: "pointer",
+                    fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
+                    background: "linear-gradient(180deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
+                    color: "#fff",
+                    boxShadow: "0 2px 0 " + C.greenDeep + ", " + _SH_SM,
+                  }
+            }>
               <Award size={13} strokeWidth={2.4}/> Open history
             </button>
           </div>
@@ -2442,7 +2461,9 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
         </p>
       </div>
 
-      {/* Phase-aware hero */}
+      {/* Phase-aware hero. upcomingPickups is pickupsWeek alone — that is every
+          ACCEPTED claim, and pickupsToday is a subset of it, so the two must
+          not be added together. */}
       {dropPhase === "between" && (
         <BetweenHero
           now={now}
@@ -2452,6 +2473,7 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
           shelfCount={shelfCount}
           draftsCount={draftsCount}
           recap={lastDropRecap}
+          upcomingPickups={actionBuckets.pickupsWeek}
           onNav={onNav}
           onShare={handleShare}
         />
@@ -7274,6 +7296,19 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
           <MapPin size={32} style={{ color: "#e2e8f0", marginBottom: 12 }} />
           <p style={{ fontSize: 15, fontWeight: 700, color: C.ash, fontFamily: F.body }}>No pickups scheduled</p>
           <p style={{ fontSize: 12, color: C.smoke, marginTop: 4, fontFamily: F.body }}>When buyers claim items and schedule pickup, they will appear here.</p>
+          {/* This list only holds ACCEPTED claims, so a seller who has just
+              completed a sale sees nothing here and has no idea the record
+              exists. Point them at History rather than ending the page. */}
+          {onNav && (
+            <button onClick={() => onNav("history")} style={{
+              marginTop: 14, padding: "9px 18px", borderRadius: 999,
+              border: "1.5px solid " + C.green + "40", background: C.paper,
+              color: C.greenDeep, cursor: "pointer",
+              fontFamily: F.head, fontSize: 12.5, fontWeight: 800,
+            }}>
+              See completed pickups in History
+            </button>
+          )}
         </div>
       )}
 
