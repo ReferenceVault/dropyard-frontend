@@ -509,7 +509,7 @@ function SwitchToBuyerButton({ onClick }) {
 // hover, premium icon tile with subtle elevation, smooth transitions.
 // In `collapsed` (rail) mode, renders icon-only with the label in `title`
 // as a native tooltip.
-function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showBadge, messageBadge = 0, collapsed = false }) {
+function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showBadge, countBadge = 0, collapsed = false }) {
   const [hover, setHover] = useState(false);
   const bg = active
     ? accentMist
@@ -566,7 +566,7 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
             boxShadow: "0 0 0 2px " + C.paper,
           }}/>
         )}
-        {messageBadge > 0 && (
+        {countBadge > 0 && (
           <span style={{
             position: "absolute",
             top: 2, right: 4,
@@ -576,7 +576,7 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
             fontFamily: F.head, fontSize: 9, fontWeight: 800,
             display: "inline-flex", alignItems: "center", justifyContent: "center",
             boxShadow: "0 0 0 2px " + C.paper,
-          }}>{messageBadge > 99 ? "99+" : messageBadge}</span>
+          }}>{countBadge > 99 ? "99+" : countBadge}</span>
         )}
       </button>
     );
@@ -667,7 +667,7 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
 
       {/* Unread messages badge (Sidebar Messages item) — claret to distinguish
           from the amber AI-usage badge above. */}
-      {messageBadge > 0 && (
+      {countBadge > 0 && (
         <span style={{
           fontSize: 10,
           fontWeight: 800,
@@ -678,12 +678,12 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
           fontFamily: F.head,
           lineHeight: 1.2,
         }}>
-          {messageBadge > 99 ? "99+" : messageBadge}
+          {countBadge > 99 ? "99+" : countBadge}
         </span>
       )}
 
       {/* Sliding chevron on active OR hover (not when badge is showing) */}
-      {!showBadge && messageBadge === 0 && (active || hover) && (
+      {!showBadge && countBadge === 0 && (active || hover) && (
         <ChevronRight
           size={13}
           style={{
@@ -702,10 +702,11 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, showB
 // Mobile primary nav — fixed to the bottom of the viewport, replaces the
 // sidebar on small screens. 5 tabs with the Sell action elevated to a green
 // pill so creating listings is one thumb-tap away. Respects iOS safe-area.
-function MobileBottomNav({ activeView, onNav, messagesUnread = 0 }) {
+function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPending = 0 }) {
   const navItems = [
     { id: "overview",   label: "Home",     icon: LayoutGrid,    matches: ["overview"] },
-    { id: "items",      label: "Items",    icon: Box,           matches: ["items","orders","claims","pickups","edit-item","item-detail"] },
+    // Same badge as the desktop sidebar — Questions lives under Items.
+    { id: "items",      label: "Items",    icon: Box,           matches: ["items","orders","claims","pickups","edit-item","item-detail"], badge: questionsPending > 0 ? questionsPending : null },
     { id: "add-manual", label: "Sell",     icon: Plus,          matches: ["add-manual","add-chooser","add-ai","ai-setup","ai-photos"], primary: true },
     { id: "messages",   label: "Messages", icon: MessageSquare, matches: ["messages"], badge: messagesUnread > 0 ? messagesUnread : null },
     { id: "history",    label: "You",      icon: User,          matches: ["history","settings","ai-plan"] },
@@ -797,7 +798,7 @@ function MobileBottomNav({ activeView, onNav, messagesUnread = 0 }) {
   );
 }
 
-function Sidebar({ activeView, onNav, aiPlan, onSwitchRole, collapsed = false, messagesUnread = 0 }) {
+function Sidebar({ activeView, onNav, aiPlan, onSwitchRole, collapsed = false, messagesUnread = 0, questionsPending = 0 }) {
   const sections = [
     { header: "ACTIVITY", items: [
       { id: "overview",  label: "Overview",  icon: LayoutGrid },
@@ -900,7 +901,11 @@ function Sidebar({ activeView, onNav, aiPlan, onSwitchRole, collapsed = false, m
                       Icon={Ic}
                       onClick={() => handleClick(item)}
                       showBadge={item.group === "settings" && aiPlan === "free"}
-                      messageBadge={item.id === "messages" ? messagesUnread : 0}
+                      // Unanswered questions ride on Inventory, which is where
+                      // the Questions tab lives. Before this the count existed
+                      // only on that tab's own header — a seller anywhere else
+                      // in the dashboard had no way to know one had arrived.
+                      countBadge={item.id === "messages" ? messagesUnread : item.id === "inventory" ? questionsPending : 0}
                       collapsed
                     />
                   );
@@ -1064,7 +1069,18 @@ function labelForView(view) {
   return (view || "").charAt(0).toUpperCase() + (view || "").slice(1).replace(/-/g, " ");
 }
 
-function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, onSwitchRole, messagesUnread = 0, onOpenMessages = null }) {
+function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, onSwitchRole, messagesUnread = 0, questionsPending = 0, onOpenMessages = null, onOpenQuestions = null }) {
+  // The bell counts everything waiting on the seller, not just messages.
+  // Clicking goes wherever the work actually is: questions when those are
+  // the only thing outstanding, the inbox otherwise.
+  const bellCount = messagesUnread + questionsPending;
+  const bellTarget = messagesUnread === 0 && questionsPending > 0 ? onOpenQuestions : onOpenMessages;
+  const bellTitle = bellCount === 0
+    ? "Notifications"
+    : [
+        messagesUnread > 0 ? messagesUnread + " unread message" + (messagesUnread === 1 ? "" : "s") : null,
+        questionsPending > 0 ? questionsPending + " unanswered question" + (questionsPending === 1 ? "" : "s") : null,
+      ].filter(Boolean).join(" · ");
   // No `useViewport()` here on purpose — layout flips between mobile/desktop
   // happen entirely via CSS media queries on the `.dy-seller-topnav*` classes
   // defined in globals.css. Gating layout on a JS hook produced a first-paint
@@ -1139,14 +1155,14 @@ function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, 
           </span>
         )}
         <button
-          title={messagesUnread > 0 ? messagesUnread + " unread message" + (messagesUnread === 1 ? "" : "s") : "Notifications"}
-          aria-label="Notifications"
+          title={bellTitle}
+          aria-label={bellTitle}
           className="dy-seller-topnav__bell"
-          onClick={() => onOpenMessages && onOpenMessages()}
+          onClick={() => bellTarget && bellTarget()}
           onMouseEnter={e => { e.currentTarget.style.background = C.sand; }}
           onMouseLeave={e => { e.currentTarget.style.background = C.paper; }}>
           <Bell size={16} style={{ color: C.mink }} strokeWidth={2.2}/>
-          {messagesUnread > 0 ? (
+          {bellCount > 0 ? (
             <span style={{
               position: "absolute", top: 4, right: 4,
               minWidth: 16, height: 16, padding: "0 4px",
@@ -1154,7 +1170,7 @@ function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, 
               fontFamily: F.head, fontSize: 9, fontWeight: 800,
               display: "inline-flex", alignItems: "center", justifyContent: "center",
               border: "2px solid " + C.paper,
-            }}>{messagesUnread > 99 ? "99+" : messagesUnread}</span>
+            }}>{bellCount > 99 ? "99+" : bellCount}</span>
           ) : null}
         </button>
         {/* BUG-064 — socket health pulse for at-a-glance real-time status. */}
@@ -4247,7 +4263,7 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
    post straight onto the listing, so this is a publishing surface, not a
    private inbox — the copy says so in a few places to keep that obvious.
    ====================================================================== */
-function QuestionsView({ onNav, accessToken = null }) {
+function QuestionsView({ onNav, accessToken = null, onQuestionsChanged = null }) {
   const { isMobile } = useViewport();
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading]     = useState(!!accessToken);
@@ -4282,6 +4298,8 @@ function QuestionsView({ onNav, accessToken = null }) {
       // refetching the whole list on every reply.
       setQuestions((prev) => prev.filter((x) => x.id !== q.id));
       setDrafts((d) => { const next = { ...d }; delete next[q.id]; return next; });
+      // Drop the sidebar/bell badge in the same beat.
+      if (onQuestionsChanged) onQuestionsChanged();
       setSuccessMsg("Answer posted to " + (q.item?.title || "the listing") + ".");
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err) {
@@ -10767,6 +10785,29 @@ export default function DropYardSellerDashboard({
     [convList],
   );
 
+  // ─── Unanswered questions, lifted to the root ───────────────────────────
+  // QuestionsView fetched this for itself, so the count only existed while
+  // that tab was mounted. Owned here instead, it feeds the sidebar badge and
+  // the bell from every view — and the socket keeps it live, so a question
+  // arriving while the seller is on Overview shows up without a refresh.
+  const [questionsPending, setQuestionsPending] = useState(0);
+  const [questionsTick, setQuestionsTick] = useState(0);
+  useSocketEvent("question:new", () => setQuestionsTick((t) => t + 1));
+  useEffect(() => {
+    if (!accessToken) { setQuestionsPending(0); return; }
+    let cancelled = false;
+    apiRequest("/api/questions/pending", { token: accessToken })
+      .then((data) => {
+        if (cancelled) return;
+        setQuestionsPending(Array.isArray(data?.questions) ? data.questions.length : 0);
+      })
+      .catch(() => { if (!cancelled) setQuestionsPending(0); });
+    return () => { cancelled = true; };
+  }, [accessToken, questionsTick]);
+  // Answering one is the other way the count moves. QuestionsView calls this
+  // after a successful PATCH so the badge drops without waiting for a refetch.
+  const onQuestionsChanged = useCallback(() => setQuestionsTick((t) => t + 1), []);
+
   // Browser-level notification on incoming message. Gated to authed seller +
   // granted permission + not currently viewing the active thread.
   useSocketEvent("message:new", (payload) => {
@@ -10797,18 +10838,20 @@ export default function DropYardSellerDashboard({
           onToggleSidebar={() => setSidebarCollapsed(c => !c)}
           onSwitchRole={onSwitchRole}
           messagesUnread={messagesUnreadCount}
+          questionsPending={questionsPending}
           onOpenMessages={() => safeNav("messages")}
+          onOpenQuestions={() => safeNav("questions")}
         />
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
           {/* Desktop sidebar — rendered always so SSR/client markup matches; CSS
               media query (`.dy-desktop-sidebar`) hides it on mobile. Gating on
               the JS `isMobile` flag caused the sidebar to render in SSR HTML
               (defaults to desktop) and pop out on hydration, shifting layout. */}
-          <Sidebar activeView={view} onNav={safeNav} aiPlan={aiPlan} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount}/>
+          <Sidebar activeView={view} onNav={safeNav} aiPlan={aiPlan} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount} questionsPending={questionsPending}/>
           <main className={"dy-seller-main" + (view === "messages" ? " dy-seller-main--flush" : "")}>
             {view === "overview" && <Overview onNav={safeNav} user={user} sellerItems={sellerItems} accessToken={accessToken}/>}
             {view === "items" && <MyItemsView onNav={safeNav} onEdit={goToEdit} onView={goToView} sellerItems={sellerItems} onItemsChange={onItemsChange} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
-            {view === "questions" && <QuestionsView onNav={safeNav} accessToken={accessToken}/>}
+            {view === "questions" && <QuestionsView onNav={safeNav} accessToken={accessToken} onQuestionsChanged={onQuestionsChanged}/>}
             {view === "item-detail" && <ItemDetailView item={editingItem} onBack={() => setView("items")} onEdit={() => setView("edit-item")} accessToken={accessToken}/>}
             {view === "orders" && <OrdersView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated}/>}
             {view === "claims" && <ClaimsView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated}/>}
@@ -10838,7 +10881,7 @@ export default function DropYardSellerDashboard({
           </main>
         </div>
         {/* Always render. CSS hides on desktop. See globals.css `.dy-mobile-bottom-nav`. */}
-        <MobileBottomNav activeView={view} onNav={safeNav} messagesUnread={messagesUnreadCount}/>
+        <MobileBottomNav activeView={view} onNav={safeNav} messagesUnread={messagesUnreadCount} questionsPending={questionsPending}/>
       </div>
       {showOnboarding && (
         <SellerOnboardingModal

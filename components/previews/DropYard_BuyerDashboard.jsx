@@ -34,6 +34,7 @@ import {
   Star, Shield, Send, ArrowRight, ArrowLeft, Home, Tag, Bell, MessageCircle,
   CalendarDays, Compass, Archive, RefreshCw, Eye, Info, TrendingDown,
   DollarSign, AlertCircle, CheckCircle, Share2, Award, Leaf,
+  Mail,
   Banknote,
   Phone,
   LogOut,
@@ -107,6 +108,36 @@ function adaptBuyerConversation(api, myId) {
 // "N active threads" count — a three-month-old thread whose claim auto-expired
 // is history, not something the buyer is in the middle of.
 const ACTIVE_WINDOW_DAYS = 30;
+
+// ─── "I've read that answer" state ──────────────────────────────────────────
+// A seller's answer is posted on the item page, which the buyer who asked has
+// no reason to revisit — so the reply they were waiting for sat there unseen.
+// The badge that fixes that needs to know what has already been read.
+//
+// This lives in localStorage rather than the database: it's a per-viewer
+// convenience, not shared state, and the cost of getting it wrong is a badge
+// reappearing on a second device. Keyed question id -> the answeredAt it was
+// read at, so a seller editing their answer surfaces it again.
+const ANSWER_SEEN_KEY = "dy_seen_answers";
+function answerStamp(q) {
+  return q?.answeredAt ? String(q.answeredAt) : "answered";
+}
+function readSeenAnswers() {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(ANSWER_SEEN_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    // Private mode, blocked storage, or corrupt JSON — every answer simply
+    // reads as unseen, which is the safe direction to fail in.
+    return {};
+  }
+}
+function writeSeenAnswers(map) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(ANSWER_SEEN_KEY, JSON.stringify(map)); } catch { /* ignore */ }
+}
 function isWithinActiveWindow(iso, days = ACTIVE_WINDOW_DAYS) {
   if (!iso) return false;
   const ms = new Date(iso).getTime();
@@ -1608,7 +1639,7 @@ async function shareListing(item) {
 /* ============================================================
    ITEM CARD  — works for drop / shelf
    ============================================================ */
-function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null }) {
+function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null, answerReady = false }) {
   const [hovered, setHovered] = useState(false);
   const discount = item.op ? Math.round((1 - item.p / item.op) * 100) : null;
   let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = "Live Drop", cardAccent = C.green, ctaLabel = "Claim Now", CtaIcon = Check;
@@ -1694,6 +1725,15 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
         {offerPending && !isOwn && !isClaimed && !isPreview && (
           <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.paper, color: C.amberDeep, border: "1.5px solid " + C.amber + "55", display: "flex", alignItems: "center", gap: 4 }}>
             <Clock size={10}/> Offer pending
+          </span>
+        )}
+        {/* The seller answered a question this buyer asked, and they haven't
+            read it. Sits top-left under the layer badge so it survives
+            alongside the offer-pending / price-drop badges below. Clears the
+            moment the item detail opens — that's where the answer is. */}
+        {answerReady && (
+          <span style={{ position: "absolute", top: 46, left: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.ai, color: "#fff", display: "flex", alignItems: "center", gap: 4, boxShadow: "0 2px 8px rgba(31,29,25,0.18)" }}>
+            <Mail size={10} strokeWidth={2.6}/> Seller replied
           </span>
         )}
         {/* Also a badge rather than the full-card overlay: the item is live
@@ -3810,7 +3850,7 @@ function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedI
 /* ============================================================
    SAVED PAGE
    ============================================================ */
-function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggleSave, onBrowse, onBack, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, state = "between", currentUserId = null, onSwitchRole = null }) {
+function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggleSave, onBrowse, onBack, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, state = "between", currentUserId = null, onSwitchRole = null, answeredIds = new Set() }) {
   // Authed users render directly from the watchlist API result (full Item
   // objects, including SOLD ones + ones the user owns themselves). Preview
   // mode falls back to filtering the demo pool by savedIds — the original
@@ -3825,7 +3865,7 @@ function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggle
         <EmptyState illustration={<EmptySavedIllustration/>} title="Nothing saved yet" message="Tap the heart on items you’re interested in — they’ll gather here so you can claim them when the Drop opens." cta="Browse Discover" onCtaClick={onBrowse} accent={C.amber}/>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
+          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} answerReady={answeredIds.has(i.id)} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
         </div>
       )}
     </>
@@ -5897,7 +5937,7 @@ function SellWithAICta({ onSwitchRole }) {
 /* ============================================================
    DISCOVER — Between Drops state
    ============================================================ */
-function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, reminded, onRemindMe, savedPreview, togglePreview, onSwitchRole, onPreviewItem, onSeeAllPreviews, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, itemsLoading = false, sneakPeekSource = null, currentUserId = null }) {
+function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, reminded, onRemindMe, savedPreview, togglePreview, onSwitchRole, onPreviewItem, onSeeAllPreviews, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, itemsLoading = false, sneakPeekSource = null, currentUserId = null, answeredIds = new Set() }) {
   // A seller's own listings are part of the feed (see the fetch in
   // BuyerDashboard). This is what marks them so the card can drop its
   // buyer-side actions — null for the unauthed preview routes, where every
@@ -5999,7 +6039,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           })()}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {liveUnifiedPool.map((item, i) => (
-              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} liveMode={true} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
+              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} liveMode={true} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
             ))}
           </div>
         </>
@@ -6014,7 +6054,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
             <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={betweenPool.length + " items you can grab today — Shelf carryovers available for pickup anytime."} pulse={true}/>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
               {betweenPool.map((item, i) => (
-                <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
+                <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
               ))}
             </div>
           </>
@@ -6027,7 +6067,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={shelfItems.length + " items ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {shelfItems.map((item, i) => (
-              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
+              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
             ))}
           </div>
         </>
@@ -6923,6 +6963,62 @@ export default function DropYardBuyerDashboard({
     return done;
   }, [claims]);
 
+  // ─── Questions this buyer asked, and which answers are still unread ──────
+  // The seller's reply lands on the public item page. Nothing pointed the
+  // buyer back at it, so the only way to find out was to reopen the listing
+  // and read the thread again. These drive an envelope badge on the item's
+  // card, which is where the buyer actually is.
+  const [myQuestions, setMyQuestions] = useState([]);
+  const [questionsTick, setQuestionsTick] = useState(0);
+  const [seenAnswers, setSeenAnswers] = useState({});
+  useSocketEvent("question:answered", () => setQuestionsTick((t) => t + 1));
+  // localStorage isn't available during SSR, so seed after mount.
+  useEffect(() => { setSeenAnswers(readSeenAnswers()); }, []);
+  useEffect(() => {
+    if (!accessToken) { setMyQuestions([]); return; }
+    let cancelled = false;
+    apiRequest("/api/questions/mine", { token: accessToken })
+      .then((data) => {
+        if (cancelled) return;
+        setMyQuestions(Array.isArray(data?.questions) ? data.questions : []);
+      })
+      .catch(() => { if (!cancelled) setMyQuestions([]); });
+    return () => { cancelled = true; };
+  }, [accessToken, questionsTick]);
+
+  const answeredIds = useMemo(() => {
+    const waiting = new Set();
+    for (const q of myQuestions) {
+      if (!q.answer || !q.itemId) continue;
+      if (seenAnswers[q.id] === answerStamp(q)) continue;
+      waiting.add(q.itemId);
+    }
+    return waiting;
+  }, [myQuestions, seenAnswers]);
+
+  // Opening the item is reading the answer — that's where the Q&A renders.
+  // Driven off `viewingItem` at the root rather than a callback threaded into
+  // ItemDetail, because every route into the detail view (card, deep link,
+  // watchlist, seller profile) goes through this one piece of state.
+  const markAnswersSeen = useCallback((itemId) => {
+    if (!itemId) return;
+    setSeenAnswers((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const q of myQuestions) {
+        if (q.itemId !== itemId || !q.answer) continue;
+        const stamp = answerStamp(q);
+        if (next[q.id] !== stamp) { next[q.id] = stamp; changed = true; }
+      }
+      if (!changed) return prev;
+      writeSeenAnswers(next);
+      return next;
+    });
+  }, [myQuestions]);
+  useEffect(() => {
+    if (viewingItem?.id) markAnswersSeen(viewingItem.id);
+  }, [viewingItem?.id, markAnswersSeen]);
+
   // Optimistic toggle: flip the local Set immediately so the heart animates,
   // then POST/DELETE in the background. Roll back on failure. Skip the network
   // call entirely for demo-only ids (numbers from the static `allItems` array)
@@ -7065,8 +7161,8 @@ export default function DropYardBuyerDashboard({
               {page === "discover" && !viewingPreview && showSneakList && (
                 <SneakPeekListPage savedPreview={peekSaved} togglePreview={peekToggle} onPreviewItem={setViewingPreview} onBack={() => setShowSneakList(false)} sneakPeekSource={sneakPeekForUI}/>
               )}
-              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={peekSaved} togglePreview={peekToggle} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null}/>}
-              {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>}
+              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={peekSaved} togglePreview={peekToggle} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null} answeredIds={answeredIds}/>}
+              {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole} answeredIds={answeredIds}/>}
               {page === "claims"   && <ClaimsPage claims={claims} setClaims={setClaims} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} onGoToMessages={() => setPage("messages")} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} accessToken={accessToken}/>}
               {page === "messages" && <MessagesPage user={user} accessToken={accessToken} claims={claims} onAcceptCounter={handleAcceptCounterByItemTitle} onDeclineCounter={handleDeclineCounterByItemTitle} openThreadId={openThreadId} onConsumeOpenThread={() => setOpenThreadId(null)} onBack={() => setPage("discover")} convList={convList} onConvListChange={setConvList}/>}
               {page === "history"  && <HistoryPage highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} accessToken={accessToken} onBack={() => setPage("discover")}/>}
