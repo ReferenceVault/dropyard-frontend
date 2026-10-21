@@ -30,6 +30,7 @@ function useDropOpenCountdownString() {
 }
 import {
   Search, Heart, Clock, MapPin, Package, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, SlidersHorizontal,
+  LayoutGrid, ArrowUpDown,
   Check, X, User, ShoppingBag, MessageSquare, Sparkles, Truck, Calendar,
   Star, Shield, Send, ArrowRight, ArrowLeft, Home, Tag, Bell, MessageCircle,
   CalendarDays, Compass, Archive, RefreshCw, Eye, Info, TrendingDown,
@@ -375,6 +376,10 @@ const BANNER_BETWEEN_SRC = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2
    DATA
    ============================================================ */
 const categories = ["All","Furniture","Electronics","Appliances & Kitchen","Clothing & Accessories","Kids & Baby","Sports & Outdoor","Tools & Garden","Home Decor","Books, Games & Hobbies","Collectibles & Antiques","Other"];
+// The condition filter's options. Fixed, unlike the neighbourhood list, which
+// is built from whoever is actually selling — these are the four values the
+// backend enum can produce, in the order a buyer would rank them.
+const conditions = ["All", ...Object.values(BUYER_ENUM_TO_CONDITION)];
 
 
 
@@ -476,6 +481,86 @@ function ItemImage({ src, emojiSize, imgStyle, spanStyle }) {
     <span style={{ fontSize: emojiSize, lineHeight: 1, ...(spanStyle || {}) }}>
       {src || "📦"}
     </span>
+  );
+}
+
+// The most tiles the mosaic will lay out. The band is wide enough to carry a
+// long run of narrow columns, and the more listings it shows the better it
+// does its job — but past this the tiles get too slim to make out what the
+// item is.
+const MOSAIC_MAX = 10;
+
+// How the mosaic tiles for a given number of photos: `cols` columns over two
+// rows, the first `tall` of them spanning both rows. Picking `tall` as the
+// number of cells left over (cols * 2 - n) fills the grid exactly however
+// many photos turn up, and the extra column on even counts keeps at least one
+// full-height tile in the run so it never reads as a plain filmstrip.
+// 3→2 cols, 4/5→3, 6/7→4, 8/9→5, 10→6.
+function mosaicLayout(n) {
+  if (n < 3) return null;
+  const cols = Math.ceil(n / 2) + (n % 2 === 0 ? 1 : 0);
+  return { cols, tall: cols * 2 - n };
+}
+
+/* ============================================================
+   HERO PHOTO MOSAIC
+   The band's backdrop, tiled from the photos of real listings in
+   the viewer's own feed instead of one packaged stock shot — so
+   the hero changes as the neighbourhood's items do.
+
+   The packaged banner stays underneath as the base layer: it
+   covers the gap when the feed has too few photos to tile (a
+   fresh neighbourhood, emoji-only demo data on /preview) and
+   shows through any tile whose URL fails to load.
+   ============================================================ */
+function HeroPhotoMosaic({ photos, fallbackSrc, objectPosition, tileBg = C.paper }) {
+  // Only real image URLs can tile — the feed's category emoji placeholders
+  // can't. Same test ItemImage uses, so the two never disagree about what
+  // counts as a photo.
+  const shots = useMemo(() => {
+    const seen = new Set();
+    const out = [];
+    for (const p of (Array.isArray(photos) ? photos : [])) {
+      if (typeof p !== "string" || !/^(https?:\/\/|data:image\/)/i.test(p)) continue;
+      if (seen.has(p)) continue;
+      seen.add(p);
+      out.push(p);
+      if (out.length === MOSAIC_MAX) break;
+    }
+    return out;
+  }, [photos]);
+
+  const layout = mosaicLayout(shots.length);
+
+  return (
+    <>
+      <img src={fallbackSrc} alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition }}/>
+      {layout && (
+        <div aria-hidden="true" style={{
+          position: "absolute", inset: 0,
+          display: "grid",
+          gridTemplateColumns: "repeat(" + layout.cols + ", 1fr)",
+          gridTemplateRows: "repeat(2, 1fr)",
+          gap: 3,
+        }}>
+          {/* The photo sits inside the tile rather than filling it: a listing
+              shot is whatever shape the seller's camera gave it, and cropping
+              it to the tile cut most of the item away. Scaled down to fit, the
+              whole thing reads at a glance — the tile's own background fills
+              what's left over. */}
+          {shots.map((src, i) => (
+            <div key={src} style={{ position: "relative", overflow: "hidden", gridRow: i < layout.tall ? "span 2" : "auto", background: tileBg, padding: 5, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <img
+                src={src}
+                alt=""
+                style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block", borderRadius: 6 }}
+                onError={(e) => { e.currentTarget.parentElement.style.visibility = "hidden"; }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -814,7 +899,7 @@ function PageTitle({ eyebrow, title, subtitle, action, eyebrowBg, eyebrowColor, 
    Soft amber gradient panel. Pulsing dot, eyebrow, headline,
    subtitle, "Remind me" CTA. Lighter outline (12% amber).
    ============================================================ */
-function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerNames = null }) {
+function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerNames = null, photos = null }) {
   // Real countdown to the next drop-open moment (Saturday 8 AM by default).
   // `now` starts null on first render so SSR + initial client hydration produce
   // identical "0d 0h 0m 0s" markup; useEffect seeds the real value after mount
@@ -866,11 +951,11 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
       position: "relative",
       overflow: "hidden",
       boxShadow: "0 4px 24px rgba(240, 144, 0, 0.14)",
-      border: "1px solid " + C.amber + "30",
       minHeight: 168,
     }}>
-      {/* Background image — golden-hour neighbour scene with garage-sale table */}
-      <img src={BANNER_BETWEEN_SRC} alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 50%" }}/>
+      {/* Background — the queued listings' own photos, tiled. Falls back to the
+          packaged golden-hour scene when the feed has too few to fill the grid. */}
+      <HeroPhotoMosaic photos={photos} fallbackSrc={BANNER_BETWEEN_SRC} objectPosition="center 50%" tileBg={C.sand}/>
 
       {/* Primary scrim — bright cream-white on the left where text lives, fading right so the image shines through */}
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255, 250, 240, 0.98) 0%, rgba(255, 245, 225, 0.94) 32%, rgba(255, 232, 188, 0.62) 58%, rgba(255, 228, 176, 0.28) 82%, rgba(255, 228, 176, 0.08) 100%)" }}/>
@@ -894,24 +979,18 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
             <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: "#fff", letterSpacing: "0.1em" }}>OPENS SATURDAY</span>
           </span>
 
-          {/* Headline with chromatic accent on a temporal word */}
+          {/* Headline — the countdown pill below already spells out the day and
+              hour, so this sells the idea rather than repeating the schedule. */}
           <h1 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.025em", lineHeight: 1.2, marginBottom: 10 }}>
-            The next Drop lands{" "}
-            <span style={{ position: "relative", display: "inline-block" }}>
-              {dropOpenDay()}
-              <span style={{ position: "absolute", left: 0, right: 0, bottom: -2, height: 3, background: C.amberDeep, borderRadius: 2, opacity: 0.85 }}/>
-            </span>
-            {" "}at {dropOpenHour()}
+            Good finds. Right around the corner.
           </h1>
 
-          {/* Body — concise, with bold stat. When no items are queued yet,
-              swap the copy to something honest instead of a fake count. */}
+          {/* Body. The zero case keeps its own copy — "preview what your
+              neighbours are selling" is an empty promise when nothing has
+              been queued yet. */}
           <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.ink, maxWidth: 520, lineHeight: 1.55, marginBottom: 12 }}>
             {displayCount > 0 ? (
-              <>
-                <b style={{ color: C.ink, fontWeight: 900 }}>{displayCount} neighbour{displayCount === 1 ? "" : "s"}</b>
-                {" "}{displayCount === 1 ? "has" : "have"} items lined up. Save your favourites from the Sneak Peek to get a head start.
-              </>
+              <>Preview what your neighbours are selling and save your favourites before the {dropOpenDay()} Drop opens.</>
             ) : (
               <>Items aren&apos;t queued yet — we&apos;ll notify you the moment the Drop opens. Tap <b style={{ color: C.ink, fontWeight: 900 }}>Remind me</b> below to lock it in.</>
             )}
@@ -953,9 +1032,13 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
         boxShadow: "0 6px 20px rgba(192, 104, 0, 0.14)",
         backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
       }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.amberDeep, flexShrink: 0 }}/>
-          <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, whiteSpace: "nowrap" }}>Next Drop in</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          {/* Clock badge — the same amber as the Remind me button at the other
+              end of the pill, so the two read as one row. */}
+          <span style={{ width: 30, height: 30, borderRadius: "50%", background: C.amberDeep, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Clock size={16} strokeWidth={2.4} style={{ color: "#fff" }}/>
+          </span>
+          <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, whiteSpace: "nowrap" }}>Drop opens in</span>
         </span>
 
         <div style={{ display: "flex", alignItems: "baseline", gap: 3, fontFamily: F.head, fontSize: 26, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
@@ -996,7 +1079,7 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
    Deep ink/charcoal hero. LIVE NOW pill, headline with amber
    underline on "Barrhaven", avatar stack, countdown panel.
    ============================================================ */
-function WelcomeBand({ itemsCount = null, sellerNames = null }) {
+function WelcomeBand({ itemsCount = null, sellerNames = null, photos = null }) {
   // Real countdown to Drop close (Sunday 8 PM by default). SSR-safe — `now`
   // starts null so server and client first render produce the same markup.
   const [now, setNow] = useState(null);
@@ -1042,8 +1125,9 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
 
   return (
     <section className="fade-in" style={{ background: "#1F1A14", borderRadius: 22, padding: "20px 26px", marginBottom: 20, position: "relative", overflow: "hidden", boxShadow: "0 4px 24px rgba(31, 29, 25, 0.18)", minHeight: 168 }}>
-      {/* Background image — real garage-sale illustration */}
-      <img src={BANNER_IMG_SRC} alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 38%" }}/>
+      {/* Background — the live Drop's own listing photos, tiled. Falls back to
+          the packaged garage-sale scene when there are too few to fill the grid. */}
+      <HeroPhotoMosaic photos={photos} fallbackSrc={BANNER_IMG_SRC} objectPosition="center 38%" tileBg="#2A231B"/>
 
       {/* Primary scrim — dense dark on the left where text lives, fading right so the image shines through */}
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(20, 16, 12, 0.92) 0%, rgba(20, 16, 12, 0.82) 30%, rgba(20, 16, 12, 0.55) 58%, rgba(20, 16, 12, 0.25) 82%, rgba(20, 16, 12, 0.05) 100%)" }}/>
@@ -1123,7 +1207,7 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
 // in a slide-up bottom sheet behind a filter pill that surfaces the active
 // filter count. State toggle (Everything / On the Shelf) sits below when
 // applicable. Activated by the parent (DiscoverPage) via useViewport().
-function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, sort, setSort, state, accent, sorts, activeFilterCount }) {
+function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, hood, setHood, cond, setCond, sort, setSort, state, accent, sorts, hoods = [], activeFilterCount, onReset }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const accentDeep = accent === C.green ? C.greenDeep : C.amberDeep;
   const accentMist = accent === C.green ? C.greenMist : C.amberMist;
@@ -1246,6 +1330,46 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, so
               </div>
             </div>
 
+            {hoods.length > 0 && (
+              <div style={{ marginBottom: 22 }}>
+                <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>Neighbourhood</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {["All", ...hoods].map(h => {
+                    const active = hood === h;
+                    return (
+                      <button key={h} onClick={() => setHood(h)} style={{
+                        padding: "9px 14px", borderRadius: 999,
+                        border: "1.5px solid " + (active ? accent : C.fawn),
+                        background: active ? accent : C.paper,
+                        color: active ? "#fff" : C.mink,
+                        fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700,
+                        cursor: "pointer", transition: "all 150ms",
+                      }}>{h === "All" ? "Any neighbourhood" : h}</button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginBottom: 22 }}>
+              <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>Condition</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {conditions.map(cn => {
+                  const active = cond === cn;
+                  return (
+                    <button key={cn} onClick={() => setCond(cn)} style={{
+                      padding: "9px 14px", borderRadius: 999,
+                      border: "1.5px solid " + (active ? accent : C.fawn),
+                      background: active ? accent : C.paper,
+                      color: active ? "#fff" : C.mink,
+                      fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700,
+                      cursor: "pointer", transition: "all 150ms",
+                    }}>{cn === "All" ? "Any condition" : cn}</button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div style={{ marginBottom: 22 }}>
               <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>Sort by</p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -1266,7 +1390,7 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, so
             </div>
 
             <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
-              <button onClick={() => { setCat("All"); setSort("newest"); setSearch(""); }} style={{
+              <button onClick={onReset} style={{
                 flex: 1, padding: "12px 0", borderRadius: 999,
                 border: "1.5px solid " + C.fawn, background: C.paper,
                 color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700,
@@ -1287,13 +1411,13 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, so
   );
 }
 
-function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, setSort, panelOpen, setPanelOpen, state }) {
+function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, setHood, cond, setCond, sort, setSort, panelOpen, setPanelOpen, state, hoods = [] }) {
   const { isMobile } = useViewport();
   // All hooks must run unconditionally — when the viewport crosses the mobile
   // breakpoint at hydration (SSR width default → real client width), the early
   // return below would change the hook count and React errors out. Hooks first,
   // then branch.
-  const [activeSegment, setActiveSegment] = useState(null); // "search" | "category" | "sort" | null
+  const [activeSegment, setActiveSegment] = useState(null); // "search" | "category" | "hood" | "cond" | "sort" | null
   const [hoveredSegment, setHoveredSegment] = useState(null);
   const [compact, setCompact] = useState(false);
   useEffect(() => {
@@ -1316,8 +1440,9 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
     { id: "priceLow",  label: "Price: low to high" },
     { id: "priceHigh", label: "Price: high to low" },
   ];
-  const activeFilterCount = (cat !== "All" ? 1 : 0) + (sort !== "newest" ? 1 : 0);
+  const activeFilterCount = (cat !== "All" ? 1 : 0) + (hood !== "All" ? 1 : 0) + (cond !== "All" ? 1 : 0) + (sort !== "newest" ? 1 : 0);
   const accent = state === "between" ? C.amber : C.green;
+  const clearAll = () => { setCat("All"); setHood("All"); setCond("All"); setSort("newest"); setSearch(""); };
 
   // On mobile, swap to the sheet-based filter UI. Branch AFTER all hooks.
   if (isMobile) {
@@ -1326,11 +1451,15 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
         filter={filter} setFilter={setFilter}
         search={search} setSearch={setSearch}
         cat={cat} setCat={setCat}
+        hood={hood} setHood={setHood}
+        cond={cond} setCond={setCond}
         sort={sort} setSort={setSort}
         state={state}
         accent={accent}
         sorts={sorts}
+        hoods={hoods}
         activeFilterCount={activeFilterCount}
+        onReset={clearAll}
       />
     );
   }
@@ -1349,7 +1478,9 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
   // Segment style helpers — state-aware
   const segStyleBase = {
     flex: 1,
-    padding: "14px 28px",
+    // Tighter than it was: five segments share the capsule now, and the old
+    // 28px gutters pushed the Sort value under the search button.
+    padding: "14px 18px",
     background: "transparent",
     border: "none",
     cursor: "pointer",
@@ -1381,6 +1512,25 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
   const segLabel = { fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.ink, letterSpacing: "0.02em", marginBottom: 3, lineHeight: 1.1 };
   const segValue = (filled) => ({ fontFamily: F.body, fontSize: 13, fontWeight: filled ? 600 : 500, color: filled ? C.ink : C.mink, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" });
 
+  // Every segment is laid out the same way: what it filters on the left, the
+  // label and current value in the middle, and — on the four that open a
+  // chooser — a chevron on the right. Search has no chevron: it opens a text
+  // field, not a list.
+  //
+  // Called as a function rather than rendered as <SegBody/>: a component
+  // declared inside a render is a brand-new type on every pass, so React
+  // would throw the segment away and rebuild it each keystroke.
+  const segBody = ({ icon: Icon, label, value, filled, chevron = true }) => (
+    <span style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", minWidth: 0 }}>
+      <Icon size={17} strokeWidth={2.2} style={{ color: filled ? C.ink : C.mink, flexShrink: 0 }}/>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <p style={segLabel}>{label}</p>
+        <p style={segValue(filled)}>{value}</p>
+      </span>
+      {chevron && <ChevronDown size={15} strokeWidth={2.4} style={{ color: C.ash, flexShrink: 0 }}/>}
+    </span>
+  );
+
   return (
     <section style={{ padding: (state === "between" ? "28px" : "14px") + " 0 12px", position: "relative" }}>
       {/* COMPACT PILL — when scrolled past threshold */}
@@ -1401,9 +1551,9 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
             <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {search ? search : "Search DropYard"}
             </span>
-            {(cat !== "All" || sort !== "newest") && (
+            {(cat !== "All" || hood !== "All" || cond !== "All" || sort !== "newest") && (
               <span style={{ fontSize: 13, fontWeight: 500, color: C.mink, whiteSpace: "nowrap" }}>
-                \u00b7 {cat !== "All" ? cat : sortShort}
+                \u00b7 {cat !== "All" ? cat : hood !== "All" ? hood : cond !== "All" ? cond : sortShort}
               </span>
             )}
           </div>
@@ -1437,8 +1587,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
           onMouseLeave={() => setHoveredSegment(null)}
           style={{ ...segStyle("search"), flex: 1.3 }}
         >
-          <p style={segLabel}>Search</p>
-          <p style={segValue(!!search)}>{search || "Items, categories, neighbours"}</p>
+          {segBody({ icon: Search, label: "Search", value: search || "Items, categories, neighbours", filled: !!search, chevron: false })}
         </button>
 
         {/* Divider */}
@@ -1453,24 +1602,52 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
           onMouseLeave={() => setHoveredSegment(null)}
           style={segStyle("category")}
         >
-          <p style={segLabel}>Category</p>
-          <p style={segValue(cat !== "All")}>{cat === "All" ? "Any category" : cat}</p>
+          {segBody({ icon: LayoutGrid, label: "Category", value: cat === "All" ? "Any category" : cat, filled: cat !== "All" })}
         </button>
 
         {/* Divider */}
-        {activeSegment !== "category" && activeSegment !== "sort" && hoveredSegment !== "category" && hoveredSegment !== "sort" && (
+        {activeSegment !== "category" && activeSegment !== "hood" && hoveredSegment !== "category" && hoveredSegment !== "hood" && (
           <div style={{ width: 1, background: C.fawn, margin: "12px 0" }}/>
         )}
 
-        {/* SEGMENT 3 — SORT */}
+        {/* SEGMENT 3 — NEIGHBOURHOOD */}
+        <button
+          onClick={() => toggleSegment("hood")}
+          onMouseEnter={() => setHoveredSegment("hood")}
+          onMouseLeave={() => setHoveredSegment(null)}
+          style={segStyle("hood")}
+        >
+          {segBody({ icon: MapPin, label: "Neighbourhood", value: hood === "All" ? "Any neighbourhood" : hood, filled: hood !== "All" })}
+        </button>
+
+        {/* Divider */}
+        {activeSegment !== "hood" && activeSegment !== "cond" && hoveredSegment !== "hood" && hoveredSegment !== "cond" && (
+          <div style={{ width: 1, background: C.fawn, margin: "12px 0" }}/>
+        )}
+
+        {/* SEGMENT 4 — CONDITION */}
+        <button
+          onClick={() => toggleSegment("cond")}
+          onMouseEnter={() => setHoveredSegment("cond")}
+          onMouseLeave={() => setHoveredSegment(null)}
+          style={segStyle("cond")}
+        >
+          {segBody({ icon: Tag, label: "Condition", value: cond === "All" ? "Any condition" : cond, filled: cond !== "All" })}
+        </button>
+
+        {/* Divider */}
+        {activeSegment !== "cond" && activeSegment !== "sort" && hoveredSegment !== "cond" && hoveredSegment !== "sort" && (
+          <div style={{ width: 1, background: C.fawn, margin: "12px 0" }}/>
+        )}
+
+        {/* SEGMENT 5 — SORT */}
         <button
           onClick={() => toggleSegment("sort")}
           onMouseEnter={() => setHoveredSegment("sort")}
           onMouseLeave={() => setHoveredSegment(null)}
           style={{ ...segStyle("sort"), paddingRight: 80 }}
         >
-          <p style={segLabel}>Sort by</p>
-          <p style={segValue(sort !== "newest")}>{sortShort}</p>
+          {segBody({ icon: ArrowUpDown, label: "Sort by", value: sortShort, filled: sort !== "newest" })}
         </button>
 
         {/* Green/Amber circle search button — state-aware.
@@ -1511,7 +1688,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
       </div>
 
       {/* Active filter chips — when filters applied but no segment open */}
-      {!activeSegment && (cat !== "All" || sort !== "newest" || search) && (
+      {!activeSegment && (cat !== "All" || hood !== "All" || cond !== "All" || sort !== "newest" || search) && (
         <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
           {search && (
             <button onClick={() => setSearch("")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: C.greenMist, border: "none", color: C.greenDeep, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
@@ -1521,6 +1698,16 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
           {cat !== "All" && (
             <button onClick={() => setCat("All")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: C.greenMist, border: "none", color: C.greenDeep, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
               {cat} <X size={12}/>
+            </button>
+          )}
+          {hood !== "All" && (
+            <button onClick={() => setHood("All")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: C.greenMist, border: "none", color: C.greenDeep, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
+              {hood} <X size={12}/>
+            </button>
+          )}
+          {cond !== "All" && (
+            <button onClick={() => setCond("All")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: C.greenMist, border: "none", color: C.greenDeep, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
+              {cond} <X size={12}/>
             </button>
           )}
           {sort !== "newest" && (
@@ -1558,6 +1745,36 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
               </div>
             </div>
           )}
+          {activeSegment === "hood" && (
+            <div>
+              <label style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 12, display: "block" }}>Choose a neighbourhood</label>
+              {hoods.length === 0 ? (
+                <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ash, fontStyle: "italic" }}>No neighbourhoods to filter by yet — sellers add theirs to their profile.</p>
+              ) : (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {["All", ...hoods].map(h => {
+                    const active = hood === h;
+                    return (
+                      <button key={h} onClick={() => { setHood(h); if (h === "All") setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? C.green : C.fawn), background: active ? C.green : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{h === "All" ? "Any neighbourhood" : h}</button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+          {activeSegment === "cond" && (
+            <div>
+              <label style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 12, display: "block" }}>Choose a condition</label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {conditions.map(cn => {
+                  const active = cond === cn;
+                  return (
+                    <button key={cn} onClick={() => { setCond(cn); if (cn === "All") setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? C.green : C.fawn), background: active ? C.green : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{cn === "All" ? "Any condition" : cn}</button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {activeSegment === "sort" && (
             <div>
               <label style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 12, display: "block" }}>Sort items</label>
@@ -1575,7 +1792,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
           {/* Footer */}
           {activeSegment !== "search" && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 22, paddingTop: 18, borderTop: "1px solid " + C.fawn }}>
-              <button onClick={() => { setCat("All"); setSort("newest"); setSearch(""); setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "none", background: "transparent", fontSize: 13, color: C.mink, fontWeight: 700, cursor: "pointer", fontFamily: F.head, textDecoration: "underline", textUnderlineOffset: 3 }}>
+              <button onClick={() => { clearAll(); setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "none", background: "transparent", fontSize: 13, color: C.mink, fontWeight: 700, cursor: "pointer", fontFamily: F.head, textDecoration: "underline", textUnderlineOffset: 3 }}>
                 Clear all
               </button>
               <button onClick={() => setActiveSegment(null)} style={{ padding: "10px 22px", borderRadius: 999, border: "none", background: C.ink, color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: F.head }}>
@@ -1642,7 +1859,7 @@ async function shareListing(item) {
 function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null, answerReady = false }) {
   const [hovered, setHovered] = useState(false);
   const discount = item.op ? Math.round((1 - item.p / item.op) * 100) : null;
-  let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = "Live Drop", cardAccent = C.green, ctaLabel = "Claim Now", CtaIcon = Check;
+  let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = "Live Drop", cardAccent = C.green, ctaLabel = "Claim Now";
   if (item.layer === "shelf" && !liveMode) {
     // No badge. A Shelf item outside a live Drop only ever appears under the
     // "Available now" header, and every card in that section is one — so the
@@ -1684,9 +1901,13 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   // self-claim), no save (watching your own item is meaningless). Opening
   // the card still works; ItemDetail offers the Seller-view switch there.
   const ctaDisabled = isOwn || isClaimed || isPreview || hasPendingOffer;
+  // The claim CTA is always the brand green, whatever the card's accent. It's
+  // the same action on every card, so it reads as one button across the feed;
+  // the amber accent still marks a Shelf item on its badge and price.
+  const ctaBg = C.green;
 
   return (
-    <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 20, overflow: "hidden", border: "1px solid " + (fromPeek ? C.amber + "60" : hovered ? C.fawn : C.fawn + "80"), cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-3px)" : "translateY(0)", boxShadow: fromPeek ? (hovered ? "inset 4px 0 0 " + C.amber + ", 0 12px 32px rgba(31, 29, 25, 0.08)" : "inset 4px 0 0 " + C.amber + ", 0 1px 0 " + C.fawn + "60") : (hovered ? "0 12px 32px rgba(31, 29, 25, 0.08)" : "0 1px 0 " + C.fawn + "60"), animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
+    <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 20, overflow: "hidden", border: "1.5px solid " + (fromPeek ? C.amber + "60" : hovered ? C.ash + "80" : C.smoke), cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-3px)" : "translateY(0)", boxShadow: fromPeek ? (hovered ? "inset 4px 0 0 " + C.amber + ", 0 12px 32px rgba(31, 29, 25, 0.08)" : "inset 4px 0 0 " + C.amber + ", 0 1px 0 " + C.fawn + "60") : (hovered ? "0 12px 32px rgba(31, 29, 25, 0.08)" : "0 1px 0 " + C.fawn + "60"), animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
       <div style={{ position: "relative", aspectRatio: "4/3", background: "linear-gradient(135deg, " + badgeBg + ", " + C.sand + ")", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
         <ItemImage
           src={item.img}
@@ -1826,13 +2047,13 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             padding: "10px 0", borderRadius: 12,
             border: isOwn ? "1.5px solid " + C.fawn : "none",
-            background: isOwn ? C.paper : isPreview ? C.sand : hasPendingOffer ? C.amberMist : cardAccent,
+            background: isOwn ? C.paper : isPreview ? C.sand : hasPendingOffer ? C.amberMist : ctaBg,
             color: isOwn ? C.ink : isPreview ? C.mink : hasPendingOffer ? C.amberDeep : "#fff",
             fontFamily: F.head, fontSize: 12, fontWeight: 800,
             cursor: (!isOwn && (isClaimed || hasPendingOffer)) ? "not-allowed" : "pointer",
             opacity: (isClaimed && !isOwn) ? 0.4 : 1,
             marginTop: "auto",
-            boxShadow: (isOwn || item.layer === "shelf" || isPreview || hasPendingOffer) ? "none" : "0 2px 0 " + cardAccent + "40",
+            boxShadow: (isOwn || item.layer === "shelf" || isPreview || hasPendingOffer) ? "none" : "0 2px 0 " + ctaBg + "40",
           }}
         >
           {isOwn
@@ -1841,7 +2062,7 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
               ? <><Clock size={13}/> Opens {dropOpenDay()} {dropOpenHour()}</>
               : hasPendingOffer
                 ? <><Clock size={13}/> Waiting for seller</>
-                : <><CtaIcon size={13}/> {ctaLabel}</>}
+                : ctaLabel}
         </button>
       </div>
     </article>
@@ -5981,8 +6202,17 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("All");
+  const [hood, setHood] = useState("All");
+  const [cond, setCond] = useState("All");
   const [sort, setSort] = useState("newest");
   const [panelOpen, setPanelOpen] = useState(false);
+
+  // Neighbourhood options come from whoever is actually selling, off the
+  // UNFILTERED pool — deriving them from the filtered list would delete every
+  // other option the moment one was picked. Sellers who haven't set a
+  // neighbourhood simply don't add one.
+  const hoodPool = Array.isArray(itemsSource) ? itemsSource : allItems;
+  const hoods = Array.from(new Set(hoodPool.map(i => i.sellerHood).filter(Boolean))).sort();
 
   // Unique-seller count for the AnticipationBand "X neighbours have items
   // lined up" line. Null when no source was passed (i.e. preview routes) so
@@ -6000,14 +6230,42 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   const liveItemsCount = liveClaimable ? liveClaimable.length : null;
   const liveSellerNames = liveClaimable ? Array.from(new Set(liveClaimable.map(i => i.seller).filter(Boolean))) : null;
 
+  // Hero backdrop — photos pulled from the viewer's own feed so the band
+  // changes as the neighbourhood's listings do, instead of showing one
+  // packaged shot forever. One photo per item comes first and each item's
+  // remaining photos trail behind, so the mosaic shows as many different
+  // listings as it can before it repeats a seller. HeroPhotoMosaic drops the
+  // emoji placeholders and falls back to the packaged banner on its own, so
+  // the preview routes (no source, all emoji) need no special case here.
+  //
+  // Only what a viewer can still act on goes in: `liveClaimable` is already
+  // filtered to status "live", and the Sneak Peek is what's queued for the
+  // next Drop. A claimed or sold item is gone, so advertising its photo in
+  // the hero is a promise the feed below can't keep — it drops out of the
+  // mosaic on the next render after the claim lands.
+  const heroPhotos = (...lists) => {
+    const firsts = [], rest = [];
+    for (const list of lists) {
+      for (const i of (Array.isArray(list) ? list : [])) {
+        const ph = Array.isArray(i?.photos) ? i.photos.filter(Boolean) : [];
+        const first = ph[0] || i?.img;
+        if (first) firsts.push(first);
+        rest.push(...ph.slice(1));
+      }
+    }
+    return firsts.concat(rest);
+  };
+  const queuedPhotos = heroPhotos(sneakPeekSource, liveClaimable);
+  const livePhotos = heroPhotos(liveClaimable);
+
   // Show the cardboard-box skeleton on the initial backend load — empty
   // network states should not look like "the marketplace is empty".
   if (itemsLoading) {
     return (
       <>
-        {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellerNames={queuedSellerNames}/>}
-        {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellerNames={liveSellerNames}/>}
-        <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state}/>
+        {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellerNames={queuedSellerNames} photos={queuedPhotos}/>}
+        {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellerNames={liveSellerNames} photos={livePhotos}/>}
+        <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} hood={hood} setHood={setHood} cond={cond} setCond={setCond} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state} hoods={hoods}/>
         <DiscoverSkeleton/>
       </>
     );
@@ -6024,6 +6282,8 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   if (filter === "shelf" && !isLive) items = items.filter(i => i.layer === "shelf");
 
   if (cat !== "All") items = items.filter(i => i.cat === cat);
+  if (hood !== "All") items = items.filter(i => i.sellerHood === hood);
+  if (cond !== "All") items = items.filter(i => i.cond === cond);
   if (search) {
     const q = search.toLowerCase();
     items = items.filter(i => i.t.toLowerCase().includes(q) || i.cat.toLowerCase().includes(q) || i.seller.toLowerCase().includes(q));
@@ -6049,10 +6309,10 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
 
   return (
     <>
-      {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellerNames={queuedSellerNames}/>}
-      {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellerNames={liveSellerNames}/>}
+      {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellerNames={queuedSellerNames} photos={queuedPhotos}/>}
+      {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellerNames={liveSellerNames} photos={livePhotos}/>}
 
-      <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state}/>
+      <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} hood={hood} setHood={setHood} cond={cond} setCond={setCond} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state} hoods={hoods}/>
 
       {/* Preview strip — only when Between Drops */}
       {state === "between" && filter === "all" && (
@@ -6086,7 +6346,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
         const betweenPool = [...shelfItems].sort((a, b) => (a.id * 7 % 13) - (b.id * 7 % 13));
         return (
           <>
-            <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={betweenPool.length + " items you can grab today — Shelf items available for pickup anytime."} pulse={true}/>
+            <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" subtitle={betweenPool.length + " items you can grab today — Shelf items available for pickup anytime."} pulse={true}/>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
               {betweenPool.map((item, i) => (
                 <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
@@ -6099,7 +6359,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
       {/* BETWEEN DROPS, Shelf filter — Shelf items only */}
       {!isLive && filter === "shelf" && shelfItems.length > 0 && (
         <>
-          <SectionHeader eyebrow="Available now" eyebrowBg={C.amber} title="Don't wait for Saturday" subtitle={shelfItems.length + " items ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
+          <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" subtitle={shelfItems.length + " items ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {shelfItems.map((item, i) => (
               <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
@@ -6117,7 +6377,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           title="No items match your filters"
           message={search ? "Try a broader search or clear the active filters." : "Try a different category, or clear filters to see everything."}
           cta="Clear filters"
-          onCtaClick={() => { setSearch(""); setCat("All"); setFilter("all"); setSort("newest"); }}
+          onCtaClick={() => { setSearch(""); setCat("All"); setHood("All"); setCond("All"); setFilter("all"); setSort("newest"); }}
           accent={C.green}
         />
       )}
