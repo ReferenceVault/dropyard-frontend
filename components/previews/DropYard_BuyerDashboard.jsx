@@ -1642,7 +1642,7 @@ async function shareListing(item) {
 function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null, answerReady = false }) {
   const [hovered, setHovered] = useState(false);
   const discount = item.op ? Math.round((1 - item.p / item.op) * 100) : null;
-  let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = "Live Drop", cardAccent = C.green, ctaLabel = "Claim Now", CtaIcon = Check;
+  let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = "Live Drop", cardAccent = C.green, ctaLabel = "Claim Now";
   if (item.layer === "shelf" && !liveMode) {
     // No badge. A Shelf item outside a live Drop only ever appears under the
     // "Available now" header, and every card in that section is one — so the
@@ -1845,7 +1845,7 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
               ? <><Clock size={13}/> Opens {dropOpenDay()} {dropOpenHour()}</>
               : hasPendingOffer
                 ? <><Clock size={13}/> Waiting for seller</>
-                : <><CtaIcon size={13}/> {ctaLabel}</>}
+                : ctaLabel}
         </button>
       </div>
     </article>
