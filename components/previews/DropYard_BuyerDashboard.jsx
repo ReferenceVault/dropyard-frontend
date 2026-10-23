@@ -10,7 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   dropOpenHour, dropOpenHourCompact, dropOpenHourBadge,
   dropOpenDay, dropOpenFull, dropOpenHourLong,
-  dropCloseDay, dropCloseHour, dropZoneLabel,
+  dropCloseDay, dropCloseHour,
   nextDropMoment, dropCloseMoment,
   formatCompactCountdown,
   getDropCycleInfo,
@@ -1017,14 +1017,14 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
 
       </div>
 
-      {/* Countdown — a full-width cream pill under the band copy. Replaces the
-          stacked card that used to sit in the right column: the clock reads
+      {/* Countdown — a cream pill under the band copy, sized to its own
+          contents rather than stretched across the band. Replaces the stacked
+          card that used to sit in the right column: the clock reads
           left-to-right on one line, and the open moment sits beside it so the
-          number is never shown without the time it counts to. The zone label
-          is spelled out because the Drop runs on Toronto wall-clock and most
-          viewers are not in it (BUG-104). */}
+          number is never shown without the time it counts to. */}
       <div style={{
         position: "relative", marginTop: 16,
+        width: "fit-content", maxWidth: "100%",
         display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
         padding: "8px 8px 8px 22px", borderRadius: 999,
         background: "rgba(255, 248, 235, 0.92)",
@@ -1054,8 +1054,8 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
 
         <span style={{ width: 1, alignSelf: "stretch", margin: "6px 0", background: C.amberDeep + "28", flexShrink: 0 }}/>
 
-        <span style={{ flex: 1, minWidth: 180, fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>
-          {dropOpenDay()} {dropOpenHourLong()} · {dropZoneLabel()}
+        <span style={{ flexShrink: 0, fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink, whiteSpace: "nowrap" }}>
+          {dropOpenDay()} {dropOpenHourLong()}
         </span>
 
         <button onClick={onRemindMe} style={{
