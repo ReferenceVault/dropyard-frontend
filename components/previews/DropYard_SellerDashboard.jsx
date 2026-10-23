@@ -4607,6 +4607,11 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
       // Surface the buyer's "Confirm receipt" flag so the inventory/pickups
       // view can show a high-priority badge on this item.
       buyerConfirmedReceipt: !!(api.activeClaim && api.activeClaim.buyerConfirmedReceiptAt),
+      // The claim holding this item, so the row can close the sale itself.
+      // Only an ACCEPTED claim can be marked picked up — a PROPOSED one is
+      // still a request the seller hasn't answered.
+      activeClaimId:     api.activeClaim?.status === "ACCEPTED" ? api.activeClaim.id : null,
+      activeClaimBuyer:  api.activeClaim?.buyer?.name || "the buyer",
       // BUG-093 — set when the seller committed the item to a Drop. Distinguishes
       // "queued for Saturday" from a private draft; both are backend DRAFT.
       isQueued:    !!api.queuedAt,
@@ -4801,6 +4806,63 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
     } catch {}
   }
   function flash(msg) { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(null), 3500); }
+
+  // ── Mark picked up, straight from the inventory row ──────────────────────
+  // A claimed item could only be closed out from its message thread, and the
+  // thread auto-archives — sellers had to go un-archive a conversation to
+  // finish a sale that was sitting right in front of them. This is the same
+  // operation as the chat banner and Orders → Scheduled pickups: PATCH
+  // /picked-up (claim → PICKED_UP, item → SOLD), then the same rate-the-buyer
+  // prompt. Whichever surface the seller uses, the outcome is identical.
+  const [pickupItem, setPickupItem]   = useState(null);
+  const [pickupStars, setPickupStars] = useState(0);
+  const [pickupNote, setPickupNote]   = useState("");
+
+  function openRowPickup(item) {
+    setPickupItem(item);
+    setPickupStars(0);
+    setPickupNote("");
+  }
+
+  async function submitRowPickup({ skip = false } = {}) {
+    const item  = pickupItem;
+    const stars = pickupStars;
+    const note  = pickupNote.trim();
+    setPickupItem(null);
+    if (!item) return;
+    const claimId = item.activeClaimId;
+
+    // Standalone preview / demo rows: reflect it locally and stop.
+    if (!accessToken || !claimId || (typeof item.id === "string" && item.id.startsWith("demo-"))) {
+      setItems(prev => prev.filter(i => i.id !== item.id));
+      flash("Pickup complete! " + item.t + " marked as picked up.");
+      return;
+    }
+
+    try {
+      await apiRequest("/api/claims/" + encodeURIComponent(claimId) + "/picked-up", {
+        method: "PATCH", token: accessToken,
+      });
+    } catch (err) {
+      flash("Mark picked-up failed: " + (err?.message || "try again"));
+      return;
+    }
+    flash("Pickup complete! " + item.t + " marked as picked up.");
+    // Item is SOLD now — adaptItem drops it from My Items and it shows in
+    // History. Ask the parent to refetch rather than guessing locally.
+    if (onItemsChange) onItemsChange();
+
+    if (skip || stars < 1) return;
+    try {
+      await apiRequest("/api/claims/" + encodeURIComponent(claimId) + "/review", {
+        method: "POST", token: accessToken,
+        body: JSON.stringify({ rating: stars, text: note || undefined }),
+      });
+    } catch {
+      // The pickup landed; only the rating didn't. Say exactly that.
+      flash("Pickup saved, but the rating didn't send.");
+    }
+  }
 
   // Free pile — only meaningful for live items during the closing window.
   // We stash the prior price locally so Undo can restore it; the backend just
@@ -5098,6 +5160,15 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                       </button>
                     </>
                   )}
+                  {lc === "claimed" && (
+                    item.activeClaimId ? (
+                      <button onClick={() => openRowPickup(item)} className="cta-primary" style={{ ...actionBtnSolid(C.green, C.greenDeep), flex: 1 }}>
+                        <Check size={12} strokeWidth={3}/> Mark as Picked Up
+                      </button>
+                    ) : (
+                      <button onClick={() => onNav && onNav("orders")} style={{ ...actionBtnOutlined, flex: 1 }}>Review claim</button>
+                    )
+                  )}
                 </div>
               </article>
             );
@@ -5260,11 +5331,42 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                     </button>
                   </>
                 )}
+                {lc === "claimed" && (
+                  item.activeClaimId ? (
+                    <button
+                      onClick={() => openRowPickup(item)}
+                      className="cta-primary"
+                      title={"Mark picked up by " + item.activeClaimBuyer}
+                      style={actionBtnSolid(C.green, C.greenDeep)}
+                    >
+                      <Check size={12} strokeWidth={3}/> Mark as Picked Up
+                    </button>
+                  ) : (
+                    // Claim is still PROPOSED — there's nothing to hand over
+                    // until the seller accepts it in Orders.
+                    <button onClick={() => onNav && onNav("orders")} style={actionBtnOutlined}>Review claim</button>
+                  )
+                )}
               </div>
             </article>
           );
         })}
       </div>
+
+      {/* Rate the buyer, same prompt the messages and Orders surfaces use.
+          Either button completes the pickup; only "Submit Rating" also posts
+          the review. */}
+      {pickupItem && (
+        <RateBuyerModal
+          title="Mark as picked up"
+          subtitle={pickupItem.t + " — handed over to " + pickupItem.activeClaimBuyer}
+          buyerName={pickupItem.activeClaimBuyer}
+          stars={pickupStars} setStars={setPickupStars}
+          note={pickupNote} setNote={setPickupNote}
+          onSubmit={() => submitRowPickup({ skip: false })}
+          onSkip={() => submitRowPickup({ skip: true })}
+        />
+      )}
 
       {/* Publish chooser — seller picks Drop (curated spotlight) vs Shelf (sell now).
           During Live phase, the Drop path is disabled — curation already closed. */}
