@@ -4133,13 +4133,19 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
   // something different by it — MyItemsView sent pickups only, ClaimsView
   // sent pending claims only, and OrdersView sent a hardcoded `4`, so the
   // badge sat there reading "4" above a page saying "No claims to review".
-  const [ordersCount, setOrdersCount] = useState(0);
+  // Kept split rather than as one total: the page below has a section per
+  // number, and a bare badge of "1" over a "Pending Claims: 0" stat reads as a
+  // stale claim when it is really an accepted pickup. The subtitle spells the
+  // breakdown out so the badge is never ambiguous.
+  const [ordersPending, setOrdersPending] = useState(0);
+  const [ordersPickups, setOrdersPickups] = useState(0);
   const [ordersUrgent, setOrdersUrgent] = useState(0);
+  const ordersCount = ordersPending + ordersPickups;
   const [ordersTick, setOrdersTick] = useState(0);
   useSocketEvent("claim:new",     () => setOrdersTick(t => t + 1));
   useSocketEvent("claim:updated", () => setOrdersTick(t => t + 1));
   useEffect(() => {
-    if (!accessToken) { setOrdersCount(0); setOrdersUrgent(0); return; }
+    if (!accessToken) { setOrdersPending(0); setOrdersPickups(0); setOrdersUrgent(0); return; }
     let cancelled = false;
     // Both statuses are requested explicitly — an unfiltered /incoming also
     // returns terminal claims (DECLINED, EXPIRED, PICKED_UP). See BUG-090.
@@ -4153,7 +4159,8 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
       if (!proposed && !accepted) return;
       const pending = Array.isArray(proposed?.claims) ? proposed.claims : [];
       const pickups = Array.isArray(accepted?.claims) ? accepted.claims : [];
-      setOrdersCount(pending.length + pickups.length);
+      setOrdersPending(pending.length);
+      setOrdersPickups(pickups.length);
       // Urgent = needs the seller today: every pending claim is waiting on an
       // answer, plus any pickup scheduled for today. Same day heuristic as
       // PickupsView's todayCount.
@@ -4182,9 +4189,18 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
     return () => { cancelled = true; };
   }, [accessToken, activeView]);
 
+  // What the Orders badge is actually counting, said out loud. The badge is
+  // the sum of the two sections on the page, so after a seller accepts a
+  // claim the number stays at 1 — it has moved from "pending claim" to
+  // "scheduled pickup", not stuck.
+  const ordersBreakdown = [
+    ordersPending > 0 && (ordersPending === 1 ? "1 claim to review" : ordersPending + " claims to review"),
+    ordersPickups > 0 && (ordersPickups === 1 ? "1 scheduled pickup" : ordersPickups + " scheduled pickups"),
+  ].filter(Boolean);
+
   const tabs = [
     { id: "items",  label: "My items",  view: "items" },
-    { id: "orders", label: "Orders",    view: "orders", count: ordersCount, urgent: ordersUrgent },
+    { id: "orders", label: "Orders",    view: "orders", count: ordersCount, urgent: ordersUrgent, title: ordersBreakdown.join(" · ") },
     // Buyers' public questions are visible on the listing whether or not the
     // seller replies, so an unanswered one is urgent by default.
     { id: "questions", label: "Questions", view: "questions", count: openQuestions, urgent: openQuestions },
@@ -4203,7 +4219,11 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
             <h1 style={{ fontFamily: F.head, fontSize: isMobile ? 24 : 30, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.05, marginBottom: 4 }}>{activeView === "orders" ? "Orders" : activeView === "questions" ? "Questions" : "My items"}</h1>
             <p style={{ fontFamily: F.body, fontSize: isMobile ? 12.5 : 14, fontWeight: 500, color: C.mink, lineHeight: 1.45, maxWidth: 560 }}>
               {activeView === "orders"
-                ? "Upcoming pickups you need to handle."
+                ? (!accessToken
+                    ? "Upcoming pickups you need to handle."
+                    : ordersBreakdown.length > 0
+                      ? ordersBreakdown.join(" · ") + "."
+                      : "Claims and scheduled pickups land here — nothing waiting on you right now.")
                 : activeView === "questions"
                   ? "Buyers asking about your listings. Answers are public on the item."
                   : "Everything you have listed, in draft, or pending review."}
@@ -4227,7 +4247,7 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
             }}>
               {tab.label}
               {tab.count > 0 && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: F.head, fontSize: 10, fontWeight: 900, padding: "2px 7px", borderRadius: 999, background: tab.urgent > 0 ? C.claretMist : C.sand, color: tab.urgent > 0 ? C.claret : C.mink, border: "1px solid " + C.fawn }}>
+                <span title={tab.title || undefined} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: F.head, fontSize: 10, fontWeight: 900, padding: "2px 7px", borderRadius: 999, background: tab.urgent > 0 ? C.claretMist : C.sand, color: tab.urgent > 0 ? C.claret : C.mink, border: "1px solid " + C.fawn }}>
                   {tab.count}
                   {tab.urgent > 0 && <span style={{ width: 4, height: 4, borderRadius: "50%", background: C.claret }}/>}
                 </span>
@@ -4587,6 +4607,11 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
       // Surface the buyer's "Confirm receipt" flag so the inventory/pickups
       // view can show a high-priority badge on this item.
       buyerConfirmedReceipt: !!(api.activeClaim && api.activeClaim.buyerConfirmedReceiptAt),
+      // The claim holding this item, so the row can close the sale itself.
+      // Only an ACCEPTED claim can be marked picked up — a PROPOSED one is
+      // still a request the seller hasn't answered.
+      activeClaimId:     api.activeClaim?.status === "ACCEPTED" ? api.activeClaim.id : null,
+      activeClaimBuyer:  api.activeClaim?.buyer?.name || "the buyer",
       // BUG-093 — set when the seller committed the item to a Drop. Distinguishes
       // "queued for Saturday" from a private draft; both are backend DRAFT.
       isQueued:    !!api.queuedAt,
@@ -4781,6 +4806,63 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
     } catch {}
   }
   function flash(msg) { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(null), 3500); }
+
+  // ── Mark picked up, straight from the inventory row ──────────────────────
+  // A claimed item could only be closed out from its message thread, and the
+  // thread auto-archives — sellers had to go un-archive a conversation to
+  // finish a sale that was sitting right in front of them. This is the same
+  // operation as the chat banner and Orders → Scheduled pickups: PATCH
+  // /picked-up (claim → PICKED_UP, item → SOLD), then the same rate-the-buyer
+  // prompt. Whichever surface the seller uses, the outcome is identical.
+  const [pickupItem, setPickupItem]   = useState(null);
+  const [pickupStars, setPickupStars] = useState(0);
+  const [pickupNote, setPickupNote]   = useState("");
+
+  function openRowPickup(item) {
+    setPickupItem(item);
+    setPickupStars(0);
+    setPickupNote("");
+  }
+
+  async function submitRowPickup({ skip = false } = {}) {
+    const item  = pickupItem;
+    const stars = pickupStars;
+    const note  = pickupNote.trim();
+    setPickupItem(null);
+    if (!item) return;
+    const claimId = item.activeClaimId;
+
+    // Standalone preview / demo rows: reflect it locally and stop.
+    if (!accessToken || !claimId || (typeof item.id === "string" && item.id.startsWith("demo-"))) {
+      setItems(prev => prev.filter(i => i.id !== item.id));
+      flash("Pickup complete! " + item.t + " marked as picked up.");
+      return;
+    }
+
+    try {
+      await apiRequest("/api/claims/" + encodeURIComponent(claimId) + "/picked-up", {
+        method: "PATCH", token: accessToken,
+      });
+    } catch (err) {
+      flash("Mark picked-up failed: " + (err?.message || "try again"));
+      return;
+    }
+    flash("Pickup complete! " + item.t + " marked as picked up.");
+    // Item is SOLD now — adaptItem drops it from My Items and it shows in
+    // History. Ask the parent to refetch rather than guessing locally.
+    if (onItemsChange) onItemsChange();
+
+    if (skip || stars < 1) return;
+    try {
+      await apiRequest("/api/claims/" + encodeURIComponent(claimId) + "/review", {
+        method: "POST", token: accessToken,
+        body: JSON.stringify({ rating: stars, text: note || undefined }),
+      });
+    } catch {
+      // The pickup landed; only the rating didn't. Say exactly that.
+      flash("Pickup saved, but the rating didn't send.");
+    }
+  }
 
   // Free pile — only meaningful for live items during the closing window.
   // We stash the prior price locally so Undo can restore it; the backend just
@@ -5078,6 +5160,15 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                       </button>
                     </>
                   )}
+                  {lc === "claimed" && (
+                    item.activeClaimId ? (
+                      <button onClick={() => openRowPickup(item)} className="cta-primary" style={{ ...actionBtnSolid(C.green, C.greenDeep), flex: 1 }}>
+                        <Check size={12} strokeWidth={3}/> Mark as Picked Up
+                      </button>
+                    ) : (
+                      <button onClick={() => onNav && onNav("orders")} style={{ ...actionBtnOutlined, flex: 1 }}>Review claim</button>
+                    )
+                  )}
                 </div>
               </article>
             );
@@ -5240,11 +5331,42 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                     </button>
                   </>
                 )}
+                {lc === "claimed" && (
+                  item.activeClaimId ? (
+                    <button
+                      onClick={() => openRowPickup(item)}
+                      className="cta-primary"
+                      title={"Mark picked up by " + item.activeClaimBuyer}
+                      style={actionBtnSolid(C.green, C.greenDeep)}
+                    >
+                      <Check size={12} strokeWidth={3}/> Mark as Picked Up
+                    </button>
+                  ) : (
+                    // Claim is still PROPOSED — there's nothing to hand over
+                    // until the seller accepts it in Orders.
+                    <button onClick={() => onNav && onNav("orders")} style={actionBtnOutlined}>Review claim</button>
+                  )
+                )}
               </div>
             </article>
           );
         })}
       </div>
+
+      {/* Rate the buyer, same prompt the messages and Orders surfaces use.
+          Either button completes the pickup; only "Submit Rating" also posts
+          the review. */}
+      {pickupItem && (
+        <RateBuyerModal
+          title="Mark as picked up"
+          subtitle={pickupItem.t + " — handed over to " + pickupItem.activeClaimBuyer}
+          buyerName={pickupItem.activeClaimBuyer}
+          stars={pickupStars} setStars={setPickupStars}
+          note={pickupNote} setNote={setPickupNote}
+          onSubmit={() => submitRowPickup({ skip: false })}
+          onSkip={() => submitRowPickup({ skip: true })}
+        />
+      )}
 
       {/* Publish chooser — seller picks Drop (curated spotlight) vs Shelf (sell now).
           During Live phase, the Drop path is disabled — curation already closed. */}
@@ -5696,7 +5818,13 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
     const offered = typeof api.amount === "number" ? api.amount : (api.item?.price ?? 0);
     return {
       id:       api.id,
-      e:        "\u{1F4E6}",
+      // The row showed a hardcoded box for every claim. /api/claims/incoming
+      // has always sent the item's resolved `photos`; this adapter just never
+      // read them, so a seller deciding between claims couldn't see which of
+      // their listings each one was for. `e` is the category emoji fallback
+      // for items with no photo, matching the Inventory rows.
+      photos:   Array.isArray(api.item?.photos) ? api.item.photos.filter(Boolean) : [],
+      e:        CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
       t:        api.item?.title || "Item",
       listed:   api.item?.price ?? 0,
       offered,
@@ -5894,7 +6022,13 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, flexWrap: "wrap" }}>
-                <div style={{ width: isMobile ? 46 : 52, height: isMobile ? 46 : 52, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 24, flexShrink: 0 }}>{claim.e}</div>
+                <div style={{ width: isMobile ? 46 : 52, height: isMobile ? 46 : 52, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 24, flexShrink: 0, overflow: "hidden" }}>
+                  {claim.photos && claim.photos.length > 0 ? (
+                    <img src={claim.photos[0]} alt={claim.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+                  ) : (
+                    <span>{claim.e}</span>
+                  )}
+                </div>
 
                 <div style={{ flex: 1, minWidth: isMobile ? "60%" : 0 }}>
                   <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.head, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{claim.t}</p>
@@ -6036,6 +6170,55 @@ const DEMO_SELLER_CONVERSATIONS = [
     },
 ];
 
+/* ============================================================
+   RATE BUYER MODAL
+   Opens the moment a seller marks a pickup complete, so the
+   rating is captured while the handover is fresh instead of
+   waiting for them to go find the History tab. POSTs to
+   /api/claims/:id/review, which writes the sellerReviewX fields
+   (the buyer's mirror of this writes buyerReviewX).
+   ============================================================ */
+function RateBuyerModal({ title, subtitle, buyerName, stars, setStars, note, setNote, onSubmit, onSkip }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div style={{ width: 420, maxWidth: "100%", borderRadius: 24, background: C.paper, padding: 28, boxShadow: "0 24px 80px rgba(0,0,0,0.15)" }}>
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            <CheckCircle size={28} style={{ color: C.gPrimary }}/>
+          </div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, color: C.ink, fontFamily: F.head }}>{title}</h3>
+          <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>{subtitle}</p>
+        </div>
+
+        <div style={{ padding: 16, borderRadius: 14, border: "1px solid " + C.fawn, background: C.sand, marginBottom: 16 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 10, fontFamily: F.body, textAlign: "center" }}>Rate {buyerName || "this buyer"}</p>
+          <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 4 }}>
+            {[1, 2, 3, 4, 5].map(s => (
+              <button key={s} onClick={() => setStars(s)} aria-label={s + (s === 1 ? " star" : " stars")}
+                style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                <Star size={28} style={{ color: s <= stars ? "#FBBF24" : "#e2e8f0", fill: s <= stars ? "#FBBF24" : "none", strokeWidth: 1.5 }}/>
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: 11, color: C.ash, textAlign: "center", fontFamily: F.body }}>
+            {stars === 0 ? "Tap to rate" : stars <= 2 ? "Could be better" : stars <= 3 ? "Okay" : stars === 4 ? "Great buyer!" : "Excellent buyer!"}
+          </p>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Note (optional)</label>
+          <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="On time, friendly, easy transaction..." style={{ width: "100%", height: 60, padding: 10, borderRadius: 10, border: "1.5px solid #e2e8f0", fontSize: 12, fontFamily: F.body, resize: "none", outline: "none", boxSizing: "border-box" }}/>
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onSubmit} disabled={stars < 1} style={{ flex: 1, padding: "12px 0", borderRadius: 999, border: "none", cursor: stars < 1 ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 700, fontFamily: F.body, backgroundColor: stars < 1 ? C.fawn : C.gPrimary, color: stars < 1 ? C.ash : "#fff" }}>Submit Rating</button>
+          <button onClick={onSkip} style={{ padding: "12px 20px", borderRadius: 50, border: "1.5px solid #e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F.body, background: C.paper, color: C.mink }}>Skip</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SellerMessagesView({ user = null, accessToken = null, convList: convListProp = null, onConvListChange = null }) {
   const { isMobile } = useViewport();
   const usingBackend = !!accessToken;
@@ -6138,6 +6321,10 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   const [chatBusyClaimId, setChatBusyClaimId] = useState(null);
   const [chatCounterMode, setChatCounterMode] = useState(false);
   const [chatCounterAmt, setChatCounterAmt]   = useState("");
+  // Rate-the-buyer prompt, opened by Mark Picked up in the chat banner.
+  const [rateClaim, setRateClaim] = useState(null);
+  const [rateStars, setRateStars] = useState(0);
+  const [rateNote,  setRateNote]  = useState("");
   // BUG-055.1 — every chat action surfaces its error so a 400/404/conflict
   // doesn't appear as "nothing happened" to the user. flashes for ~4.5s.
   function chatFlashErr(action, err) {
@@ -6197,8 +6384,29 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       });
       chatFlashOk("Pickup complete. Item marked as sold.");
       setPendingClaimTick(t => t + 1);
+      // Ask for the buyer rating straight away. The claim is PICKED_UP now,
+      // which is the only state POST /review accepts.
+      setRateClaim(claim);
+      setRateStars(0);
+      setRateNote("");
     } catch (err) { chatFlashErr("mark picked up", err); }
     finally { setChatBusyClaimId(null); }
+  }
+
+  // Seller's rating of the buyer, submitted from the modal above.
+  async function submitChatRating({ skip = false } = {}) {
+    const claim = rateClaim;
+    const stars = rateStars;
+    const note  = rateNote.trim();
+    setRateClaim(null);
+    if (skip || !claim || stars < 1) return;
+    try {
+      await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/review", {
+        method: "POST", token: accessToken,
+        body: JSON.stringify({ rating: stars, text: note || undefined }),
+      });
+      chatFlashOk("Thanks — your rating of " + (claim.buyer?.name || "the buyer") + " was saved.");
+    } catch (err) { chatFlashErr("save the rating", err); }
   }
 
   // Adapter moved to module scope as `adaptSellerConversation(api, myId)` so
@@ -7050,6 +7258,17 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             </div>
           </div>
         )}
+        {rateClaim && (
+          <RateBuyerModal
+            title="Item Picked Up!"
+            subtitle={(rateClaim.item?.title || "The item") + " — picked up by " + (rateClaim.buyer?.name || "the buyer")}
+            buyerName={rateClaim.buyer?.name}
+            stars={rateStars} setStars={setRateStars}
+            note={rateNote} setNote={setRateNote}
+            onSubmit={() => submitChatRating({ skip: false })}
+            onSkip={() => submitChatRating({ skip: true })}
+          />
+        )}
         {!active && usingBackend && !loading && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 60 }}>
             <div style={{ textAlign: "center" }}>
@@ -7100,7 +7319,10 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
     const isToday = slot.toLowerCase().startsWith(todayName.toLowerCase());
     return {
       id:      api.id,
-      e:       "\u{1F4E6}",
+      // Same fix as the pending-claims rows: the item's photos come down with
+      // the claim, so show the listing rather than a hardcoded box.
+      photos:  Array.isArray(api.item?.photos) ? api.item.photos.filter(Boolean) : [],
+      e:       CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
       t:       api.item?.title || "Item",
       price:   (typeof api.amount === "number" ? api.amount : api.item?.price) ?? 0,
       buyer:   api.buyer?.name || api.buyer?.email || "Buyer",
@@ -7157,13 +7379,15 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
   }
 
   // Backend call after the rating modal closes. Standalone preview (demo IDs
-  // or no token) just removes the row locally.
+  // or no token) just removes the row locally. Returns whether the claim
+  // actually reached PICKED_UP on the server — submitRating needs to know,
+  // because POST /review is rejected on anything that isn't PICKED_UP.
   async function commitPickedUp(item) {
     if (!accessToken || (typeof item.id === "string" && item.id.startsWith("demo-"))) {
       setPickups(prev => prev.filter(p => p.id !== item.id));
       setSuccessMsg("Pickup complete! " + item.t + " marked as picked up.");
       setTimeout(() => setSuccessMsg(null), 4000);
-      return;
+      return false;
     }
     setBusyId(item.id);
     const snapshot = pickups;
@@ -7187,21 +7411,47 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
       setTimeout(() => setSuccessMsg(null), 4000);
       // Item flipped to SOLD server-side — refresh the parent's items list.
       if (onChanged) onChanged();
+      return true;
     } catch (err) {
       // eslint-disable-next-line no-console
       if (typeof console !== "undefined") console.error("[PickupsView] picked-up failed:", err);
       setPickups(snapshot);
       setErrorMsg("Mark picked-up failed: " + (err?.message || "try again"));
       setTimeout(() => setErrorMsg(null), 4500);
+      return false;
     } finally {
       setBusyId(null);
     }
   }
 
-  async function submitRating() {
-    const item = ratingItem;
+  // Close the modal, mark the pickup, then persist the seller's rating of the
+  // buyer. The stars used to be collected and dropped on the floor — both
+  // buttons ran the same handler and neither posted a review, so the rating a
+  // seller gave here never reached the buyer's profile. Order matters: the
+  // backend only accepts a review on a PICKED_UP claim, so the PATCH has to
+  // land first.
+  async function submitRating({ skip = false } = {}) {
+    const item  = ratingItem;
+    const stars = ratingStars;
+    const note  = ratingNote.trim();
     setRatingItem(null);
-    if (item) await commitPickedUp(item);
+    if (!item) return;
+    const marked = await commitPickedUp(item);
+    if (skip || stars < 1 || !marked) return;
+    try {
+      await apiRequest("/api/claims/" + encodeURIComponent(item.id) + "/review", {
+        method: "POST",
+        token:  accessToken,
+        body:   JSON.stringify({ rating: stars, text: note || undefined }),
+      });
+      setSuccessMsg("Pickup complete! Your " + stars + "-star rating of " + item.buyer + " was saved.");
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err) {
+      // The pickup itself succeeded — only the rating failed, so say exactly
+      // that rather than implying the whole thing fell over.
+      setErrorMsg("Pickup saved, but the rating didn't send: " + (err?.message || "try again"));
+      setTimeout(() => setErrorMsg(null), 4500);
+    }
   }
 
   function handleNoShow(item) {
@@ -7379,7 +7629,13 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
               </div>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, flexWrap: "wrap" }}>
-              <div style={{ width: isMobile ? 46 : 52, height: isMobile ? 46 : 52, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 24, flexShrink: 0 }}>{p.e}</div>
+              <div style={{ width: isMobile ? 46 : 52, height: isMobile ? 46 : 52, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 24, flexShrink: 0, overflow: "hidden" }}>
+                {p.photos && p.photos.length > 0 ? (
+                  <img src={p.photos[0]} alt={p.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+                ) : (
+                  <span>{p.e}</span>
+                )}
+              </div>
               <div style={{ flex: 1, minWidth: isMobile ? "60%" : 0 }}>
                 <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.head, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.t}</p>
                 <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: 12, color: C.mink, fontFamily: F.body, flexWrap: "wrap" }}>
@@ -7443,8 +7699,8 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
             </div>
 
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={submitRating} style={{ flex: 1, padding: "12px 0", borderRadius: 999, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: F.body, backgroundColor: C.gPrimary, color: "#fff" }}>Submit Rating</button>
-              <button onClick={submitRating}
+              <button onClick={() => submitRating({ skip: false })} disabled={ratingStars < 1} style={{ flex: 1, padding: "12px 0", borderRadius: 999, border: "none", cursor: ratingStars < 1 ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 700, fontFamily: F.body, backgroundColor: ratingStars < 1 ? C.fawn : C.gPrimary, color: ratingStars < 1 ? C.ash : "#fff" }}>Submit Rating</button>
+              <button onClick={() => submitRating({ skip: true })}
                 style={{ padding: "12px 20px", borderRadius: 50, border: "1.5px solid #e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F.body, background: C.paper, color: C.mink }}>Skip</button>
             </div>
           </div>
