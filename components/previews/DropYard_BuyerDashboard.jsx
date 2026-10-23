@@ -1908,12 +1908,13 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   // will refuse.
   const isPreview = item.status === "preview";
   const isClaimed = isClaimedByOther || isClaimedByMe || isPurchasedByMe;
-  // This viewer has an offer on the item that the seller hasn't answered. The
+  // This viewer has a claim on the item that the seller hasn't answered. The
   // card stays in the feed and keeps its normal look — only the badge above
   // and this CTA change, and only for them; every other buyer sees an ordinary
-  // claimable card. The button is parked rather than live because the backend
-  // refuses a second claim from the same buyer ("you already have an offer on
-  // this item"), so offering it would be an invitation to an error toast.
+  // claimable card and can claim it too. The button is parked rather than live
+  // because the backend refuses a second claim from the same buyer ("you
+  // already have an offer on this item"), so offering it would be an
+  // invitation to an error toast.
   const hasPendingOffer = offerPending === true && !isClaimed && !isPreview;
   // The viewer is the seller. The card stays in the feed — this is how a
   // seller sees their listing exactly as the neighbourhood sees it — but
@@ -1967,12 +1968,14 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             <TrendingDown size={10}/> Price dropped
           </span>
         )}
-        {/* An offer the seller hasn't answered yet. Deliberately a badge and
-            not the full-card overlay below: the item is still listed and still
-            claimable — by this buyer at the listed price, and by anyone else. */}
+        {/* This viewer's claim, which the seller hasn't answered yet.
+            Deliberately a badge and not the full-card overlay below: a claim
+            doesn't reserve anything, so the item is still listed and every
+            other neighbour still sees an ordinary claimable card. Only this
+            viewer sees the badge. */}
         {offerPending && !isOwn && !isClaimed && !isPreview && (
           <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.paper, color: C.amberDeep, border: "1.5px solid " + C.amber + "55", display: "flex", alignItems: "center", gap: 4 }}>
-            <Clock size={10}/> Offer pending
+            <Clock size={10}/> Claim pending
           </span>
         )}
         {/* The seller answered a question this buyer asked, and they haven't
@@ -2936,7 +2939,7 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
         {/* Header */}
         <div style={{ padding: isMobile ? "20px 18px 0 18px" : "24px 28px 0 28px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
           <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 19 : 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em" }}>
-            {step === "confirm" ? "Claim this item" : step === "offer-sent" ? "Offer sent!" : "Item claimed!"}
+            {step === "confirm" ? "Claim this item" : step === "offer-sent" ? "Offer sent!" : "Claim sent!"}
           </h2>
           <button onClick={onClose} aria-label="Close" style={{ border: "none", background: C.sand, width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
             <X size={16} style={{ color: C.mink }}/>
@@ -3168,10 +3171,14 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: C.greenMist, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
               <CheckCircle size={32} style={{ color: C.green }}/>
             </div>
-            <h3 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.ink, marginBottom: 8 }}>Item claimed!</h3>
+            {/* A claim is a request, not a reservation — the seller decides
+                between everyone who claims. Saying "reserved for you" here
+                promised something the item's state never backed up. */}
+            <h3 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.ink, marginBottom: 8 }}>Claim sent!</h3>
             <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, lineHeight: 1.55, marginBottom: 20 }}>
-              <b style={{ color: C.ink }}>{item.title}</b> is reserved for you at <b style={{ color: C.ink }}>${item.price}</b>.<br/>
-              Pickup: <b style={{ color: C.ink }}>{slot}</b>
+              Your claim on <b style={{ color: C.ink }}>{item.title}</b> at <b style={{ color: C.ink }}>${item.price}</b> is with the seller.<br/>
+              Pickup: <b style={{ color: C.ink }}>{slot}</b><br/>
+              <span style={{ fontSize: 12.5, color: C.ash }}>The item stays listed until they confirm — other neighbours may claim it too.</span>
             </p>
             {whatsapp && (
               <div style={{ padding: 14, borderRadius: 12, background: "#F0FFF4", border: "1px solid " + C.wa + "30", textAlign: "left", marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
@@ -3803,7 +3810,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                   </div>
                 </div>
                 <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, marginTop: 12, lineHeight: 1.5, fontStyle: "italic" }}>
-                  Exact pickup time and address are confirmed via WhatsApp once you claim the item.
+                  Exact pickup time and address are confirmed once you claim the item.
                 </p>
               </div>
             );
@@ -3963,10 +3970,19 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                       : (isShelf ? "Claim at $" + item.price : "Claim this item");
                   return (
                     <button onClick={() => setShowClaim(true)} disabled={notClaimable} className="cta-primary" style={{ padding: "14px 0", borderRadius: 14, border: "none", background: notClaimable ? C.fawn : accent, color: notClaimable ? C.ash : "#fff", fontFamily: F.head, fontSize: 15, fontWeight: 800, cursor: notClaimable ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: notClaimable ? "none" : "0 2px 0 " + accent + "60" }}>
-                      {item.status === "preview" ? <Clock size={17}/> : <Check size={17}/>} {label}
+                      {item.status === "preview" ? <><Clock size={17}/> {label}</> : label}
                     </button>
                   );
                 })()}
+
+                {/* Shelf items: the offer hint belongs directly under the claim
+                    CTA — it describes what happens inside that flow, so it
+                    reads with the button instead of trailing the whole stack. */}
+                {isShelf && item.status !== "claimed" && (
+                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash, textAlign: "center" }}>
+                    Or make an offer during claim — sellers often flex on Shelf prices.
+                  </p>
+                )}
 
                 {/* Secondary row: Save + Ask */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -3978,13 +3994,6 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                   </button>
                 </div>
               </>
-            )}
-
-            {/* Shelf items: small helper line explaining offer option */}
-            {isShelf && item.status !== "claimed" && (
-              <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash, textAlign: "center", marginTop: 2 }}>
-                Or make an offer during claim — sellers often flex on Shelf prices.
-              </p>
             )}
           </div>
 
@@ -4226,7 +4235,9 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
     const snapshot = claims;
     setClaims(prev => prev.filter(c => c.id !== claim.id));
     setCancelTarget(null);
-    flash("Claim on " + claim.t + " cancelled. Item released.");
+    flash(claim.status === "offer-pending"
+      ? "Claim on " + claim.t + " waived. Item released."
+      : "Claim on " + claim.t + " cancelled. Item released.");
     // Skip the backend call for demo claims (no real id on the server) and for
     // unauth'd preview mode. Real wiring fires PATCH /api/claims/:id/cancel.
     if (!accessToken) return;
@@ -4481,9 +4492,20 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                         the seller made the last offer (it's my turn). If I
                         made the last offer, show "Waiting for seller" pill. */}
                     {c.status === "offer-pending" && c.iMadeTheOffer && (
-                      <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, color: C.amberDeep, padding: "9px 14px", background: C.amberMist, borderRadius: 999, border: "1px solid " + C.amber + "30", display: "flex", alignItems: "center", gap: 5 }}>
-                        <Clock size={12}/> Waiting for seller…
-                      </span>
+                      <>
+                        <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, color: C.amberDeep, padding: "9px 14px", background: C.amberMist, borderRadius: 999, border: "1px solid " + C.amber + "30", display: "flex", alignItems: "center", gap: 5 }}>
+                          <Clock size={12}/> Waiting for seller…
+                        </span>
+                        {/* Waive — the buyer's way out while the offer is still
+                            with the seller. Without it the only exits were the
+                            seller answering or the 36-hour expiry, which left a
+                            listed-price claim holding the item RESERVED against
+                            a buyer who had already moved on. Same confirm modal
+                            and same PATCH /cancel as a scheduled pickup. */}
+                        <button onClick={() => setCancelTarget(c)} title="Release this claim so other neighbours can take the item" style={{ padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                          <X size={12}/> Waive item
+                        </button>
+                      </>
                     )}
                     {c.status === "offer-pending" && !c.iMadeTheOffer && (
                       counterClaimId === c.id ? (
@@ -4561,17 +4583,29 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
             <div style={{ width: 52, height: 52, borderRadius: 16, background: C.claretMist, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
               <X size={26} style={{ color: C.claret }}/>
             </div>
-            <h3 style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 8 }}>Cancel this claim?</h3>
+            {/* Same modal serves both exits — waiving an offer the seller
+                hasn't answered yet, and cancelling a pickup that's already
+                scheduled. Only the copy differs; the 2-hour courtesy note has
+                nothing to say when no pickup has been agreed. */}
+            <h3 style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 8 }}>
+              {cancelTarget.status === "offer-pending" ? "Waive this item?" : "Cancel this claim?"}
+            </h3>
             <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, lineHeight: 1.55, marginBottom: 18 }}>
               Your claim on <b style={{ color: C.ink }}>{cancelTarget.t}</b> will be released so another neighbour can claim it. The seller will be notified.
             </p>
             <div style={{ padding: 12, borderRadius: 12, background: C.amberMist, border: "1px solid " + C.amber + "30", marginBottom: 18, display: "flex", alignItems: "center", gap: 9 }}>
               <Info size={14} style={{ color: C.amberDeep, flexShrink: 0 }}/>
-              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.amberDeep, lineHeight: 1.5 }}>Please cancel at least 2 hours before your scheduled pickup.</p>
+              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.amberDeep, lineHeight: 1.5 }}>
+                {cancelTarget.status === "offer-pending"
+                  ? "Your offer is withdrawn and the item goes back on the listing. You can claim it again later if nobody else does."
+                  : "Please cancel at least 2 hours before your scheduled pickup."}
+              </p>
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button onClick={() => setCancelTarget(null)} style={{ padding: "11px 18px", borderRadius: 12, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Keep claim</button>
-              <button onClick={() => cancelClaim(cancelTarget)} style={{ padding: "11px 18px", borderRadius: 12, border: "none", background: C.claret, color: "#fff", fontFamily: F.head, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>Cancel claim</button>
+              <button onClick={() => cancelClaim(cancelTarget)} style={{ padding: "11px 18px", borderRadius: 12, border: "none", background: C.claret, color: "#fff", fontFamily: F.head, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                {cancelTarget.status === "offer-pending" ? "Waive item" : "Cancel claim"}
+              </button>
             </div>
           </div>
         </div>
@@ -7254,17 +7288,18 @@ export default function DropYardBuyerDashboard({
       // Anything that isn't already picked up or fully cancelled counts as
       // "actively claimed" for overlay purposes.
       if (c.status === "picked-up" || c.status === "cancelled" || c.status === "rejected") continue;
-      // An offer the seller hasn't answered yet is NOT a claim: the item is
-      // still listed and anyone can take it, so the card must not go into the
-      // "YOU CLAIMED THIS" state and lock its own CTA. Tracked separately.
+      // A claim the seller hasn't answered yet doesn't hold the item: it is
+      // still listed and any neighbour can claim it too, so the card must not
+      // go into the "YOU CLAIMED THIS" state and lock its own CTA. Tracked
+      // separately as offeredIds, which draws the "Claim pending" badge.
       if (c.status === "offer-pending") continue;
       live.add(c.itemId);
     }
     return live;
   }, [claims]);
-  // Items this buyer has an un-answered offer on. Shown as a quiet badge; the
-  // card stays fully claimable, because claiming at the listed price is still
-  // the way to take the item outright while an offer is in the air.
+  // Items this buyer has an un-answered claim on. Shown as a quiet "Claim
+  // pending" badge on their own copy of the card; the listing itself stays
+  // live for everyone, since the seller is the one who picks a buyer.
   const offeredIds = useMemo(() => {
     const pending = new Set();
     for (const c of claims) {
