@@ -5696,7 +5696,13 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
     const offered = typeof api.amount === "number" ? api.amount : (api.item?.price ?? 0);
     return {
       id:       api.id,
-      e:        "\u{1F4E6}",
+      // The row showed a hardcoded box for every claim. /api/claims/incoming
+      // has always sent the item's resolved `photos`; this adapter just never
+      // read them, so a seller deciding between claims couldn't see which of
+      // their listings each one was for. `e` is the category emoji fallback
+      // for items with no photo, matching the Inventory rows.
+      photos:   Array.isArray(api.item?.photos) ? api.item.photos.filter(Boolean) : [],
+      e:        CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
       t:        api.item?.title || "Item",
       listed:   api.item?.price ?? 0,
       offered,
@@ -5894,7 +5900,13 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, flexWrap: "wrap" }}>
-                <div style={{ width: isMobile ? 46 : 52, height: isMobile ? 46 : 52, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 24, flexShrink: 0 }}>{claim.e}</div>
+                <div style={{ width: isMobile ? 46 : 52, height: isMobile ? 46 : 52, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 24, flexShrink: 0, overflow: "hidden" }}>
+                  {claim.photos && claim.photos.length > 0 ? (
+                    <img src={claim.photos[0]} alt={claim.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+                  ) : (
+                    <span>{claim.e}</span>
+                  )}
+                </div>
 
                 <div style={{ flex: 1, minWidth: isMobile ? "60%" : 0 }}>
                   <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.head, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{claim.t}</p>
@@ -6036,6 +6048,55 @@ const DEMO_SELLER_CONVERSATIONS = [
     },
 ];
 
+/* ============================================================
+   RATE BUYER MODAL
+   Opens the moment a seller marks a pickup complete, so the
+   rating is captured while the handover is fresh instead of
+   waiting for them to go find the History tab. POSTs to
+   /api/claims/:id/review, which writes the sellerReviewX fields
+   (the buyer's mirror of this writes buyerReviewX).
+   ============================================================ */
+function RateBuyerModal({ title, subtitle, buyerName, stars, setStars, note, setNote, onSubmit, onSkip }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div style={{ width: 420, maxWidth: "100%", borderRadius: 24, background: C.paper, padding: 28, boxShadow: "0 24px 80px rgba(0,0,0,0.15)" }}>
+        <div style={{ textAlign: "center", marginBottom: 20 }}>
+          <div style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            <CheckCircle size={28} style={{ color: C.gPrimary }}/>
+          </div>
+          <h3 style={{ fontSize: 18, fontWeight: 800, color: C.ink, fontFamily: F.head }}>{title}</h3>
+          <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>{subtitle}</p>
+        </div>
+
+        <div style={{ padding: 16, borderRadius: 14, border: "1px solid " + C.fawn, background: C.sand, marginBottom: 16 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 10, fontFamily: F.body, textAlign: "center" }}>Rate {buyerName || "this buyer"}</p>
+          <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 4 }}>
+            {[1, 2, 3, 4, 5].map(s => (
+              <button key={s} onClick={() => setStars(s)} aria-label={s + (s === 1 ? " star" : " stars")}
+                style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+                <Star size={28} style={{ color: s <= stars ? "#FBBF24" : "#e2e8f0", fill: s <= stars ? "#FBBF24" : "none", strokeWidth: 1.5 }}/>
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: 11, color: C.ash, textAlign: "center", fontFamily: F.body }}>
+            {stars === 0 ? "Tap to rate" : stars <= 2 ? "Could be better" : stars <= 3 ? "Okay" : stars === 4 ? "Great buyer!" : "Excellent buyer!"}
+          </p>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Note (optional)</label>
+          <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="On time, friendly, easy transaction..." style={{ width: "100%", height: 60, padding: 10, borderRadius: 10, border: "1.5px solid #e2e8f0", fontSize: 12, fontFamily: F.body, resize: "none", outline: "none", boxSizing: "border-box" }}/>
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onSubmit} disabled={stars < 1} style={{ flex: 1, padding: "12px 0", borderRadius: 999, border: "none", cursor: stars < 1 ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 700, fontFamily: F.body, backgroundColor: stars < 1 ? C.fawn : C.gPrimary, color: stars < 1 ? C.ash : "#fff" }}>Submit Rating</button>
+          <button onClick={onSkip} style={{ padding: "12px 20px", borderRadius: 50, border: "1.5px solid #e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F.body, background: C.paper, color: C.mink }}>Skip</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SellerMessagesView({ user = null, accessToken = null, convList: convListProp = null, onConvListChange = null }) {
   const { isMobile } = useViewport();
   const usingBackend = !!accessToken;
@@ -6138,6 +6199,10 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   const [chatBusyClaimId, setChatBusyClaimId] = useState(null);
   const [chatCounterMode, setChatCounterMode] = useState(false);
   const [chatCounterAmt, setChatCounterAmt]   = useState("");
+  // Rate-the-buyer prompt, opened by Mark Picked up in the chat banner.
+  const [rateClaim, setRateClaim] = useState(null);
+  const [rateStars, setRateStars] = useState(0);
+  const [rateNote,  setRateNote]  = useState("");
   // BUG-055.1 — every chat action surfaces its error so a 400/404/conflict
   // doesn't appear as "nothing happened" to the user. flashes for ~4.5s.
   function chatFlashErr(action, err) {
@@ -6197,8 +6262,29 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       });
       chatFlashOk("Pickup complete. Item marked as sold.");
       setPendingClaimTick(t => t + 1);
+      // Ask for the buyer rating straight away. The claim is PICKED_UP now,
+      // which is the only state POST /review accepts.
+      setRateClaim(claim);
+      setRateStars(0);
+      setRateNote("");
     } catch (err) { chatFlashErr("mark picked up", err); }
     finally { setChatBusyClaimId(null); }
+  }
+
+  // Seller's rating of the buyer, submitted from the modal above.
+  async function submitChatRating({ skip = false } = {}) {
+    const claim = rateClaim;
+    const stars = rateStars;
+    const note  = rateNote.trim();
+    setRateClaim(null);
+    if (skip || !claim || stars < 1) return;
+    try {
+      await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/review", {
+        method: "POST", token: accessToken,
+        body: JSON.stringify({ rating: stars, text: note || undefined }),
+      });
+      chatFlashOk("Thanks — your rating of " + (claim.buyer?.name || "the buyer") + " was saved.");
+    } catch (err) { chatFlashErr("save the rating", err); }
   }
 
   // Adapter moved to module scope as `adaptSellerConversation(api, myId)` so
@@ -7050,6 +7136,17 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             </div>
           </div>
         )}
+        {rateClaim && (
+          <RateBuyerModal
+            title="Item Picked Up!"
+            subtitle={(rateClaim.item?.title || "The item") + " — picked up by " + (rateClaim.buyer?.name || "the buyer")}
+            buyerName={rateClaim.buyer?.name}
+            stars={rateStars} setStars={setRateStars}
+            note={rateNote} setNote={setRateNote}
+            onSubmit={() => submitChatRating({ skip: false })}
+            onSkip={() => submitChatRating({ skip: true })}
+          />
+        )}
         {!active && usingBackend && !loading && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 60 }}>
             <div style={{ textAlign: "center" }}>
@@ -7100,7 +7197,10 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
     const isToday = slot.toLowerCase().startsWith(todayName.toLowerCase());
     return {
       id:      api.id,
-      e:       "\u{1F4E6}",
+      // Same fix as the pending-claims rows: the item's photos come down with
+      // the claim, so show the listing rather than a hardcoded box.
+      photos:  Array.isArray(api.item?.photos) ? api.item.photos.filter(Boolean) : [],
+      e:       CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
       t:       api.item?.title || "Item",
       price:   (typeof api.amount === "number" ? api.amount : api.item?.price) ?? 0,
       buyer:   api.buyer?.name || api.buyer?.email || "Buyer",
@@ -7157,13 +7257,15 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
   }
 
   // Backend call after the rating modal closes. Standalone preview (demo IDs
-  // or no token) just removes the row locally.
+  // or no token) just removes the row locally. Returns whether the claim
+  // actually reached PICKED_UP on the server — submitRating needs to know,
+  // because POST /review is rejected on anything that isn't PICKED_UP.
   async function commitPickedUp(item) {
     if (!accessToken || (typeof item.id === "string" && item.id.startsWith("demo-"))) {
       setPickups(prev => prev.filter(p => p.id !== item.id));
       setSuccessMsg("Pickup complete! " + item.t + " marked as picked up.");
       setTimeout(() => setSuccessMsg(null), 4000);
-      return;
+      return false;
     }
     setBusyId(item.id);
     const snapshot = pickups;
@@ -7187,21 +7289,47 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
       setTimeout(() => setSuccessMsg(null), 4000);
       // Item flipped to SOLD server-side — refresh the parent's items list.
       if (onChanged) onChanged();
+      return true;
     } catch (err) {
       // eslint-disable-next-line no-console
       if (typeof console !== "undefined") console.error("[PickupsView] picked-up failed:", err);
       setPickups(snapshot);
       setErrorMsg("Mark picked-up failed: " + (err?.message || "try again"));
       setTimeout(() => setErrorMsg(null), 4500);
+      return false;
     } finally {
       setBusyId(null);
     }
   }
 
-  async function submitRating() {
-    const item = ratingItem;
+  // Close the modal, mark the pickup, then persist the seller's rating of the
+  // buyer. The stars used to be collected and dropped on the floor — both
+  // buttons ran the same handler and neither posted a review, so the rating a
+  // seller gave here never reached the buyer's profile. Order matters: the
+  // backend only accepts a review on a PICKED_UP claim, so the PATCH has to
+  // land first.
+  async function submitRating({ skip = false } = {}) {
+    const item  = ratingItem;
+    const stars = ratingStars;
+    const note  = ratingNote.trim();
     setRatingItem(null);
-    if (item) await commitPickedUp(item);
+    if (!item) return;
+    const marked = await commitPickedUp(item);
+    if (skip || stars < 1 || !marked) return;
+    try {
+      await apiRequest("/api/claims/" + encodeURIComponent(item.id) + "/review", {
+        method: "POST",
+        token:  accessToken,
+        body:   JSON.stringify({ rating: stars, text: note || undefined }),
+      });
+      setSuccessMsg("Pickup complete! Your " + stars + "-star rating of " + item.buyer + " was saved.");
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err) {
+      // The pickup itself succeeded — only the rating failed, so say exactly
+      // that rather than implying the whole thing fell over.
+      setErrorMsg("Pickup saved, but the rating didn't send: " + (err?.message || "try again"));
+      setTimeout(() => setErrorMsg(null), 4500);
+    }
   }
 
   function handleNoShow(item) {
@@ -7379,7 +7507,13 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
               </div>
             )}
             <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, flexWrap: "wrap" }}>
-              <div style={{ width: isMobile ? 46 : 52, height: isMobile ? 46 : 52, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 24, flexShrink: 0 }}>{p.e}</div>
+              <div style={{ width: isMobile ? 46 : 52, height: isMobile ? 46 : 52, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 24, flexShrink: 0, overflow: "hidden" }}>
+                {p.photos && p.photos.length > 0 ? (
+                  <img src={p.photos[0]} alt={p.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+                ) : (
+                  <span>{p.e}</span>
+                )}
+              </div>
               <div style={{ flex: 1, minWidth: isMobile ? "60%" : 0 }}>
                 <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.head, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.t}</p>
                 <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: 12, color: C.mink, fontFamily: F.body, flexWrap: "wrap" }}>
@@ -7443,8 +7577,8 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
             </div>
 
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={submitRating} style={{ flex: 1, padding: "12px 0", borderRadius: 999, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 700, fontFamily: F.body, backgroundColor: C.gPrimary, color: "#fff" }}>Submit Rating</button>
-              <button onClick={submitRating}
+              <button onClick={() => submitRating({ skip: false })} disabled={ratingStars < 1} style={{ flex: 1, padding: "12px 0", borderRadius: 999, border: "none", cursor: ratingStars < 1 ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 700, fontFamily: F.body, backgroundColor: ratingStars < 1 ? C.fawn : C.gPrimary, color: ratingStars < 1 ? C.ash : "#fff" }}>Submit Rating</button>
+              <button onClick={() => submitRating({ skip: true })}
                 style={{ padding: "12px 20px", borderRadius: 50, border: "1.5px solid #e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F.body, background: C.paper, color: C.mink }}>Skip</button>
             </div>
           </div>

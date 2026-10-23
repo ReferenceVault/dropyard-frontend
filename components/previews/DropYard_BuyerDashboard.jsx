@@ -310,6 +310,11 @@ function adaptBuyerItem(api) {
     seller:        api.seller?.name || "Neighbour",
     sellerId:      api.seller?.id || null,
     sellerHood:    api.seller?.neighborhood || null,
+    // Average of the ratings buyers left this seller, computed server-side.
+    // null until someone has actually rated them — the card then shows no
+    // star rather than an invented score.
+    sellerRating:  typeof api.seller?.rating === "number" ? api.seller.rating : null,
+    sellerRatingCount: api.seller?.ratingCount ?? 0,
     // BUG-070 — distance label from the backend (server computes server-side
     // for signed-in viewers). Falls back to the seller's neighborhood or
     // "Nearby" when the viewer is anonymous or hasn't entered their postal
@@ -2041,6 +2046,17 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
           <span style={{ fontFamily: F.head, fontSize: 24, fontWeight: 900, color: cardAccent, letterSpacing: "-0.02em" }}>${item.p}</span>
           {item.op && <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.ash, textDecoration: "line-through" }}>${item.op}</span>}
           {discount && <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.amberDeep, background: C.amberMist, padding: "2px 8px", borderRadius: 6 }}>Save {discount}%</span>}
+          {/* Seller's average rating, opposite the price. Only drawn once a
+              buyer has actually rated them — an unrated seller shows nothing
+              rather than a default score that would read as a real one. */}
+          {typeof item.sellerRating === "number" && (
+            <span
+              title={"Rated " + item.sellerRating.toFixed(1) + " of 5 across " + item.sellerRatingCount + " completed pickup" + (item.sellerRatingCount === 1 ? "" : "s")}
+              style={{ marginLeft: "auto", alignSelf: "center", display: "flex", alignItems: "center", gap: 3, fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink }}
+            >
+              <Star size={13} fill={C.amber} strokeWidth={0} style={{ color: C.amber }}/> {item.sellerRating.toFixed(1)}
+            </span>
+          )}
         </div>
 
         <div style={{ paddingTop: 12, borderTop: "1px solid " + C.fawn, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -3373,7 +3389,10 @@ function toDetailItem(item) {
       dist:         item.dist,
       items:        null,
       joined:       null,
-      rating:       null,
+      // Real average from the backend (null when nobody has rated them yet),
+      // so the detail view's star matches the one on the card.
+      rating:       typeof item.sellerRating === "number" ? item.sellerRating.toFixed(1) : null,
+      ratingCount:  item.sellerRatingCount ?? 0,
       id:           item.sellerId || null,
     },
     img: item.img, photos: item.photos, saves: item.saves, watchers: Math.max(1, Math.round((item.saves || 0) * 0.75)), layer: item.layer, status: item.status, timeLeft: item.timeLeft, days: item.days, priceDrop: item.priceDrop, paymentMethod: item.paymentMethod || "either",
