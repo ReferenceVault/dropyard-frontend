@@ -36,7 +36,7 @@ import {
   CalendarDays, Compass, Archive, RefreshCw, Eye, Info, TrendingDown,
   DollarSign, AlertCircle, CheckCircle, Share2, Award, Leaf,
   Mail,
-  Banknote,
+  Banknote, Wallet,
   Phone,
   LogOut,
   Lock,
@@ -159,6 +159,18 @@ function relativeTimeShort(iso) {
   if (days < 30) return days + "d ago";
   const months = Math.floor(days / 30);
   return months + "mo ago";
+}
+
+// "Listed" value on the item detail grid. Reads the listing's real createdAt;
+// demo items on /preview carry a plain `days` number instead. With neither we
+// print an em dash rather than a number — this used to guess the age from the
+// save count (`Math.max(1, saves / 3)`), so every real listing, which starts
+// at zero saves, claimed to be "1d ago" no matter when it was posted.
+function listedAgoLabel(item) {
+  const real = relativeTimeShort(item.createdAt);
+  if (real) return real;
+  if (typeof item.daysListed === "number") return item.daysListed + "d ago";
+  return "—";
 }
 
 // Backend ItemCategory enum -> emoji shown on inbox row when the item has no
@@ -319,6 +331,7 @@ function adaptBuyerItem(api) {
                  :  api.status === "DRAFT"                                 ? "preview"
                  :                                                           "live",
     paymentMethod: BUYER_ENUM_TO_PAYMENT[api.paymentMethod] || "either",
+    createdAt:     api.createdAt || null,
     fromPeek:      false,
     description:   api.description || "",
     raw:           api,
@@ -3048,7 +3061,7 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
                     <div style={{ width: 32, height: 32, borderRadius: 10, background: C.paper, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       {item.paymentMethod === "cash"      && <DollarSign size={15} style={{ color: C.ink }}/>}
                       {item.paymentMethod === "etransfer" && <Banknote size={15} style={{ color: C.ink }}/>}
-                      {item.paymentMethod === "either"    && <Check size={15} style={{ color: C.ink }}/>}
+                      {item.paymentMethod === "either"    && <Wallet size={15} style={{ color: C.ink }}/>}
                     </div>
                     <div style={{ flex: 1 }}>
                       <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.ink }}>
@@ -3357,7 +3370,8 @@ function toDetailItem(item) {
       id:           item.sellerId || null,
     },
     img: item.img, photos: item.photos, saves: item.saves, watchers: Math.max(1, Math.round((item.saves || 0) * 0.75)), layer: item.layer, status: item.status, timeLeft: item.timeLeft, days: item.days, priceDrop: item.priceDrop, paymentMethod: item.paymentMethod || "either",
-    daysListed: item.days || Math.max(1, Math.round((item.saves || 0) / 3)),
+    createdAt: item.createdAt || item.raw?.createdAt || null,
+    daysListed: typeof item.days === "number" ? item.days : null,
     // Pickup availability fields - thread through to the detail view so the
     // "Pickup availability" panel can render them. Real items from the API
     // will populate these; mock items default to undefined and the panel falls
@@ -3746,11 +3760,13 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                 {item.layer === "drop" ? "Claim ends" : "Listed"}
               </p>
               <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, lineHeight: 1.2 }}>
-                {item.layer === "drop" ? (item.timeLeft || "This weekend") : ((item.daysListed || 3) + "d ago")}
+                {item.layer === "drop" ? (item.timeLeft || "This weekend") : listedAgoLabel(item)}
               </p>
             </div>
             <div style={{ padding: "14px 12px", borderRadius: 16, background: C.paper, border: "1.5px solid " + C.fawn, textAlign: "center" }}>
-              {(item.paymentMethod === "cash") ? <DollarSign size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/> : (item.paymentMethod === "etransfer") ? <Banknote size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/> : <Check size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/>}
+              {/* Money icons throughout — a bare checkmark read as "payment
+                  confirmed" rather than "this is how you pay". */}
+              {(item.paymentMethod === "cash") ? <DollarSign size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/> : (item.paymentMethod === "etransfer") ? <Banknote size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/> : <Wallet size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/>}
               <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 3 }}>Payment</p>
               <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, lineHeight: 1.2 }}>
                 {(item.paymentMethod === "cash") ? "Cash only" : (item.paymentMethod === "etransfer") ? "e-Transfer" : "Cash or e-Transfer"}
