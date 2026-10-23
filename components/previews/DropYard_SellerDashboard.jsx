@@ -4133,13 +4133,19 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
   // something different by it — MyItemsView sent pickups only, ClaimsView
   // sent pending claims only, and OrdersView sent a hardcoded `4`, so the
   // badge sat there reading "4" above a page saying "No claims to review".
-  const [ordersCount, setOrdersCount] = useState(0);
+  // Kept split rather than as one total: the page below has a section per
+  // number, and a bare badge of "1" over a "Pending Claims: 0" stat reads as a
+  // stale claim when it is really an accepted pickup. The subtitle spells the
+  // breakdown out so the badge is never ambiguous.
+  const [ordersPending, setOrdersPending] = useState(0);
+  const [ordersPickups, setOrdersPickups] = useState(0);
   const [ordersUrgent, setOrdersUrgent] = useState(0);
+  const ordersCount = ordersPending + ordersPickups;
   const [ordersTick, setOrdersTick] = useState(0);
   useSocketEvent("claim:new",     () => setOrdersTick(t => t + 1));
   useSocketEvent("claim:updated", () => setOrdersTick(t => t + 1));
   useEffect(() => {
-    if (!accessToken) { setOrdersCount(0); setOrdersUrgent(0); return; }
+    if (!accessToken) { setOrdersPending(0); setOrdersPickups(0); setOrdersUrgent(0); return; }
     let cancelled = false;
     // Both statuses are requested explicitly — an unfiltered /incoming also
     // returns terminal claims (DECLINED, EXPIRED, PICKED_UP). See BUG-090.
@@ -4153,7 +4159,8 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
       if (!proposed && !accepted) return;
       const pending = Array.isArray(proposed?.claims) ? proposed.claims : [];
       const pickups = Array.isArray(accepted?.claims) ? accepted.claims : [];
-      setOrdersCount(pending.length + pickups.length);
+      setOrdersPending(pending.length);
+      setOrdersPickups(pickups.length);
       // Urgent = needs the seller today: every pending claim is waiting on an
       // answer, plus any pickup scheduled for today. Same day heuristic as
       // PickupsView's todayCount.
@@ -4182,9 +4189,18 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
     return () => { cancelled = true; };
   }, [accessToken, activeView]);
 
+  // What the Orders badge is actually counting, said out loud. The badge is
+  // the sum of the two sections on the page, so after a seller accepts a
+  // claim the number stays at 1 — it has moved from "pending claim" to
+  // "scheduled pickup", not stuck.
+  const ordersBreakdown = [
+    ordersPending > 0 && (ordersPending === 1 ? "1 claim to review" : ordersPending + " claims to review"),
+    ordersPickups > 0 && (ordersPickups === 1 ? "1 scheduled pickup" : ordersPickups + " scheduled pickups"),
+  ].filter(Boolean);
+
   const tabs = [
     { id: "items",  label: "My items",  view: "items" },
-    { id: "orders", label: "Orders",    view: "orders", count: ordersCount, urgent: ordersUrgent },
+    { id: "orders", label: "Orders",    view: "orders", count: ordersCount, urgent: ordersUrgent, title: ordersBreakdown.join(" · ") },
     // Buyers' public questions are visible on the listing whether or not the
     // seller replies, so an unanswered one is urgent by default.
     { id: "questions", label: "Questions", view: "questions", count: openQuestions, urgent: openQuestions },
@@ -4203,7 +4219,11 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
             <h1 style={{ fontFamily: F.head, fontSize: isMobile ? 24 : 30, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.05, marginBottom: 4 }}>{activeView === "orders" ? "Orders" : activeView === "questions" ? "Questions" : "My items"}</h1>
             <p style={{ fontFamily: F.body, fontSize: isMobile ? 12.5 : 14, fontWeight: 500, color: C.mink, lineHeight: 1.45, maxWidth: 560 }}>
               {activeView === "orders"
-                ? "Upcoming pickups you need to handle."
+                ? (!accessToken
+                    ? "Upcoming pickups you need to handle."
+                    : ordersBreakdown.length > 0
+                      ? ordersBreakdown.join(" · ") + "."
+                      : "Claims and scheduled pickups land here — nothing waiting on you right now.")
                 : activeView === "questions"
                   ? "Buyers asking about your listings. Answers are public on the item."
                   : "Everything you have listed, in draft, or pending review."}
@@ -4227,7 +4247,7 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
             }}>
               {tab.label}
               {tab.count > 0 && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: F.head, fontSize: 10, fontWeight: 900, padding: "2px 7px", borderRadius: 999, background: tab.urgent > 0 ? C.claretMist : C.sand, color: tab.urgent > 0 ? C.claret : C.mink, border: "1px solid " + C.fawn }}>
+                <span title={tab.title || undefined} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontFamily: F.head, fontSize: 10, fontWeight: 900, padding: "2px 7px", borderRadius: 999, background: tab.urgent > 0 ? C.claretMist : C.sand, color: tab.urgent > 0 ? C.claret : C.mink, border: "1px solid " + C.fawn }}>
                   {tab.count}
                   {tab.urgent > 0 && <span style={{ width: 4, height: 4, borderRadius: "50%", background: C.claret }}/>}
                 </span>
