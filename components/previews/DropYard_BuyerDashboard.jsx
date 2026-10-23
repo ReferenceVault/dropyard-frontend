@@ -380,6 +380,30 @@ const F = {
   body: '"Nunito", -apple-system, BlinkMacSystemFont, sans-serif',
 };
 
+/* ============================================================
+   ITEM DETAIL TOKENS
+   A quieter, more product-first treatment for the item page:
+   a neutral grotesque instead of the rounded Nunito, 1px
+   borders, radii capped at 16, and shadows light enough to
+   read as separation rather than decoration.
+
+   Geist is already loaded by app/layout.tsx as the
+   --font-geist-sans variable, so this costs no extra font
+   request; Inter and the system stack follow as fallbacks.
+
+   Colours deliberately stay on C.green / C.amber: those are
+   the values taken from the DropYard logo, and the brand note
+   says the logo's own green and orange win over the proposed
+   #27852F / #F39200 where they differ.
+   ============================================================ */
+const D = {
+  font: 'var(--font-geist-sans), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  border: "1px solid " + C.fawn,
+  // One restrained elevation, used sparingly — the purchase panel and
+  // nothing else. Everything else separates with a border alone.
+  shadow: "0 1px 3px rgba(31, 29, 25, 0.05)",
+};
+
 // Wordmark without the "From one home to another" tagline. The tagline is
 // unreadable at nav height and repeats what the page already says, so the
 // title bar uses the clean mark. Was a ~73KB base64 data URI inlined into
@@ -587,7 +611,12 @@ function HeroPhotoMosaic({ photos, fallbackSrc, objectPosition, tileBg = C.paper
 }
 
 function GlobalStyle() {
-  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #FFFFFF; color: #1F1D19; font-family: 'Nunito', sans-serif; -webkit-font-smoothing: antialiased; } ::selection { background: #D8EDD2; color: #1F5A18; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; } .cta-primary { transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1); } .cta-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(48, 132, 36, 0.3); } .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #9A948B !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border: 1px solid #EDE8E0; border-radius: 18px; overflow: hidden; } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); }";
+  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #FFFFFF; color: #1F1D19; font-family: 'Nunito', sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #D8EDD2; color: #1F5A18; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; } .cta-primary { transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1); } .cta-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(48, 132, 36, 0.3); } .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #9A948B !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border: 1px solid #EDE8E0; border-radius: 18px; overflow: hidden; } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 767px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
+  // 100vw counts the vertical scrollbar, so the bleed overhangs the viewport
+  // by its width. The clip goes on body, not on the dashboard wrapper: an
+  // overflow value there would make that div a scroll container and break the
+  // sticky TopBar and sticky filter rails inside it. body's overflow
+  // propagates to the viewport instead, leaving sticky positioning alone.
   return (
     <>
       <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,500;1,600&display=swap" rel="stylesheet"/>
@@ -965,10 +994,14 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
   const displayCount = queuedCount == null ? 47 : queuedCount;
 
   return (
-    <section className="fade-in" style={{
+    // dy-hero-bleed breaks the band out of the dashboard's centred 1280px
+    // column so it spans the viewport and sits flush under the nav — it reads
+    // as a continuation of the header, not a card floating on the page. The
+    // class owns the width, side offsets, negative top margin (cancelling the
+    // column's own padding), padding and square corners, so none of those are
+    // set inline here or they'd win over it.
+    <section className="fade-in dy-hero-bleed" style={{
       background: "#FFE4B0",
-      borderRadius: 22,
-      padding: "20px 28px",
       marginBottom: 20,
       position: "relative",
       overflow: "hidden",
@@ -1149,7 +1182,9 @@ function WelcomeBand({ itemsCount = null, sellerNames = null, photos = null }) {
     : 0;
 
   return (
-    <section className="fade-in" style={{ background: "#1F1A14", borderRadius: 22, padding: "20px 26px", marginBottom: 20, position: "relative", overflow: "hidden", boxShadow: "0 4px 24px rgba(31, 29, 25, 0.18)", minHeight: 168 }}>
+    // Same full-bleed treatment as AnticipationBand — this is the same hero
+    // slot in the LIVE phase, so it has to sit flush too.
+    <section className="fade-in dy-hero-bleed" style={{ background: "#1F1A14", marginBottom: 20, position: "relative", overflow: "hidden", boxShadow: "0 4px 24px rgba(31, 29, 25, 0.18)", minHeight: 168 }}>
       {/* Background — the live Drop's own listing photos, tiled. Falls back to
           the packaged garage-sale scene when there are too few to fill the grid. */}
       <HeroPhotoMosaic photos={photos} fallbackSrc={BANNER_IMG_SRC} objectPosition="center 38%" tileBg="#2A231B"/>
@@ -3605,17 +3640,21 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
 
   return (
     <div style={{ paddingBottom: 40 }}>
-      <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.mink, marginBottom: 24 }}>
+      <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 999, border: "1px solid " + C.fawn, background: C.paper, cursor: "pointer", fontFamily: D.font, fontSize: 13, fontWeight: 700, color: C.mink, marginBottom: 24 }}>
         <ArrowLeft size={14}/> Back
       </button>
 
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 400px", gap: isMobile ? 20 : 40, alignItems: "start" }}>
+      {/* Two columns: the image + everything that describes the item on the
+          left, the purchase panel in a narrower rail on the right. The page
+          shell is already a centred 1280px column, inside the 1200–1320
+          band the brief asks for. */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 380px", gap: isMobile ? 24 : 48, alignItems: "start" }}>
         <div>
           {/* Image area with badge overlays.
               BUG-066 — heroSrc swaps with the active thumbnail. Photo
               count pill in the bottom-right tells the buyer there's more
               to see when sources > 1. */}
-          <div style={{ position: "relative", aspectRatio: "4/3", borderRadius: isMobile ? 18 : 24, background: "linear-gradient(135deg, " + accentBg + ", " + C.sand + ")", display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid " + C.fawn, marginBottom: isMobile ? 12 : 16, overflow: "hidden" }}>
+          <div style={{ position: "relative", aspectRatio: "4/3", borderRadius: 16, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn, marginBottom: isMobile ? 12 : 16, overflow: "hidden" }}>
             <ItemImage src={heroSrc} emojiSize={160}/>
             {/* BUG-068 — prev/next arrow buttons on the hero. Always visible
                 when there are 2+ photos so buyers can flip without scrolling
@@ -3684,25 +3723,25 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
               </>
             )}
             {hasMultiplePhotos && (
-              <span style={{ position: "absolute", bottom: 14, right: 14, display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, background: "rgba(31,29,25,0.75)", backdropFilter: "blur(6px)", color: "#fff", fontFamily: F.head, fontSize: 11, fontWeight: 700, letterSpacing: "0.02em" }}>
+              <span style={{ position: "absolute", bottom: 14, right: 14, display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, background: "rgba(31,29,25,0.75)", backdropFilter: "blur(6px)", color: "#fff", fontFamily: D.font, fontSize: 11, fontWeight: 700, letterSpacing: "0.02em" }}>
                 {safeIdx + 1} / {galleryPhotos.length}
               </span>
             )}
             {/* Top-left: stacked badges */}
             <div style={{ position: "absolute", top: 18, left: 18, display: "flex", flexDirection: "column", gap: 8 }}>
               {item.layer === "drop" && (
-                <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: F.head, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", padding: "6px 12px", borderRadius: 999, background: C.ink, color: "#fff" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: D.font, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", padding: "6px 12px", borderRadius: 999, background: C.ink, color: "#fff" }}>
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.green, boxShadow: "0 0 0 3px " + C.green + "40", animation: "pulseGreen 2s infinite" }}/>
                   LIVE DROP
                 </span>
               )}
               {isShelf && (
-                <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: F.head, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", padding: "6px 12px", borderRadius: 999, background: C.amber, color: "#fff" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: D.font, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", padding: "6px 12px", borderRadius: 999, background: C.amber, color: "#fff" }}>
                   <Package size={11}/> ON THE SHELF
                 </span>
               )}
               {item.priceDrop && (
-                <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", padding: "5px 11px", borderRadius: 999, background: C.claret, color: "#fff" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: D.font, fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", padding: "5px 11px", borderRadius: 999, background: C.claret, color: "#fff" }}>
                   <TrendingDown size={11}/> PRICE DROP
                 </span>
               )}
@@ -3711,7 +3750,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
             {item.watchers && (
               <div style={{ position: "absolute", top: 18, right: 18, display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 999, background: "rgba(255,255,255,0.95)", backdropFilter: "blur(6px)", border: "1px solid " + C.fawn }}>
                 <Eye size={12} style={{ color: C.mink }}/>
-                <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, color: C.ink }}>{item.watchers} watching</span>
+                <span style={{ fontFamily: D.font, fontSize: 12, fontWeight: 700, color: C.ink }}>{item.watchers} watching</span>
               </div>
             )}
           </div>
@@ -3746,15 +3785,17 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                       flex:         "0 0 auto",
                       width:        isMobile ? 64 : 78,
                       height:       isMobile ? 64 : 78,
-                      borderRadius: 12,
-                      border:       isActive ? `2.5px solid ${accent}` : `1.5px solid ${C.fawn}`,
-                      boxShadow:    isActive ? `0 4px 12px ${accent}33` : "none",
+                      borderRadius: 10,
+                      // The active thumb is marked by its border alone — the
+                      // coloured glow it used to carry was the loudest thing
+                      // on the page.
+                      border:       isActive ? `2px solid ${accent}` : `1px solid ${C.fawn}`,
+                      boxShadow:    "none",
                       padding:      0,
                       background:   C.paper,
                       overflow:     "hidden",
                       cursor:       "pointer",
-                      transition:   "border-color 150ms, box-shadow 150ms, transform 150ms",
-                      transform:    isActive ? "scale(1.02)" : "scale(1)",
+                      transition:   "border-color 150ms",
                     }}
                   >
                     <ItemImage
@@ -3770,31 +3811,31 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
 
           {/* 4-column details grid */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 24 }}>
-            <div style={{ padding: "14px 12px", borderRadius: 16, background: C.paper, border: "1.5px solid " + C.fawn, textAlign: "center" }}>
+            <div style={{ padding: "16px 12px", borderRadius: 12, background: C.paper, border: "1px solid " + C.fawn, textAlign: "center" }}>
               <Shield size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/>
-              <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 3 }}>Condition</p>
-              <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, lineHeight: 1.2 }}>{item.condition}</p>
+              <p style={{ fontFamily: D.font, fontSize: 10.5, fontWeight: 500, color: C.ash, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 5 }}>Condition</p>
+              <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink, lineHeight: 1.3 }}>{item.condition}</p>
             </div>
-            <div style={{ padding: "14px 12px", borderRadius: 16, background: C.paper, border: "1.5px solid " + C.fawn, textAlign: "center" }}>
+            <div style={{ padding: "16px 12px", borderRadius: 12, background: C.paper, border: "1px solid " + C.fawn, textAlign: "center" }}>
               <MapPin size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/>
-              <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 3 }}>Distance</p>
-              <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, lineHeight: 1.2 }}>{seller.dist || seller.neighbourhood || "Nearby"}</p>
+              <p style={{ fontFamily: D.font, fontSize: 10.5, fontWeight: 500, color: C.ash, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 5 }}>Distance</p>
+              <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink, lineHeight: 1.3 }}>{seller.dist || seller.neighbourhood || "Nearby"}</p>
             </div>
-            <div style={{ padding: "14px 12px", borderRadius: 16, background: C.paper, border: "1.5px solid " + C.fawn, textAlign: "center" }}>
+            <div style={{ padding: "16px 12px", borderRadius: 12, background: C.paper, border: "1px solid " + C.fawn, textAlign: "center" }}>
               {item.layer === "drop" ? <Clock size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/> : <Package size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/>}
-              <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 3 }}>
+              <p style={{ fontFamily: D.font, fontSize: 10.5, fontWeight: 500, color: C.ash, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 5 }}>
                 {item.layer === "drop" ? "Claim ends" : "Listed"}
               </p>
-              <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, lineHeight: 1.2 }}>
+              <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink, lineHeight: 1.3 }}>
                 {item.layer === "drop" ? (item.timeLeft || "This weekend") : listedAgoLabel(item)}
               </p>
             </div>
-            <div style={{ padding: "14px 12px", borderRadius: 16, background: C.paper, border: "1.5px solid " + C.fawn, textAlign: "center" }}>
+            <div style={{ padding: "16px 12px", borderRadius: 12, background: C.paper, border: "1px solid " + C.fawn, textAlign: "center" }}>
               {/* Money icons throughout — a bare checkmark read as "payment
                   confirmed" rather than "this is how you pay". */}
               {(item.paymentMethod === "cash") ? <DollarSign size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/> : (item.paymentMethod === "etransfer") ? <Banknote size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/> : <Wallet size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/>}
-              <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 3 }}>Payment</p>
-              <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, lineHeight: 1.2 }}>
+              <p style={{ fontFamily: D.font, fontSize: 10.5, fontWeight: 500, color: C.ash, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 5 }}>Payment</p>
+              <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink, lineHeight: 1.3 }}>
                 {(item.paymentMethod === "cash") ? "Cash only" : (item.paymentMethod === "etransfer") ? "e-Transfer" : "Cash or e-Transfer"}
               </p>
             </div>
@@ -3806,16 +3847,16 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
           {(() => {
             const pickup = formatPickupSummary(item);
             return (
-              <div style={{ padding: "20px 28px", borderRadius: 20, background: C.paper, border: "1.5px solid " + C.fawn, marginBottom: 16 }}>
-                <h3 style={{ fontFamily: F.head, fontSize: 15, fontWeight: 800, color: C.mink, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 14 }}>Pickup availability</h3>
+              <div style={{ padding: "20px 28px", borderRadius: 16, background: C.paper, border: "1px solid " + C.fawn, marginBottom: 16 }}>
+                <h3 style={{ fontFamily: D.font, fontSize: 15, fontWeight: 600, color: C.mink, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 14 }}>Pickup availability</h3>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
                     <div style={{ width: 36, height: 36, borderRadius: 11, background: C.greenMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <Calendar size={16} style={{ color: C.greenDeep }}/>
                     </div>
                     <div style={{ minWidth: 0 }}>
-                      <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>Days</p>
-                      <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>{pickup.days}</p>
+                      <p style={{ fontFamily: D.font, fontSize: 10, fontWeight: 600, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>Days</p>
+                      <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink }}>{pickup.days}</p>
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
@@ -3823,12 +3864,12 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                       <Clock size={16} style={{ color: C.amberDeep }}/>
                     </div>
                     <div style={{ minWidth: 0 }}>
-                      <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>Time windows</p>
-                      <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>{pickup.windows}</p>
+                      <p style={{ fontFamily: D.font, fontSize: 10, fontWeight: 600, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>Time windows</p>
+                      <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink }}>{pickup.windows}</p>
                     </div>
                   </div>
                 </div>
-                <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, marginTop: 12, lineHeight: 1.5, fontStyle: "italic" }}>
+                <p style={{ fontFamily: D.font, fontSize: 11, fontWeight: 500, color: C.ash, marginTop: 12, lineHeight: 1.5, fontStyle: "italic" }}>
                   Exact pickup time and address are confirmed once you claim the item.
                 </p>
               </div>
@@ -3836,33 +3877,33 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
           })()}
 
           {/* About this item */}
-          <div style={{ padding: "24px 28px", borderRadius: 20, background: C.paper, border: "1.5px solid " + C.fawn, marginBottom: 24 }}>
-            <h3 style={{ fontFamily: F.head, fontSize: 15, fontWeight: 800, color: C.mink, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>About this item</h3>
-            <p style={{ fontFamily: F.body, fontSize: 15, fontWeight: 500, color: C.ink, lineHeight: 1.7 }}>{item.description}</p>
+          <div style={{ padding: "24px 28px", borderRadius: 16, background: C.paper, border: "1px solid " + C.fawn, marginBottom: 24 }}>
+            <h3 style={{ fontFamily: D.font, fontSize: 15, fontWeight: 600, color: C.mink, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>About this item</h3>
+            <p style={{ fontFamily: D.font, fontSize: 15, fontWeight: 500, color: C.ink, lineHeight: 1.7 }}>{item.description}</p>
             <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-              <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 999, background: C.greenMist, color: C.greenDeep }}>{item.category}</span>
-              <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 999, background: C.sand, color: C.mink, border: "1px solid " + C.fawn }}>{item.condition}</span>
-              {item.saves > 10 && <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 999, background: C.claretMist, color: C.claret, display: "flex", alignItems: "center", gap: 4 }}><Heart size={11} fill={C.claret}/> {item.saves} saves</span>}
+              <span style={{ fontFamily: D.font, fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 999, background: C.greenMist, color: C.greenDeep }}>{item.category}</span>
+              <span style={{ fontFamily: D.font, fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 999, background: C.sand, color: C.mink, border: "1px solid " + C.fawn }}>{item.condition}</span>
+              {item.saves > 10 && <span style={{ fontFamily: D.font, fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 999, background: C.claretMist, color: C.claret, display: "flex", alignItems: "center", gap: 4 }}><Heart size={11} fill={C.claret}/> {item.saves} saves</span>}
             </div>
           </div>
 
           {/* Questions & Answers */}
-          <div style={{ padding: "24px 28px", borderRadius: 20, background: C.paper, border: "1.5px solid " + C.fawn }}>
+          <div style={{ padding: "24px 28px", borderRadius: 16, background: C.paper, border: "1px solid " + C.fawn }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-              <h3 style={{ fontFamily: F.head, fontSize: 15, fontWeight: 800, color: C.mink, letterSpacing: "0.1em", textTransform: "uppercase" }}>Questions & Answers</h3>
-              <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.ash, padding: "3px 10px", borderRadius: 999, background: C.sand, border: "1px solid " + C.fawn }}>
+              <h3 style={{ fontFamily: D.font, fontSize: 15, fontWeight: 600, color: C.mink, letterSpacing: "0.1em", textTransform: "uppercase" }}>Questions & Answers</h3>
+              <span style={{ fontFamily: D.font, fontSize: 11, fontWeight: 700, color: C.ash, padding: "3px 10px", borderRadius: 999, background: C.sand, border: "1px solid " + C.fawn }}>
                 {questions.length} {questions.length === 1 ? "question" : "questions"}
               </span>
             </div>
 
             {questionsLoading ? (
               <div style={{ textAlign: "center", padding: "20px 10px" }}>
-                <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.ash }}>Loading questions…</p>
+                <p style={{ fontFamily: D.font, fontSize: 13, fontWeight: 600, color: C.ash }}>Loading questions…</p>
               </div>
             ) : questions.length === 0 ? (
               <div style={{ textAlign: "center", padding: "20px 10px", color: C.ash }}>
                 <MessageCircle size={24} style={{ color: C.smoke, marginBottom: 8 }}/>
-                <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink, marginBottom: 14 }}>No questions yet — be the first to ask.</p>
+                <p style={{ fontFamily: D.font, fontSize: 13, fontWeight: 600, color: C.mink, marginBottom: 14 }}>No questions yet — be the first to ask.</p>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
@@ -3873,18 +3914,18 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                     <div key={qa.id} style={{ padding: 16, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn }}>
                       {/* Question */}
                       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
-                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: avatarBg(askerName), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: avatarBg(askerName), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: D.font, fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
                           {askerName.charAt(0)}
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
-                            <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, color: C.ink }}>{askerName}</span>
+                            <span style={{ fontFamily: D.font, fontSize: 12, fontWeight: 700, color: C.ink }}>{askerName}</span>
                             {qa.isMine && (
-                              <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 4, background: C.greenMist, color: C.greenDeep, letterSpacing: "0.05em" }}>YOU</span>
+                              <span style={{ fontFamily: D.font, fontSize: 9, fontWeight: 600, padding: "1px 6px", borderRadius: 4, background: C.greenMist, color: C.greenDeep, letterSpacing: "0.05em" }}>YOU</span>
                             )}
-                            <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.ash }}>· {relativeTimeShort(qa.createdAt)}</span>
+                            <span style={{ fontFamily: D.font, fontSize: 10, fontWeight: 600, color: C.ash }}>· {relativeTimeShort(qa.createdAt)}</span>
                           </div>
-                          <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.ink, lineHeight: 1.5 }}>{qa.body}</p>
+                          <p style={{ fontFamily: D.font, fontSize: 13, fontWeight: 600, color: C.ink, lineHeight: 1.5 }}>{qa.body}</p>
                         </div>
                       </div>
                       {/* Answer — or an explicit awaiting state, so an unanswered
@@ -3896,16 +3937,16 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                           </div>
                           <div style={{ flex: 1 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
-                              <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, color: accent }}>Seller</span>
-                              <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.ash }}>· {relativeTimeShort(qa.answeredAt)}</span>
+                              <span style={{ fontFamily: D.font, fontSize: 12, fontWeight: 700, color: accent }}>Seller</span>
+                              <span style={{ fontFamily: D.font, fontSize: 10, fontWeight: 600, color: C.ash }}>· {relativeTimeShort(qa.answeredAt)}</span>
                             </div>
-                            <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.mink, lineHeight: 1.6 }}>{qa.answer}</p>
+                            <p style={{ fontFamily: D.font, fontSize: 13, fontWeight: 500, color: C.mink, lineHeight: 1.6 }}>{qa.answer}</p>
                           </div>
                         </div>
                       ) : (
                         <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 10, borderLeft: "2px solid " + C.fawn }}>
                           <Clock size={13} style={{ color: C.ash, flexShrink: 0 }}/>
-                          <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.ash, lineHeight: 1.5 }}>Awaiting the seller&apos;s answer.</p>
+                          <p style={{ fontFamily: D.font, fontSize: 12, fontWeight: 600, color: C.ash, lineHeight: 1.5 }}>Awaiting the seller&apos;s answer.</p>
                         </div>
                       )}
                     </div>
@@ -3915,43 +3956,50 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
             )}
 
             {!isMyOwnItem && (
-              <button onClick={() => setShowAsk(true)} className="cta-primary" style={{ width: "100%", padding: "12px 0", borderRadius: 12, border: "1.5px solid " + C.fawn, background: C.paper, color: C.ink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              <button onClick={() => setShowAsk(true)} className="cta-primary" style={{ width: "100%", padding: "12px 0", borderRadius: 12, border: "1px solid " + C.fawn, background: C.paper, color: C.ink, fontFamily: D.font, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
                 <MessageCircle size={14}/> Ask a question
               </button>
             )}
           </div>
         </div>
 
-        <div style={{ position: "sticky", top: 120 }}>
+        {/* Purchase panel — one surface holding the title, price, seller and
+            the actions, rather than four free-floating blocks. It's the only
+            element on the page carrying a shadow, and a light one. */}
+        <div style={{ position: "sticky", top: 120, background: C.paper, border: D.border, borderRadius: 16, boxShadow: D.shadow, padding: isMobile ? 20 : 24 }}>
           {isShelf && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: F.head, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: C.amberDeep, padding: "5px 11px", background: C.amberMist, borderRadius: 999, marginBottom: 14 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: D.font, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: C.amberDeep, padding: "5px 11px", background: C.amberMist, borderRadius: 999, marginBottom: 14 }}>
               <Package size={12}/> On the Shelf
             </span>
           )}
 
-          <h1 style={{ fontFamily: F.head, fontSize: 32, fontWeight: 900, color: C.ink, letterSpacing: "-0.025em", lineHeight: 1.1, marginBottom: 14 }}>{item.title}</h1>
+          {/* Geist carries a lot of weight at 800; 900 turns the title into a
+              slab. Tighter tracking does the "confident" work instead. */}
+          <h1 style={{ fontFamily: D.font, fontSize: isMobile ? 26 : 30, fontWeight: 700, color: C.ink, letterSpacing: "-0.02em", lineHeight: 1.18, marginBottom: 12 }}>{item.title}</h1>
 
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 20 }}>
-            <span style={{ fontFamily: F.head, fontSize: 44, fontWeight: 900, color: accent, letterSpacing: "-0.025em" }}>${item.price}</span>
-            {item.origPrice && <span style={{ fontFamily: F.body, fontSize: 18, fontWeight: 600, color: C.ash, textDecoration: "line-through" }}>${item.origPrice}</span>}
-            {discount && <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.amberDeep, background: C.amberMist, padding: "3px 10px", borderRadius: 8 }}>Save {discount}%</span>}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 22 }}>
+            <span style={{ fontFamily: D.font, fontSize: isMobile ? 34 : 40, fontWeight: 700, color: accent, letterSpacing: "-0.03em" }}>${item.price}</span>
+            {item.origPrice && <span style={{ fontFamily: D.font, fontSize: 17, fontWeight: 500, color: C.ash, textDecoration: "line-through" }}>${item.origPrice}</span>}
+            {discount && <span style={{ fontFamily: D.font, fontSize: 12, fontWeight: 600, color: C.amberDeep, background: C.amberMist, padding: "3px 10px", borderRadius: 8 }}>Save {discount}%</span>}
           </div>
 
-          <button onClick={() => onViewSeller && onViewSeller(seller.name)} style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: 16, borderRadius: 16, border: "1.5px solid " + C.fawn, background: C.paper, cursor: "pointer", marginBottom: 20 }}
-            onMouseEnter={e => { if (true) e.currentTarget.style.borderColor = C.green; }}
-            onMouseLeave={e => { if (true) e.currentTarget.style.borderColor = C.fawn; }}>
-            <div style={{ width: 44, height: 44, borderRadius: "50%", background: avatarBg(seller.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 15, fontWeight: 800, flexShrink: 0 }}>
+          {/* Seller row — inside the panel now, so it's a divider-separated
+              row rather than a card nested in a card. */}
+          <button onClick={() => onViewSeller && onViewSeller(seller.name)} style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "16px 0", borderRadius: 0, border: "none", borderTop: D.border, borderBottom: D.border, background: "transparent", cursor: "pointer", marginBottom: 20 }}
+            onMouseEnter={e => { e.currentTarget.style.background = C.sand; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: avatarBg(seller.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: D.font, fontSize: 15, fontWeight: 600, flexShrink: 0 }}>
               {initialsOf(seller.name)}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>{seller.name}</p>
+              <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink }}>{seller.name}</p>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
-                <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.mink, display: "flex", alignItems: "center", gap: 3 }}><MapPin size={10}/> {seller.neighbourhood} · {seller.dist}</span>
-                {seller.rating && <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.amberDeep, display: "flex", alignItems: "center", gap: 3 }}><Star size={10} fill={C.amber} strokeWidth={0}/> {seller.rating}</span>}
+                <span style={{ fontFamily: D.font, fontSize: 11, fontWeight: 700, color: C.mink, display: "flex", alignItems: "center", gap: 3 }}><MapPin size={10}/> {seller.neighbourhood} · {seller.dist}</span>
+                {seller.rating && <span style={{ fontFamily: D.font, fontSize: 11, fontWeight: 700, color: C.amberDeep, display: "flex", alignItems: "center", gap: 3 }}><Star size={10} fill={C.amber} strokeWidth={0}/> {seller.rating}</span>}
               </div>
             </div>
             {true && (
-              <span style={{ display:"flex", alignItems:"center", gap:4, padding:"6px 12px", borderRadius:999, background:C.greenMist, color:C.greenDeep, fontFamily:F.head, fontSize:11, fontWeight:800, whiteSpace:"nowrap" }}>View profile <ChevronRight size={12}/></span>
+              <span style={{ display:"flex", alignItems:"center", gap:4, padding:"6px 12px", borderRadius:999, background:C.greenMist, color:C.greenDeep, fontFamily:D.font, fontSize:11, fontWeight:600, whiteSpace:"nowrap" }}>View profile <ChevronRight size={12}/></span>
             )}
           </button>
 
@@ -3962,14 +4010,14 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
               // affordance instead of giving the seller buttons they can't
               // actually use.
               <>
-                <div style={{ padding: 14, borderRadius: 14, border: "1.5px solid " + C.amber + "55", background: C.amberMist }}>
-                  <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.amberDeep, marginBottom: 4 }}>This is your listing</p>
-                  <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, lineHeight: 1.5 }}>
+                <div style={{ padding: 14, borderRadius: 14, border: "1px solid " + C.amber + "55", background: C.amberMist }}>
+                  <p style={{ fontFamily: D.font, fontSize: 13, fontWeight: 600, color: C.amberDeep, marginBottom: 4 }}>This is your listing</p>
+                  <p style={{ fontFamily: D.font, fontSize: 12, fontWeight: 600, color: C.mink, lineHeight: 1.5 }}>
                     You can&apos;t claim or message yourself. Manage edits, photos, and price in the Seller view.
                   </p>
                 </div>
                 {onSwitchRole && (
-                  <button onClick={onSwitchRole} className="cta-primary" style={{ padding: "12px 0", borderRadius: 12, border: "none", background: accent, color: "#fff", fontFamily: F.head, fontSize: 14, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: "0 2px 0 " + accent + "60" }}>
+                  <button onClick={onSwitchRole} className="cta-primary" style={{ padding: "13px 0", borderRadius: 12, border: "none", background: accent, color: "#fff", fontFamily: D.font, fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
                     Open in Seller view <ChevronRight size={15}/>
                   </button>
                 )}
@@ -3988,7 +4036,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                       ? "Claims open " + dropOpenDay() + " " + dropOpenHour()
                       : (isShelf ? "Claim at $" + item.price : "Claim this item");
                   return (
-                    <button onClick={() => setShowClaim(true)} disabled={notClaimable} className="cta-primary" style={{ padding: "14px 0", borderRadius: 14, border: "none", background: notClaimable ? C.fawn : accent, color: notClaimable ? C.ash : "#fff", fontFamily: F.head, fontSize: 15, fontWeight: 800, cursor: notClaimable ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: notClaimable ? "none" : "0 2px 0 " + accent + "60" }}>
+                    <button onClick={() => setShowClaim(true)} disabled={notClaimable} className="cta-primary" style={{ padding: "15px 0", borderRadius: 12, border: "none", background: notClaimable ? C.fawn : accent, color: notClaimable ? C.ash : "#fff", fontFamily: D.font, fontSize: 15, fontWeight: 650, cursor: notClaimable ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
                       {item.status === "preview" ? <><Clock size={17}/> {label}</> : label}
                     </button>
                   );
@@ -3998,17 +4046,17 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                     CTA — it describes what happens inside that flow, so it
                     reads with the button instead of trailing the whole stack. */}
                 {isShelf && item.status !== "claimed" && (
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash, textAlign: "center" }}>
+                  <p style={{ fontFamily: D.font, fontSize: 11, fontWeight: 600, color: C.ash, textAlign: "center" }}>
                     Or make an offer during claim — sellers often flex on Shelf prices.
                   </p>
                 )}
 
                 {/* Secondary row: Save + Ask */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <button onClick={toggleSave} style={{ padding: "11px 0", borderRadius: 12, border: "1.5px solid " + (saved ? C.claret : C.fawn), background: saved ? C.claretMist : C.paper, color: saved ? C.claret : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <button onClick={toggleSave} style={{ padding: "11px 0", borderRadius: 12, border: "1px solid " + (saved ? C.claret : C.fawn), background: saved ? C.claretMist : C.paper, color: saved ? C.claret : C.mink, fontFamily: D.font, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                     <Heart size={14} fill={saved ? C.claret : "none"}/> {saved ? "Saved" : "Save"}
                   </button>
-                  <button onClick={() => setShowAsk(true)} style={{ padding: "11px 0", borderRadius: 12, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <button onClick={() => setShowAsk(true)} style={{ padding: "11px 0", borderRadius: 12, border: "1px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: D.font, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                     <MessageCircle size={14}/> Ask
                   </button>
                 </div>
