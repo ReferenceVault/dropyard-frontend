@@ -10268,7 +10268,7 @@ function SF_SuccessBanner({ message, onClose }) {
 // `initialSection` lets other screens deep-link into a specific settings pane
 // (e.g. the listing form's "Set your default" payment-method link). null = the
 // normal entry point: desktop opens on Account, mobile opens on the section list.
-function SettingsView({ user, initialSection = null }) {
+function SettingsView({ user, initialSection = null, onBack = null, backLabel = "Back" }) {
   const { isMobile } = useViewport();
   const [activeSection, setActiveSection] = useState(initialSection || "account");
   // Mobile drill-down: null = section list, otherwise section id = detail view.
@@ -10318,6 +10318,21 @@ function SettingsView({ user, initialSection = null }) {
   return (
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
       <SF_SuccessBanner message={toast} onClose={() => setToast(null)}/>
+
+      {/* Return CTA — present only when Settings was opened from inside
+          another flow, e.g. the listing form's "Set your default" payment
+          link. Sits above the header so it is the first thing in the panel
+          on both breakpoints, and stays put on mobile whether the seller is
+          on the section list or drilled into a pane. */}
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: isMobile ? "10px 0 2px" : "12px 0 0", border: "none", background: "none", color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+        >
+          <ArrowLeft size={14}/> {backLabel}
+        </button>
+      )}
 
       {/* Page header — hidden on mobile while drilled into a section. */}
       {(!isMobile || !mobileViewingSection) && (
@@ -10924,6 +10939,10 @@ export default function DropYardSellerDashboard({
   const [aiEntryPoint, setAiEntryPoint] = useState("overview");
   // Which Settings pane to open on. null = default entry point.
   const [settingsSection, setSettingsSection] = useState(null);
+  // Which view Settings should hand control back to, when Settings was opened
+  // from inside another flow rather than from the chrome. null = a normal
+  // entry, and Settings shows no return CTA. See goToSettings.
+  const [settingsReturnTo, setSettingsReturnTo] = useState(null);
   const aiConfigured = !!aiSettings.priceFloor;
 
   // BUG-057 — Sign-out confirmation. All Sign-out paths (TopNav, Sidebar
@@ -10953,6 +10972,10 @@ export default function DropYardSellerDashboard({
     // pane left over from a deep link like "Set your default", otherwise
     // Settings would keep reopening on Payments.
     if (target === "settings") setSettingsSection(null);
+    // Navigating through the chrome abandons any pending "back to your
+    // listing" return. Without this the held form would stay mounted behind
+    // whatever the seller picked instead.
+    setSettingsReturnTo(null);
     if (target === "add-manual" || target === "add-chooser") setListFormNonce(n => n + 1);
     setView(target);
   };
@@ -10963,7 +10986,12 @@ export default function DropYardSellerDashboard({
   // desktop, section list on mobile). Used by the listing form's "Set your
   // default" payment link, which previously called onGoToItems("ai-setup") —
   // a prop that ignores its argument, so it landed on Inventory (BUG-083).
-  function goToSettings(sectionId = null) { setSettingsSection(sectionId); setView("settings"); }
+  // `returnTo` is the view Settings should offer a Back CTA to. The listing
+  // form passes its own view name so the seller can set a payment default and
+  // drop straight back into the draft they were composing (BUG — the link was
+  // a one-way trip; the only way out was the sidebar, which restarted the
+  // listing from scratch).
+  function goToSettings(sectionId = null, returnTo = null) { setSettingsSection(sectionId); setSettingsReturnTo(returnTo); setView("settings"); }
 
   // ─── Conversation inbox (lifted to root for nav badges) ───
   // Owns the seller's conversation list at the root so the Sidebar, TopNav
@@ -11126,11 +11154,32 @@ export default function DropYardSellerDashboard({
             {/* Keyed on the requested pane so arriving from a deep link while
                 Settings is already mounted still lands on the right section —
                 `initialSection` only seeds useState on mount. */}
-            {view === "settings" && <SettingsView key={settingsSection || "default"} user={user} initialSection={settingsSection}/>}
+            {view === "settings" && (
+              <SettingsView
+                key={settingsSection || "default"}
+                user={user}
+                initialSection={settingsSection}
+                onBack={settingsReturnTo ? () => { const back = settingsReturnTo; setSettingsReturnTo(null); setView(back); } : null}
+                backLabel="Back to your listing"
+              />
+            )}
             {view === "edit-item" && <EditItemView onBack={() => setView("items")} editingItem={editingItem} aiSettings={aiSettings} accessToken={accessToken} onItemsChange={onItemsChange}/>}
 
-            {view === "add-chooser" && <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
-            {view === "add-manual" && <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
+            {/* The listing form stays MOUNTED — just hidden — while the seller
+                is away in Settings via its "Set your default" link. Unmounting
+                it would throw away the half-typed draft, which is the whole
+                reason the Back CTA exists. `settingsReturnTo` is cleared by
+                safeNav, so any other navigation drops the held form normally. */}
+            {(view === "add-chooser" || settingsReturnTo === "add-chooser") && (
+              <div style={{ display: view === "add-chooser" ? undefined : "none" }}>
+                <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={section => goToSettings(section, "add-chooser")} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>
+              </div>
+            )}
+            {(view === "add-manual" || settingsReturnTo === "add-manual") && (
+              <div style={{ display: view === "add-manual" ? undefined : "none" }}>
+                <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={section => goToSettings(section, "add-manual")} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>
+              </div>
+            )}
             {view === "add-ai" && <AIPhotoFlow onDone={() => setView("items")} onBack={() => setView("add-manual")} aiSettings={aiSettings}/>}
 
             {view === "ai-setup" && <AISetup settings={aiSettings} onSave={setAiSettings} onComplete={() => {setView(aiEntryPoint==="add-manual"?"add-ai":"ai-photos")}} onBack={() => setView(aiEntryPoint==="add-manual"?"add-manual":"overview")} />}

@@ -932,7 +932,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, sort, s
             </span>
             {(cat !== "All" || sort !== "newest") && (
               <span style={{ fontSize: 13, fontWeight: 500, color: C.mink, whiteSpace: "nowrap" }}>
-                \u00b7 {cat !== "All" ? cat : sortShort}
+                · {cat !== "All" ? cat : sortShort}
               </span>
             )}
           </div>

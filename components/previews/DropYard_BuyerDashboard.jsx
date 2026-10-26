@@ -1267,10 +1267,14 @@ function WelcomeBand({ itemsCount = null, sellerNames = null, photos = null }) {
 // in a slide-up bottom sheet behind a filter pill that surfaces the active
 // filter count. State toggle (Everything / On the Shelf) sits below when
 // applicable. Activated by the parent (DiscoverPage) via useViewport().
-function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, hood, setHood, cond, setCond, sort, setSort, state, accent, sorts, hoods = [], activeFilterCount, onReset }) {
+function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, hood, setHood, cond, setCond, sort, setSort, state, accent, chipFill, sorts, hoods = [], activeFilterCount, onReset }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const accentDeep = accent === C.green ? C.greenDeep : C.amberDeep;
   const accentMist = accent === C.green ? C.greenMist : C.amberMist;
+  // Selected chips use the rail's chipFill so the sheet matches the desktop
+  // panel; the rest of the sheet (focus ring, count badge, Show results) stays
+  // on the lighter accent.
+  const selected = chipFill || accent;
   return (
     <section style={{ padding: "8px 0 16px", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1379,8 +1383,8 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, ho
                   return (
                     <button key={c} onClick={() => setCat(c)} style={{
                       padding: "9px 14px", borderRadius: 999,
-                      border: "1.5px solid " + (active ? accent : C.fawn),
-                      background: active ? accent : C.paper,
+                      border: "1.5px solid " + (active ? selected : C.fawn),
+                      background: active ? selected : C.paper,
                       color: active ? "#fff" : C.mink,
                       fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700,
                       cursor: "pointer", transition: "all 150ms",
@@ -1399,8 +1403,8 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, ho
                     return (
                       <button key={h} onClick={() => setHood(h)} style={{
                         padding: "9px 14px", borderRadius: 999,
-                        border: "1.5px solid " + (active ? accent : C.fawn),
-                        background: active ? accent : C.paper,
+                        border: "1.5px solid " + (active ? selected : C.fawn),
+                        background: active ? selected : C.paper,
                         color: active ? "#fff" : C.mink,
                         fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700,
                         cursor: "pointer", transition: "all 150ms",
@@ -1419,8 +1423,8 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, ho
                   return (
                     <button key={cn} onClick={() => setCond(cn)} style={{
                       padding: "9px 14px", borderRadius: 999,
-                      border: "1.5px solid " + (active ? accent : C.fawn),
-                      background: active ? accent : C.paper,
+                      border: "1.5px solid " + (active ? selected : C.fawn),
+                      background: active ? selected : C.paper,
                       color: active ? "#fff" : C.mink,
                       fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700,
                       cursor: "pointer", transition: "all 150ms",
@@ -1438,8 +1442,8 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, ho
                   return (
                     <button key={so.id} onClick={() => setSort(so.id)} style={{
                       padding: "9px 14px", borderRadius: 999,
-                      border: "1.5px solid " + (active ? accent : C.fawn),
-                      background: active ? accent : C.paper,
+                      border: "1.5px solid " + (active ? selected : C.fawn),
+                      background: active ? selected : C.paper,
                       color: active ? "#fff" : C.mink,
                       fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700,
                       cursor: "pointer", transition: "all 150ms",
@@ -1502,6 +1506,18 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
   ];
   const activeFilterCount = (cat !== "All" ? 1 : 0) + (hood !== "All" ? 1 : 0) + (cond !== "All" ? 1 : 0) + (sort !== "newest" ? 1 : 0);
   const accent = state === "between" ? C.amber : C.green;
+  // Selected chips and the active-filter tips follow the drop state too.
+  // Between Drops the dashboard runs golden brown, so they take the same
+  // amberDeep as the Remind me CTA on the anticipation band rather than
+  // dropping a lone green pill into an amber page. During a Live Drop the
+  // page is green and so are they.
+  const chipFill = state === "between" ? C.amberDeep : C.green;
+  const chipMist = state === "between" ? C.amberSoft : C.greenMist;
+  // Ink rather than amberDeep on the tinted tips: amberDeep on amberSoft only
+  // reaches 3.6:1, well short of the 6.7:1 greenDeep/greenMist manages at the
+  // same 12px. The amber fill carries the theme; the label stays readable —
+  // the same trade the countdown pill on the anticipation band makes.
+  const chipText = state === "between" ? C.ink : C.greenDeep;
   const clearAll = () => { setCat("All"); setHood("All"); setCond("All"); setSort("newest"); setSearch(""); };
 
   // On mobile, swap to the sheet-based filter UI. Branch AFTER all hooks.
@@ -1516,6 +1532,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
         sort={sort} setSort={setSort}
         state={state}
         accent={accent}
+        chipFill={chipFill}
         sorts={sorts}
         hoods={hoods}
         activeFilterCount={activeFilterCount}
@@ -1613,7 +1630,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
             </span>
             {(cat !== "All" || hood !== "All" || cond !== "All" || sort !== "newest") && (
               <span style={{ fontSize: 13, fontWeight: 500, color: C.mink, whiteSpace: "nowrap" }}>
-                \u00b7 {cat !== "All" ? cat : hood !== "All" ? hood : cond !== "All" ? cond : sortShort}
+                · {cat !== "All" ? cat : hood !== "All" ? hood : cond !== "All" ? cond : sortShort}
               </span>
             )}
           </div>
@@ -1751,27 +1768,27 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
       {!activeSegment && (cat !== "All" || hood !== "All" || cond !== "All" || sort !== "newest" || search) && (
         <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
           {search && (
-            <button onClick={() => setSearch("")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: C.greenMist, border: "none", color: C.greenDeep, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={() => setSearch("")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: chipMist, border: "none", color: chipText, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
               "{search}" <X size={12}/>
             </button>
           )}
           {cat !== "All" && (
-            <button onClick={() => setCat("All")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: C.greenMist, border: "none", color: C.greenDeep, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={() => setCat("All")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: chipMist, border: "none", color: chipText, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
               {cat} <X size={12}/>
             </button>
           )}
           {hood !== "All" && (
-            <button onClick={() => setHood("All")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: C.greenMist, border: "none", color: C.greenDeep, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={() => setHood("All")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: chipMist, border: "none", color: chipText, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
               {hood} <X size={12}/>
             </button>
           )}
           {cond !== "All" && (
-            <button onClick={() => setCond("All")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: C.greenMist, border: "none", color: C.greenDeep, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={() => setCond("All")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: chipMist, border: "none", color: chipText, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
               {cond} <X size={12}/>
             </button>
           )}
           {sort !== "newest" && (
-            <button onClick={() => setSort("newest")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: C.greenMist, border: "none", color: C.greenDeep, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={() => setSort("newest")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: chipMist, border: "none", color: chipText, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
               {sortLabel} <X size={12}/>
             </button>
           )}
@@ -1799,7 +1816,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
                 {categories.map(c => {
                   const active = cat === c;
                   return (
-                    <button key={c} onClick={() => { setCat(c); if (c === "All") setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? C.green : C.fawn), background: active ? C.green : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{c}</button>
+                    <button key={c} onClick={() => { setCat(c); if (c === "All") setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? chipFill : C.fawn), background: active ? chipFill : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{c}</button>
                   );
                 })}
               </div>
@@ -1815,7 +1832,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
                   {["All", ...hoods].map(h => {
                     const active = hood === h;
                     return (
-                      <button key={h} onClick={() => { setHood(h); if (h === "All") setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? C.green : C.fawn), background: active ? C.green : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{h === "All" ? "Any neighbourhood" : h}</button>
+                      <button key={h} onClick={() => { setHood(h); if (h === "All") setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? chipFill : C.fawn), background: active ? chipFill : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{h === "All" ? "Any neighbourhood" : h}</button>
                     );
                   })}
                 </div>
@@ -1829,7 +1846,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
                 {conditions.map(cn => {
                   const active = cond === cn;
                   return (
-                    <button key={cn} onClick={() => { setCond(cn); if (cn === "All") setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? C.green : C.fawn), background: active ? C.green : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{cn === "All" ? "Any condition" : cn}</button>
+                    <button key={cn} onClick={() => { setCond(cn); if (cn === "All") setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? chipFill : C.fawn), background: active ? chipFill : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{cn === "All" ? "Any condition" : cn}</button>
                   );
                 })}
               </div>
@@ -1842,7 +1859,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
                 {sorts.map(so => {
                   const active = sort === so.id;
                   return (
-                    <button key={so.id} onClick={() => { setSort(so.id); setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? C.green : C.fawn), background: active ? C.green : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{so.label}</button>
+                    <button key={so.id} onClick={() => { setSort(so.id); setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? chipFill : C.fawn), background: active ? chipFill : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{so.label}</button>
                   );
                 })}
               </div>
