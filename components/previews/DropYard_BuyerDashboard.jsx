@@ -349,7 +349,13 @@ function adaptBuyerItem(api) {
    ============================================================ */
 const C = {
   paper:     "#FFFFFF",
-  page:      "#FFFFFF",
+  // Off-white, deliberately NOT #FFFFFF. The item cards are C.paper (pure
+  // white), so the page tint is what separates a card from the page now that
+  // the cards carry no outline — the contrast does the job the border used
+  // to. Warm rather than grey to sit with the amber/sand side of the palette,
+  // and lighter than C.sand so sand-filled surfaces (inputs, empty states)
+  // still read as a distinct layer on top of it.
+  page:      "#FAF7F2",
   sand:      "#FFF9F0",
   fawn:      "#EDE8E0",
   smoke:     "#D6CFC4",
@@ -611,7 +617,7 @@ function HeroPhotoMosaic({ photos, fallbackSrc, objectPosition, tileBg = C.paper
 }
 
 function GlobalStyle() {
-  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #FFFFFF; color: #1F1D19; font-family: 'Nunito', sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #D8EDD2; color: #1F5A18; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; } .cta-primary { transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1); } .cta-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(48, 132, 36, 0.3); } .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #9A948B !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border: 1px solid #EDE8E0; border-radius: 18px; overflow: hidden; } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 767px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
+  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #FAF7F2; color: #1F1D19; font-family: 'Nunito', sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #D8EDD2; color: #1F5A18; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; } .cta-primary { transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1); } .cta-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(48, 132, 36, 0.3); } .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #9A948B !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border-radius: 20px; overflow: hidden; box-shadow: 0 1px 2px rgba(31, 29, 25, 0.05), 0 4px 12px rgba(31, 29, 25, 0.06); } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 767px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
   // 100vw counts the vertical scrollbar, so the bleed overhangs the viewport
   // by its width. The clip goes on body, not on the dashboard wrapper: an
   // overflow value there would make that div a scroll container and break the
@@ -1984,8 +1990,20 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   // the amber accent still marks a Shelf item on its badge and price.
   const ctaBg = C.green;
 
+  // No outline on the card. A white card on the off-white C.page already has
+  // an edge, so the border was drawing a second one on top of it; the lift
+  // below is what gives the card its shape instead. The resting shadow is two
+  // layers on purpose — a tight 2px one for the edge, a wide soft one for the
+  // float — because a single wide shadow goes muddy against a tinted page.
+  // The fromPeek amber bar stays: it marks "saved from your sneak peek", which
+  // is information, not decoration.
+  const peekBar = fromPeek ? "inset 4px 0 0 " + C.amber + ", " : "";
+  const cardShadow = hovered
+    ? peekBar + "0 2px 4px rgba(31, 29, 25, 0.04), 0 14px 34px rgba(31, 29, 25, 0.10)"
+    : peekBar + "0 1px 2px rgba(31, 29, 25, 0.05), 0 4px 12px rgba(31, 29, 25, 0.06)";
+
   return (
-    <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 20, overflow: "hidden", border: "1.5px solid " + (fromPeek ? C.amber + "60" : hovered ? C.ash + "80" : C.smoke), cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-3px)" : "translateY(0)", boxShadow: fromPeek ? (hovered ? "inset 4px 0 0 " + C.amber + ", 0 12px 32px rgba(31, 29, 25, 0.08)" : "inset 4px 0 0 " + C.amber + ", 0 1px 0 " + C.fawn + "60") : (hovered ? "0 12px 32px rgba(31, 29, 25, 0.08)" : "0 1px 0 " + C.fawn + "60"), animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
+    <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 20, overflow: "hidden", border: "none", cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-3px)" : "translateY(0)", boxShadow: cardShadow, animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
       <div style={{ position: "relative", aspectRatio: "4/3", background: "linear-gradient(135deg, " + badgeBg + ", " + C.sand + ")", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
         <ItemImage
           src={item.img}
