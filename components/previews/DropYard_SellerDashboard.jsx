@@ -87,6 +87,31 @@ const F = {
   b:    '"Nunito", -apple-system, BlinkMacSystemFont, sans-serif',
 };
 
+/* ============================================================
+   PRICE DISPLAY
+   A $0 listing is a giveaway, not an item that costs nothing —
+   "$0" reads like a bug or a missing value. Everywhere a price
+   is printed it becomes "Free", in claret rather than the usual
+   green, so it reads as its own thing and not as the cheapest
+   price on the page.
+
+   Two helpers rather than one component: the price sits inside
+   a dozen different type scales and accents, so each call site
+   keeps its own styling and only swaps the text and the colour.
+   `normal` is whatever colour that site already used.
+   Mirrored in DropYard_BuyerDashboard.jsx — the two dashboards
+   keep their own copies of these tokens by design.
+   ============================================================ */
+function isFreePrice(p) {
+  return typeof p === "number" && p <= 0;
+}
+function priceText(p) {
+  return isFreePrice(p) ? "Free" : "$" + p;
+}
+function priceColor(p, normal) {
+  return isFreePrice(p) ? C.claret : normal;
+}
+
 // Viewport hook — reused across views that need a mobile branch (Inventory,
 // later: Orders / Messages / etc). 768px matches the sidebar collapse breakpoint.
 const MOBILE_BREAKPOINT = 768;
@@ -1696,7 +1721,7 @@ function GoingLivePreview({ items, onNav }) {
             </div>
             <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.ink, lineHeight: 1.3, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.005em" }}>{it.title}</p>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
-              <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 900, color: C.greenDeep, letterSpacing: "-0.01em" }}>${it.price}</span>
+              <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 900, color: priceColor(it.price, C.greenDeep), letterSpacing: "-0.01em" }}>{priceText(it.price)}</span>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 6, background: it.layer === "drop" ? C.amberMist : C.greenMist, color: it.layer === "drop" ? C.amberDeep : C.greenDeep, letterSpacing: "0.04em", textTransform: "uppercase", border: "1px solid " + (it.layer === "drop" ? C.amber + "30" : C.green + "30") }}>
                 <span style={{ position: "relative", display: "inline-flex", width: 5, height: 5 }}>
                   <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: it.layer === "drop" ? C.amberDeep : C.greenDeep, opacity: 0.4, animation: "pulseLive 1.8s ease-in-out infinite" }}/>
@@ -7013,7 +7038,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 15, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{active.item.title}</p>
                 <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, marginTop: 2, flexWrap: "wrap" }}>
-                  <span style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 16, fontWeight: 900, color: C.green }}>${active.item.price}</span>
+                  <span style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 16, fontWeight: 900, color: priceColor(active.item.price, C.green) }}>{priceText(active.item.price)}</span>
                   <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4 }}>
                     <User size={11}/> {active.buyer.name}{!isMobile && active.buyer.hood && (" · " + active.buyer.hood)}
                   </span>
@@ -7805,7 +7830,7 @@ function HistoryTxRow({ tx, idx, isMobile = false, isOpen = false, onToggle = nu
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          <span style={{ fontFamily: F.head, fontSize: isMobile ? 18 : 22, fontWeight: 900, color: C.green }}>${tx.price}</span>
+          <span style={{ fontFamily: F.head, fontSize: isMobile ? 18 : 22, fontWeight: 900, color: priceColor(tx.price, C.green) }}>{priceText(tx.price)}</span>
           {onToggle && <ChevronDown size={14} style={{ color: C.smoke, transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 200ms" }}/>}
         </div>
       </div>
@@ -8236,7 +8261,7 @@ function ItemDetailView({ item, onBack, onEdit, accessToken: _accessToken }) {
       <div style={{ marginBottom: isMobile ? 14 : 18 }}>
         <h1 style={{ fontFamily: F.head, fontSize: isMobile ? 22 : 30, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.05 }}>{item.t}</h1>
         <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", fontFamily: F.body, fontSize: 13, color: C.mink }}>
-          <span style={{ fontFamily: F.head, fontWeight: 900, fontSize: isMobile ? 19 : 22, color: C.green }}>${item.price}</span>
+          <span style={{ fontFamily: F.head, fontWeight: 900, fontSize: isMobile ? 19 : 22, color: priceColor(item.price, C.green) }}>{priceText(item.price)}</span>
           <span>·</span>
           <span>{item.cat}</span>
           <span>·</span>
@@ -9363,7 +9388,7 @@ function AIListingPreviewModal({ item, onClose, onApprove, onEdit, isApproved, a
             <div style={{ textAlign: "right" }}>
               <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>Listing price</p>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, justifyContent: "flex-end" }}>
-                <span style={{ fontFamily: F.head, fontSize: 32, fontWeight: 900, color: C.green, letterSpacing: "-0.02em" }}>${item.price}</span>
+                <span style={{ fontFamily: F.head, fontSize: 32, fontWeight: 900, color: priceColor(item.price, C.green), letterSpacing: "-0.02em" }}>{priceText(item.price)}</span>
               </div>
               {item.aiPrice && String(item.aiPrice) === String(item.price) ? (
                 <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ai, marginTop: 3, display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
@@ -9717,8 +9742,8 @@ function AIPhotoFlow({ onDone, onBack, aiSettings = {} }) {
                           style={{ width: 68, padding: "3px 6px", borderRadius: 6, border: "1.5px solid " + C.green, fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.green, outline: "none", background: C.paper, textAlign: "center" }}/>
                       </div>
                     ) : (
-                      <button onClick={() => beginPriceEdit(it)} title="Click to change price" style={{ border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: F.head, fontSize: 20, fontWeight: 900, color: C.green, textDecoration: "underline dotted", textDecorationColor: C.green + "60", textUnderlineOffset: 4, textAlign: "left" }}>
-                        ${it.price}
+                      <button onClick={() => beginPriceEdit(it)} title="Click to change price" style={{ border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: F.head, fontSize: 20, fontWeight: 900, color: priceColor(it.price, C.green), textDecoration: "underline dotted", textDecorationColor: priceColor(it.price, C.green) + "60", textUnderlineOffset: 4, textAlign: "left" }}>
+                        {priceText(it.price)}
                       </button>
                     )}
                     {editingPriceId !== it.id && (

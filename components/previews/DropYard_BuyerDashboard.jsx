@@ -387,6 +387,29 @@ const F = {
 };
 
 /* ============================================================
+   PRICE DISPLAY
+   A $0 listing is a giveaway, not an item that costs nothing —
+   "$0" reads like a bug or a missing value. Everywhere a price
+   is printed it becomes "Free", in claret rather than the usual
+   green, so it reads as its own thing and not as the cheapest
+   price on the page.
+
+   Two helpers rather than one component: the price sits inside
+   a dozen different type scales and accents, so each call site
+   keeps its own styling and only swaps the text and the colour.
+   `normal` is whatever colour that site already used.
+   ============================================================ */
+function isFreePrice(p) {
+  return typeof p === "number" && p <= 0;
+}
+function priceText(p) {
+  return isFreePrice(p) ? "Free" : "$" + p;
+}
+function priceColor(p, normal) {
+  return isFreePrice(p) ? C.claret : normal;
+}
+
+/* ============================================================
    ITEM DETAIL TOKENS
    A quieter, more product-first treatment for the item page:
    a neutral grotesque instead of the rounded Nunito, 1px
@@ -1911,7 +1934,7 @@ function getPublicItemUrl(item) {
 async function shareListing(item) {
   const title = item?.title || item?.t || "DropYard listing";
   const price = item?.p ?? item?.price;
-  const priceFragment = (typeof price === "number" && price >= 0) ? " · $" + price : "";
+  const priceFragment = (typeof price === "number" && price >= 0) ? " · " + priceText(price) : "";
   const text = "Check out \"" + title + "\"" + priceFragment + " on DropYard.";
   const url = getPublicItemUrl(item);
 
@@ -2113,7 +2136,7 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
         )}
         <h3 style={{ fontFamily: F.head, fontSize: 16, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em", lineHeight: 1.25, marginBottom: 8 }}>{item.t}</h3>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-          <span style={{ fontFamily: F.head, fontSize: 24, fontWeight: 900, color: cardAccent, letterSpacing: "-0.02em" }}>${item.p}</span>
+          <span style={{ fontFamily: F.head, fontSize: 24, fontWeight: 900, color: priceColor(item.p, cardAccent), letterSpacing: "-0.02em" }}>{priceText(item.p)}</span>
           {item.op && <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.ash, textDecoration: "line-through" }}>${item.op}</span>}
           {discount && <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.amberDeep, background: C.amberMist, padding: "2px 8px", borderRadius: 6 }}>Save {discount}%</span>}
           {/* Seller's average rating, opposite the price. Only drawn once a
@@ -3040,8 +3063,8 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
           <div style={{ flex: 1 }}>
             <p style={{ fontFamily: F.head, fontSize: 15, fontWeight: 800, color: C.ink }}>{item.title}</p>
             <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink }}>{item.seller.name} · {item.seller.dist}</p>
-            <p style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.green, marginTop: 4 }}>
-              ${item.price}
+            <p style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: priceColor(item.price, C.green), marginTop: 4 }}>
+              {priceText(item.price)}
               {item.origPrice && <span style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.ash, textDecoration: "line-through", marginLeft: 8 }}>${item.origPrice}</span>}
             </p>
           </div>
@@ -3080,7 +3103,7 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
                   <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>Claim at listed price</p>
                   <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginTop: 2 }}>Instant confirmation · no negotiation</p>
                 </div>
-                <p style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: C.green, flexShrink: 0 }}>${item.price}</p>
+                <p style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: priceColor(item.price, C.green), flexShrink: 0 }}>{priceText(item.price)}</p>
               </button>
 
               {/* Option B: Make an offer */}
@@ -3214,7 +3237,7 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
                   ? "Sending…"
                   : mode === "offer"
                     ? (<><DollarSign size={16}/> Send offer of ${offer}</>)
-                    : (<><Check size={16}/> Claim at ${item.price}</>)}
+                    : (<><Check size={16}/> {isFreePrice(item.price) ? "Claim for free" : "Claim at $" + item.price}</>)}
               </button>
             </div>
           </div>
@@ -3262,7 +3285,7 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
                 promised something the item's state never backed up. */}
             <h3 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.ink, marginBottom: 8 }}>Claim sent!</h3>
             <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, lineHeight: 1.55, marginBottom: 20 }}>
-              Your claim on <b style={{ color: C.ink }}>{item.title}</b> at <b style={{ color: C.ink }}>${item.price}</b> is with the seller.<br/>
+              Your claim on <b style={{ color: C.ink }}>{item.title}</b> at <b style={{ color: C.ink }}>{priceText(item.price)}</b> is with the seller.<br/>
               Pickup: <b style={{ color: C.ink }}>{slot}</b><br/>
               <span style={{ fontSize: 12.5, color: C.ash }}>The item stays listed until they confirm — other neighbours may claim it too.</span>
             </p>
@@ -3346,7 +3369,7 @@ function AskModal({ item, onClose, onSend }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink }}>{item.title}</p>
-            <p style={{ fontFamily: F.head, fontSize: 15, fontWeight: 900, color: C.green }}>${item.price}</p>
+            <p style={{ fontFamily: F.head, fontSize: 15, fontWeight: 900, color: priceColor(item.price, C.green) }}>{priceText(item.price)}</p>
           </div>
         </div>
 
@@ -4013,7 +4036,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
           <h1 style={{ fontFamily: D.font, fontSize: isMobile ? 26 : 30, fontWeight: 700, color: C.ink, letterSpacing: "-0.02em", lineHeight: 1.18, marginBottom: 12 }}>{item.title}</h1>
 
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 22 }}>
-            <span style={{ fontFamily: D.font, fontSize: isMobile ? 34 : 40, fontWeight: 700, color: accent, letterSpacing: "-0.03em" }}>${item.price}</span>
+            <span style={{ fontFamily: D.font, fontSize: isMobile ? 34 : 40, fontWeight: 700, color: priceColor(item.price, accent), letterSpacing: "-0.03em" }}>{priceText(item.price)}</span>
             {item.origPrice && <span style={{ fontFamily: D.font, fontSize: 17, fontWeight: 500, color: C.ash, textDecoration: "line-through" }}>${item.origPrice}</span>}
             {discount && <span style={{ fontFamily: D.font, fontSize: 12, fontWeight: 600, color: C.amberDeep, background: C.amberMist, padding: "3px 10px", borderRadius: 8 }}>Save {discount}%</span>}
           </div>
@@ -4525,7 +4548,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                       </span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                      <span style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: C.green }}>${c.price}</span>
+                      <span style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: priceColor(c.price, C.green) }}>{priceText(c.price)}</span>
                       <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4 }}>
                         <User size={12}/> {c.seller}
                       </span>
@@ -5705,7 +5728,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontFamily: F.head, fontSize: 15, fontWeight: 800, color: C.ink }}>{active.item.title}</p>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2, flexWrap: "wrap" }}>
-                  <span style={{ fontFamily: F.head, fontSize: 16, fontWeight: 900, color: C.green }}>${active.item.price}</span>
+                  <span style={{ fontFamily: F.head, fontSize: 16, fontWeight: 900, color: priceColor(active.item.price, C.green) }}>{priceText(active.item.price)}</span>
                   <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4 }}>
                     <User size={11}/> {active.seller.name} · {active.seller.hood}
                   </span>
@@ -6122,7 +6145,7 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
           </div>
           <div style={{ textAlign: "right", flexShrink: 0 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 6, justifyContent: "flex-end" }}>
-              <span style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.green }}>${tx.price}</span>
+              <span style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: priceColor(tx.price, C.green) }}>{priceText(tx.price)}</span>
               {tx.origPrice && <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.ash, textDecoration: "line-through" }}>${tx.origPrice}</span>}
             </div>
             {saved > 0 && (
