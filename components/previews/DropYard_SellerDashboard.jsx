@@ -11033,6 +11033,11 @@ export default function DropYardSellerDashboard({
     if (!payload?.conversationId || !payload.message) return prev;
     const { conversationId, message } = payload;
     const isFromMe = message.senderId === myUserId;
+    // Mirrors unreadCountFor on the server: a NOTICE is system narration of a
+    // claim transition, not a message someone sent you, so it must not raise
+    // the Messages badge. Without this the socket path would put back the
+    // phantom unread the backend no longer counts, until the next refetch.
+    const isNotice = message.messageType === "NOTICE";
     const existing = prev.find((c) => c.id === conversationId);
     if (!existing) {
       if (accessToken) {
@@ -11050,7 +11055,7 @@ export default function DropYardSellerDashboard({
     // refresh the data but the row stays put.
     const updated = prev.map((c) => {
       if (c.id !== conversationId) return c;
-      const newUnread = isFromMe ? (c.unreadCount || 0) : (c.unreadCount || 0) + 1;
+      const newUnread = (isFromMe || isNotice) ? (c.unreadCount || 0) : (c.unreadCount || 0) + 1;
       return {
         ...c,
         lastMsg:       message.body || c.lastMsg,

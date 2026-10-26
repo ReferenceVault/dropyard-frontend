@@ -4801,6 +4801,11 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   // Powers the in-chat action banner so the buyer can Accept/Counter/Decline
   // a seller's counter, or Confirm receipt once accepted.
   const [activeClaimByConv, setActiveClaimByConv]   = useState({});
+  // The CURRENT claim per conversation whatever its status — including the
+  // terminal ones activeClaimByConv deliberately drops. The thread badge has
+  // to follow this: a cancelled claim left the badge reading "Pending", which
+  // says the buyer is still waiting on the seller when the claim is gone.
+  const [latestClaimByConv, setLatestClaimByConv]   = useState({});
   const [activeClaimsTick, setActiveClaimsTick]     = useState(0);
   useSocketEvent("claim:updated", () => setActiveClaimsTick(t => t + 1));
   useSocketEvent("claim:new",     () => setActiveClaimsTick(t => t + 1));
@@ -4812,14 +4817,20 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
         if (cancelled) return;
         const list = Array.isArray(data?.claims) ? data.claims : [];
         const idx = {};
+        const latest = {};
         for (const c of list) {
-          if (c.conversationId && (c.status === "PROPOSED" || c.status === "ACCEPTED")) {
+          if (!c.conversationId) continue;
+          // /api/claims/mine comes back newest-first, so the first claim seen
+          // for a conversation is the one that counts.
+          if (!latest[c.conversationId]) latest[c.conversationId] = c;
+          if (c.status === "PROPOSED" || c.status === "ACCEPTED") {
             idx[c.conversationId] = c;
           }
         }
         setActiveClaimByConv(idx);
+        setLatestClaimByConv(latest);
       })
-      .catch(() => { if (!cancelled) setActiveClaimByConv({}); });
+      .catch(() => { if (!cancelled) { setActiveClaimByConv({}); setLatestClaimByConv({}); } });
     return () => { cancelled = true; };
   }, [accessToken, activeClaimsTick]);
 
@@ -5239,8 +5250,27 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
     "answered":          { label: "Answered",          color: C.ai,        bg: C.aiMist,      icon: MessageSquare },
     "pending":           { label: "Pending",           color: C.amberDeep, bg: C.amberMist,   icon: Clock      },
     "declined":          { label: "Declined",          color: C.ash,       bg: C.sand,        icon: X          },
+    "cancelled":         { label: "Cancelled",         color: C.ash,       bg: C.sand,        icon: X          },
+    "expired":           { label: "Expired",           color: C.ash,       bg: C.sand,        icon: Clock      },
     "completed":         { label: "Completed",         color: C.ash,       bg: C.sand,        icon: Check      },
   };
+
+  // The badge has to read off the claim, not just off who spoke last.
+  // `c.status` is only "pending" (I spoke last) / "answered" (they did), which
+  // is fine while a negotiation is live but wrong the moment the claim ends:
+  // a waived claim kept showing "Pending", i.e. "waiting on the seller", on a
+  // thread that is finished. A terminal claim overrides; anything still live
+  // falls through to the who-spoke-last reading.
+  const threadStatus = useCallback((c) => {
+    if (!c) return "completed";
+    switch (latestClaimByConv[c.id]?.status) {
+      case "CANCELLED":                 return "cancelled";
+      case "DECLINED": case "REJECTED": return "declined";
+      case "EXPIRED":                   return "expired";
+      case "PICKED_UP":                 return "completed";
+      default:                          return c.status;
+    }
+  }, [latestClaimByConv]);
 
   const unreadCount = conversations.filter(c => c.unread).length;
 
@@ -5338,7 +5368,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   const active = conversations.find(c => c.id === activeId)
     || archivedList.find(c => c.id === activeId)
     || conversations[0];
-  const activeStatus = active ? statusMeta[active.status] : null;
+  const activeStatus = active ? (statusMeta[threadStatus(active)] || statusMeta.completed) : null;
   // Demo mode reads messages inline from the conversation; wired mode uses
   // the activeMsgs state populated by GET /:id/messages and socket pushes.
   const activeMessages = usingBackend ? (activeMsgs || []) : (active?.messages || []);
@@ -5347,7 +5377,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   // row so an expanded history reads as background, not as live threads.
   function renderThreadRow(c, muted = false) {
     const isActive = c.id === activeId;
-    const meta = statusMeta[c.status] || statusMeta.completed;
+    const meta = statusMeta[threadStatus(c)] || statusMeta.completed;
     const Ic = meta.icon;
     return (
       <button key={c.id} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative", opacity: muted && !isActive ? 0.62 : 1 }}>
@@ -7206,6 +7236,11 @@ export default function DropYardBuyerDashboard({
     if (!payload?.conversationId || !payload.message) return prev;
     const { conversationId, message } = payload;
     const isFromMe = message.senderId === myUserId;
+    // Mirrors unreadCountFor on the server: a NOTICE is system narration of a
+    // claim transition, not a message someone sent you, so it must not raise
+    // the Messages badge. Without this the socket path would put back the
+    // phantom unread the backend no longer counts, until the next refetch.
+    const isNotice = message.messageType === "NOTICE";
     const existing = prev.find((c) => c.id === conversationId);
     if (!existing) {
       if (accessToken) {
@@ -7223,7 +7258,7 @@ export default function DropYardBuyerDashboard({
     // refresh the row data but its position in the list lingers.
     const updated = prev.map((c) => {
       if (c.id !== conversationId) return c;
-      const newUnread = isFromMe ? (c.unreadCount || 0) : (c.unreadCount || 0) + 1;
+      const newUnread = (isFromMe || isNotice) ? (c.unreadCount || 0) : (c.unreadCount || 0) + 1;
       return {
         ...c,
         lastMsg:       message.body || c.lastMsg,
