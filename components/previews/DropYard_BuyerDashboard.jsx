@@ -3612,7 +3612,7 @@ function formatPickupSummary(item) {
   return { days: daySummary, windows: winSummary };
 }
 
-function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller, onViewSeller, savedIds, onToggleSave, accessToken = null, onGoToMessages = null, onClaimCreated = null, currentUserId = null, onSwitchRole = null }) {
+function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller, onViewSeller, savedIds, onToggleSave, accessToken = null, onGoToMessages = null, onClaimCreated = null, currentUserId = null, onSwitchRole = null, dropState = "between" }) {
   // Own listings are in the buyer feed by design, so a seller opening their
   // own item detail is now the ordinary path, not just the deep-link /
   // watchlist edge case it was when the feed filtered them out. Either way:
@@ -3685,6 +3685,20 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
 
   const seller = item.seller;
   const isShelf = item.layer === "shelf";
+  // While the Drop is running the two pools are one. A Shelf item is
+  // claimable right now, alongside everything in the Drop, so it wears the
+  // LIVE DROP badge and sheds its Shelf markers entirely — telling the buyer
+  // "on the shelf" mid-Drop sorts it into a category that isn't live at that
+  // moment. The feed already merges the pools this way (see the unified live
+  // pool in DiscoverPage) and so does ItemCard via `liveMode`; this is the
+  // detail page catching up with both.
+  //
+  // It reverts on its own when the Drop closes: dropState flips back to
+  // "between" on the root's 60s tick, and every unsold item is a Shelf item
+  // again — which is also where the backend now parks them (see
+  // rolloverUnsoldItemsToShelf).
+  const dropIsLive = dropState === "live";
+  const showShelfTag = isShelf && !dropIsLive;
   const accent = C.green;
   const accentBg = C.greenMist;
   const discount = item.origPrice ? Math.round((1 - item.price / item.origPrice) * 100) : null;
@@ -3787,13 +3801,13 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
             )}
             {/* Top-left: stacked badges */}
             <div style={{ position: "absolute", top: 18, left: 18, display: "flex", flexDirection: "column", gap: 8 }}>
-              {item.layer === "drop" && (
+              {(item.layer === "drop" || (isShelf && dropIsLive)) && (
                 <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: D.font, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", padding: "6px 12px", borderRadius: 999, background: C.ink, color: "#fff" }}>
                   <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.green, boxShadow: "0 0 0 3px " + C.green + "40", animation: "pulseGreen 2s infinite" }}/>
                   LIVE DROP
                 </span>
               )}
-              {isShelf && (
+              {showShelfTag && (
                 <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: D.font, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", padding: "6px 12px", borderRadius: 999, background: C.amber, color: "#fff" }}>
                   <Package size={11}/> ON THE SHELF
                 </span>
@@ -4025,7 +4039,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
             the actions, rather than four free-floating blocks. It's the only
             element on the page carrying a shadow, and a light one. */}
         <div style={{ position: "sticky", top: 120, background: C.paper, border: D.border, borderRadius: 16, boxShadow: D.shadow, padding: isMobile ? 20 : 24 }}>
-          {isShelf && (
+          {showShelfTag && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: D.font, fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: C.amberDeep, padding: "5px 11px", background: C.amberMist, borderRadius: 999, marginBottom: 14 }}>
               <Package size={12}/> On the Shelf
             </span>
@@ -7688,7 +7702,7 @@ export default function DropYardBuyerDashboard({
             <RegularSellerProfile sellerName={viewingSellerName} onBack={() => { setViewingSellerName(null); if (sellerBackItem) { setViewingItem(sellerBackItem); setSellerBackItem(null); } }} onSelect={setViewingItem} onClaimNow={setClaimItem} savedIds={savedIds} onToggleSave={toggleSave} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>
           )}
           {viewingItem && (
-            <ItemDetail item={viewingItem} onBack={() => setViewingItem(null)} onClaimComplete={handleClaimComplete} onGoToClaims={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("claims"); }}  onViewSeller={(name) => { setSellerBackItem(viewingItem); setViewingItem(null); setViewingSellerName(name); }} savedIds={savedIds} onToggleSave={toggleSave} accessToken={accessToken} onGoToMessages={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("messages"); }} onClaimCreated={handleClaimCreated} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>
+            <ItemDetail item={viewingItem} onBack={() => setViewingItem(null)} onClaimComplete={handleClaimComplete} onGoToClaims={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("claims"); }}  onViewSeller={(name) => { setSellerBackItem(viewingItem); setViewingItem(null); setViewingSellerName(name); }} savedIds={savedIds} onToggleSave={toggleSave} accessToken={accessToken} onGoToMessages={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("messages"); }} onClaimCreated={handleClaimCreated} currentUserId={user?.id || null} onSwitchRole={onSwitchRole} dropState={dropState}/>
           )}
 
           {!viewingItem && !viewingSellerName && (
