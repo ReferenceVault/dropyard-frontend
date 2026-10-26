@@ -22,7 +22,7 @@ import {
 import { submitSubmission, isValidEmail } from "@/lib/submissions";
 import {
   Camera, X, Check, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Sparkles, Zap,
-  MessageCircle, Package, Eye, ArrowRight, User, Clock, Calendar,
+  MessageCircle, Package, Eye, EyeOff, ArrowRight, User, Clock, Calendar,
   CheckCircle, MapPin, LayoutGrid, Box, DollarSign, ClipboardList,
   MessageSquare, Plus, Truck, History, ArrowLeft, Shield, Tag, TrendingDown,
   Home, Heart, Users, Mail, Phone, Info, Lock, CreditCard, Banknote, Upload, RefreshCw,
@@ -9887,6 +9887,27 @@ function SF_Input({ style, ...props }) {
   );
 }
 
+/* Password input with a reveal toggle. The caller owns `show` so one piece of
+   state can drive both the new and confirm fields at once — revealing them
+   together is the point: "do not match" is unactionable when you can't see
+   which of the two has the typo. Right padding clears the eye button. */
+function SF_PasswordInput({ show, onToggleShow, ...props }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <SF_Input {...props} type={show ? "text" : "password"} style={{ paddingRight: 42 }}/>
+      <button
+        type="button"
+        onClick={onToggleShow}
+        tabIndex={-1}
+        aria-label={show ? "Hide password" : "Show password"}
+        style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 6, border: "none", background: "none", color: C.ash, cursor: "pointer" }}
+      >
+        {show ? <EyeOff size={15}/> : <Eye size={15}/>}
+      </button>
+    </div>
+  );
+}
+
 function SF_PrimaryButton({ disabled, loading, children, ...props }) {
   return (
     <button
@@ -9942,6 +9963,11 @@ function ProfileTab({ user, onSuccess }) {
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
+  // Each field reveals on its own — clicking one eye must not unmask the
+  // other. Current password stays masked: it's an existing secret, not
+  // something being composed here.
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [savingPw, setSavingPw] = useState(false);
   const [pwError, setPwError] = useState("");
   const [pwSavedAt, setPwSavedAt] = useState(null);
@@ -10074,11 +10100,11 @@ function ProfileTab({ user, onSuccess }) {
         )}
 
         <SF_Field label="New password">
-          <SF_Input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" disabled={savingPw}/>
+          <SF_PasswordInput show={showNewPw} onToggleShow={() => setShowNewPw(v => !v)} value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" disabled={savingPw}/>
         </SF_Field>
 
         <SF_Field label="Confirm new password">
-          <SF_Input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Re-enter new password" autoComplete="new-password" disabled={savingPw}/>
+          <SF_PasswordInput show={showConfirmPw} onToggleShow={() => setShowConfirmPw(v => !v)} value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Re-enter new password" autoComplete="new-password" disabled={savingPw}/>
         </SF_Field>
 
         {pwError && <SF_ErrorBanner message={pwError}/>}
