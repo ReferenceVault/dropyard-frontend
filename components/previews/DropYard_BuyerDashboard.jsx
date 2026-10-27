@@ -3773,6 +3773,11 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
   // rolloverUnsoldItemsToShelf).
   const dropIsLive = dropState === "live";
   const showShelfTag = isShelf && !dropIsLive;
+  // Claimed, or a Drop item still in PREVIEW: the backend refuses a claim in
+  // both cases, so the CTA is parked and the offer hint under it would be
+  // describing a flow the buyer can't open. Computed here rather than inside
+  // the CTA's IIFE so the hint can share it.
+  const notClaimable = item.status === "claimed" || item.status === "preview";
   const accent = C.green;
   const accentBg = C.greenMist;
   const discount = item.origPrice ? Math.round((1 - item.price / item.origPrice) * 100) : null;
@@ -4187,7 +4192,6 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                     PREVIEW ("preview"): the backend rejects those until the Drop
                     opens, so offering the modal only wastes the buyer's time. */}
                 {(() => {
-                  const notClaimable = item.status === "claimed" || item.status === "preview";
                   const label = item.status === "claimed"
                     ? "Already claimed"
                     : item.status === "preview"
@@ -4200,12 +4204,23 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                   );
                 })()}
 
-                {/* Shelf items: the offer hint belongs directly under the claim
-                    CTA — it describes what happens inside that flow, so it
-                    reads with the button instead of trailing the whole stack. */}
-                {isShelf && item.status !== "claimed" && (
+                {/* The offer hint belongs directly under the claim CTA — it
+                    describes what happens inside that flow, so it reads with
+                    the button instead of trailing the whole stack.
+
+                    It used to be gated on `isShelf`, which hid it on every
+                    Drop item. ClaimModal's "Make a different offer" option has
+                    no layer gate, and neither does the backend —
+                    POST /api/items/:id/claim takes an optional `amount` for any
+                    item — so the hint was true on a Drop listing too and just
+                    wasn't being shown. Only the "sellers often flex on Shelf
+                    prices" half was Shelf-specific, so that clause now swaps
+                    for a neutral one off the Shelf. */}
+                {!notClaimable && (
                   <p style={{ fontFamily: D.font, fontSize: 11, fontWeight: 600, color: C.ash, textAlign: "center" }}>
-                    Or make an offer during claim — sellers often flex on Shelf prices.
+                    {showShelfTag
+                      ? "Or make an offer during claim — sellers often flex on Shelf prices."
+                      : "Or make an offer during claim — you can propose your own price."}
                   </p>
                 )}
 
