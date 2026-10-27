@@ -640,7 +640,7 @@ function HeroPhotoMosaic({ photos, fallbackSrc, objectPosition, tileBg = C.paper
 }
 
 function GlobalStyle() {
-  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #FAF7F2; color: #1F1D19; font-family: 'Nunito', sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #D8EDD2; color: #1F5A18; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; } .cta-primary { transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1); } .cta-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(48, 132, 36, 0.3); } .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #9A948B !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border-radius: 20px; overflow: hidden; box-shadow: 0 1px 2px rgba(31, 29, 25, 0.05), 0 4px 12px rgba(31, 29, 25, 0.06); } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 767px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
+  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #FAF7F2; color: #1F1D19; font-family: 'Nunito', sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #D8EDD2; color: #1F5A18; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; } .cta-primary { transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1); } .cta-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(48, 132, 36, 0.3); } .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #9A948B !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border-radius: 22px; overflow: hidden; border: 1px solid #E7E3DD; box-shadow: 0 1px 2px rgba(31, 29, 25, 0.03); } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 767px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
   // 100vw counts the vertical scrollbar, so the bleed overhangs the viewport
   // by its width. The clip goes on body, not on the dashboard wrapper: an
   // overflow value there would make that div a scroll container and break the
@@ -1960,26 +1960,66 @@ async function shareListing(item) {
 }
 
 /* ============================================================
+   PRODUCT CARD TOKENS
+   From the "Premium buyer marketplace item card" handoff: white
+   card and photo backdrop, a 1px warm border instead of a heavy
+   lift, a much larger title/price pair, and pale-green icon discs.
+
+   Two values deliberately diverge from the handoff sheet, which
+   says itself that its hexes approximate a screenshot and must be
+   validated against the logo before release:
+     green — stays C.green (#308424, the logo's own), not the
+             sheet's #287D26. Same call the ITEM DETAIL TOKENS
+             note above already made for #27852F.
+     font  — D.font, which is Geist (loaded by app/layout.tsx) with
+             Inter next in the stack. The sheet asks for Inter as a
+             stand-in for "clean contemporary sans"; D.font is that,
+             already paid for, and keeps the card matching the item
+             page it opens into.
+   ============================================================ */
+const CARD = {
+  font:       D.font,
+  ink:        "#111827",
+  muted:      "#74777D",
+  border:     "#E7E3DD",
+  iconBg:     "#EFF7ED",
+  red:        "#E11D2E",
+  green:      C.green,
+  greenHover: C.greenDeep,
+};
+
+/* ============================================================
    ITEM CARD  — works for drop / shelf
    ============================================================ */
 function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null, answerReady = false }) {
+  const { isMobile } = useViewport();
   const [hovered, setHovered] = useState(false);
+  // Tracked separately from `hovered` so the CTA only darkens when the
+  // pointer is actually on it, not anywhere on the card.
+  const [ctaHovered, setCtaHovered] = useState(false);
   const discount = item.op ? Math.round((1 - item.p / item.op) * 100) : null;
-  let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = "Live Drop", cardAccent = C.green, ctaLabel = "Claim Now";
+  // No "Live Drop" pill — the handoff drops it, and every card under the
+  // Live Drop header was wearing one, so it repeated the heading. The
+  // state badges below (Sneak Peek, Claim pending, Your listing) stay:
+  // those report whether the card can be acted on, which the heading
+  // doesn't say.
+  // badgeBg is a real tint, not C.paper. The photo backdrop is white now, so
+  // the white pills these badges used to be were a border floating on nothing.
+  let badgeBg = C.greenMist, badgeColor = C.greenDeep, badgeLabel = null, ctaLabel = "Claim Now";
   if (item.layer === "shelf" && !liveMode) {
     // No badge. A Shelf item outside a live Drop only ever appears under the
     // "Available now" header, and every card in that section is one — so the
     // pill repeated the heading on each card and said nothing the heading
-    // hadn't. The amber accent stays: that's the Shelf's colour, and it still
-    // tells a saved Shelf item apart from a queued one at a glance.
-    badgeBg = C.amberMist; badgeColor = C.amberDeep; badgeLabel = null; cardAccent = C.amber;
+    // hadn't. The per-layer accent on the price is gone with the handoff: the
+    // price is the green token on every card now, so a Shelf item is told
+    // apart by its section and its CTA, not by a second colour.
+    badgeBg = C.amberSoft; badgeColor = C.amberDeep; badgeLabel = null;
   }
   // Queued for the next Drop — browsable, not claimable yet. "Live Drop" here
   // contradicted the disabled CTA right below it on the same card.
   if (item.status === "preview") {
-    badgeBg = C.amberMist; badgeColor = C.amberDeep; badgeLabel = "Sneak Peek"; cardAccent = C.amber;
+    badgeBg = C.amberSoft; badgeColor = C.amberDeep; badgeLabel = "Sneak Peek";
   }
-  // When liveMode is true, shelf items inherit the default "Live Drop" green styling (carryover is live)
   // Three distinct overlay states share the same "no claim button" treatment but each has
   // its own copy and accent colour:
   //   isClaimedByOther   — seed data marks this as already claimed by another neighbour (amber)
@@ -2008,33 +2048,40 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   // self-claim), no save (watching your own item is meaningless). Opening
   // the card still works; ItemDetail offers the Seller-view switch there.
   const ctaDisabled = isOwn || isClaimed || isPreview || hasPendingOffer;
-  // The claim CTA is always the brand green, whatever the card's accent. It's
-  // the same action on every card, so it reads as one button across the feed;
-  // the amber accent still marks a Shelf item on its badge and price.
-  const ctaBg = C.green;
+  // The claim CTA is always the brand green. It's the same action on every
+  // card, so it reads as one button across the feed.
+  const ctaBg = CARD.green;
 
-  // No outline on the card. A white card on the off-white C.page already has
-  // an edge, so the border was drawing a second one on top of it; the lift
-  // below is what gives the card its shape instead. The resting shadow is two
-  // layers on purpose — a tight 2px one for the edge, a wide soft one for the
-  // float — because a single wide shadow goes muddy against a tinted page.
-  // The fromPeek amber bar stays: it marks "saved from your sneak peek", which
-  // is information, not decoration.
+  // The card carries a 1px warm border again and only a whisper of shadow —
+  // the handoff asks for the edge to come from the border, not a lift, so the
+  // two-layer float that used to stand in for it is gone. The hover lift
+  // survives as a 2px nudge because the whole card is clickable and needs to
+  // say so. The fromPeek amber bar stays: it marks "saved from your sneak
+  // peek", which is information, not decoration.
   const peekBar = fromPeek ? "inset 4px 0 0 " + C.amber + ", " : "";
   const cardShadow = hovered
-    ? peekBar + "0 2px 4px rgba(31, 29, 25, 0.04), 0 14px 34px rgba(31, 29, 25, 0.10)"
-    : peekBar + "0 1px 2px rgba(31, 29, 25, 0.05), 0 4px 12px rgba(31, 29, 25, 0.06)";
+    ? peekBar + "0 4px 16px rgba(31, 29, 25, 0.08)"
+    : peekBar + "0 1px 2px rgba(31, 29, 25, 0.03)";
+
+  // "In Barrhaven" when we know the seller's neighbourhood. `item.dist` falls
+  // back to a distance label ("0.9 km"), which reads wrong behind "In", so it
+  // goes in bare.
+  const sellerPlace = item.sellerHood ? "In " + item.sellerHood : (item.dist || null);
 
   return (
-    <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 20, overflow: "hidden", border: "none", cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-3px)" : "translateY(0)", boxShadow: cardShadow, animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
-      <div style={{ position: "relative", aspectRatio: "4/3", background: "linear-gradient(135deg, " + badgeBg + ", " + C.sand + ")", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+    <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 22, overflow: "hidden", border: "1px solid " + CARD.border, cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-2px)" : "translateY(0)", boxShadow: cardShadow, animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
+      {/* Photo on plain white, contained rather than cropped. The tinted
+          gradient that used to sit back here coloured every product shot and
+          fought the white card; `contain` keeps the seller's framing intact
+          and leaves the negative space the handoff asks for. */}
+      <div style={{ position: "relative", aspectRatio: "4/3", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
         <ItemImage
           src={item.img}
           emojiSize={72}
-          imgStyle={{ filter: "saturate(1.05)", transform: hovered ? "scale(1.05)" : "scale(1)", transition: "transform 400ms ease" }}
-          spanStyle={{ filter: "saturate(1.05)", transform: hovered ? "scale(1.05)" : "scale(1)", transition: "transform 400ms ease" }}
+          imgStyle={{ objectFit: "contain", padding: isMobile ? 14 : 18, transform: hovered ? "scale(1.03)" : "scale(1)", transition: "transform 400ms ease" }}
+          spanStyle={{ transform: hovered ? "scale(1.03)" : "scale(1)", transition: "transform 400ms ease" }}
         />
-        <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 6 }}>
+        <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 10 }}>
           {/* Share button (BUG-051). Uses Web Share API on mobile so users
               get the native iOS/Android share sheet; clipboard fallback on
               desktop. Stop propagation so the click doesn't also open the
@@ -2043,20 +2090,26 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             onClick={async (e) => { e.stopPropagation(); await shareListing(item); }}
             aria-label="Share this listing"
             title="Share"
-            style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.95)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 2px 8px rgba(31,29,25,0.1)" }}
+            style={{ width: 42, height: 42, borderRadius: "50%", border: "none", background: CARD.iconBg, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
           >
-            <Share2 size={15} style={{ color: C.ink, strokeWidth: 2 }}/>
+            <Share2 size={20} strokeWidth={2} style={{ color: CARD.green }}/>
           </button>
           {/* Save stays available on an own listing too. Watching your own
               item is pointless, but it's allowed by the backend, so a seller
               who saved one before now needs this heart to unsave it — and
               the Saved page renders the same card. */}
-          <button onClick={e => { e.stopPropagation(); onToggleSave(item.id); }} style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: saved ? C.paper : "rgba(255,255,255,0.95)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", backdropFilter: "blur(8px)", boxShadow: "0 2px 8px rgba(31,29,25,0.1)" }}>
-            <Heart size={16} style={{ color: saved ? C.claret : C.ink, fill: saved ? C.claret : "none", strokeWidth: 2 }}/>
+          <button
+            onClick={e => { e.stopPropagation(); onToggleSave(item.id); }}
+            aria-label={saved ? "Remove from saved" : "Save this listing"}
+            aria-pressed={saved}
+            title={saved ? "Saved" : "Save"}
+            style={{ width: 42, height: 42, borderRadius: "50%", border: "none", background: CARD.iconBg, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+          >
+            <Heart size={20} strokeWidth={2} style={{ color: CARD.red, fill: saved ? CARD.red : "none" }}/>
           </button>
         </div>
         {badgeLabel && (
-          <span style={{ position: "absolute", top: 14, left: 14, fontFamily: F.head, fontSize: 11, fontWeight: 800, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: C.paper, color: badgeColor, border: "1.5px solid " + badgeColor + "30" }}>
+          <span style={{ position: "absolute", top: 14, left: 14, fontFamily: CARD.font, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: badgeBg, color: badgeColor, border: "1px solid " + badgeColor + "33" }}>
             {badgeLabel}
           </span>
         )}
@@ -2072,8 +2125,8 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             other neighbour still sees an ordinary claimable card. Only this
             viewer sees the badge. */}
         {offerPending && !isOwn && !isClaimed && !isPreview && (
-          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.paper, color: C.amberDeep, border: "1.5px solid " + C.amber + "55", display: "flex", alignItems: "center", gap: 4 }}>
-            <Clock size={10}/> Claim pending
+          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: CARD.font, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: C.amberSoft, color: C.amberDeep, border: "1px solid " + C.amber + "55", display: "flex", alignItems: "center", gap: 4 }}>
+            <Clock size={11}/> Claim pending
           </span>
         )}
         {/* The seller answered a question this buyer asked, and they haven't
@@ -2089,8 +2142,8 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             and claimable by everyone else, so dimming the photo would
             misreport its state to the only person who can't act on it. */}
         {isOwn && (
-          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.paper, color: C.greenDeep, border: "1.5px solid " + C.green + "55", display: "flex", alignItems: "center", gap: 4 }}>
-            <Package size={10}/> Your listing
+          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: CARD.font, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: C.greenMist, color: C.greenDeep, border: "1px solid " + C.green + "55", display: "flex", alignItems: "center", gap: 4 }}>
+            <Package size={11}/> Your listing
           </span>
         )}
         {isClaimed && (
@@ -2128,38 +2181,51 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
         )}
       </div>
 
-      <div style={{ padding: "16px 18px 18px", display: "flex", flexDirection: "column", flex: 1 }}>
+      <div style={{ padding: isMobile ? "16px 18px 18px" : "18px 22px 22px", display: "flex", flexDirection: "column", flex: 1 }}>
         {fromPeek && (
-          <p style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>
+          <p style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: CARD.font, fontSize: 10, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>
             <Heart size={9} fill={C.amber} stroke={C.amber} strokeWidth={0}/> Saved from your Sneak Peek
           </p>
         )}
-        <h3 style={{ fontFamily: F.head, fontSize: 16, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em", lineHeight: 1.25, marginBottom: 8 }}>{item.t}</h3>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-          <span style={{ fontFamily: F.head, fontSize: 24, fontWeight: 900, color: priceColor(item.p, cardAccent), letterSpacing: "-0.02em" }}>{priceText(item.p)}</span>
-          {item.op && <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.ash, textDecoration: "line-through" }}>${item.op}</span>}
-          {discount && <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.amberDeep, background: C.amberMist, padding: "2px 8px", borderRadius: 6 }}>Save {discount}%</span>}
+        <h3 style={{ fontFamily: CARD.font, fontSize: isMobile ? 19 : 23, fontWeight: 700, color: CARD.ink, letterSpacing: "-0.015em", lineHeight: 1.28, marginBottom: 10 }}>{item.t}</h3>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 16 }}>
+          {/* Price keeps priceColor() so a $0 listing still reads "Free" in
+              claret — the handoff's green is the price colour, not a rule
+              that every price is green. */}
+          <span style={{ fontFamily: CARD.font, fontSize: isMobile ? 29 : 32, fontWeight: 750, color: priceColor(item.p, CARD.green), letterSpacing: "-0.02em", lineHeight: 1.1 }}>{priceText(item.p)}</span>
+          {item.op && <span style={{ fontFamily: CARD.font, fontSize: 13, fontWeight: 500, color: CARD.muted, textDecoration: "line-through" }}>${item.op}</span>}
+          {discount && <span style={{ fontFamily: CARD.font, fontSize: 11, fontWeight: 700, color: C.amberDeep, background: C.amberMist, padding: "3px 8px", borderRadius: 6 }}>Save {discount}%</span>}
           {/* Seller's average rating, opposite the price. Only drawn once a
               buyer has actually rated them — an unrated seller shows nothing
               rather than a default score that would read as a real one. */}
           {typeof item.sellerRating === "number" && (
             <span
               title={"Rated " + item.sellerRating.toFixed(1) + " of 5 across " + item.sellerRatingCount + " completed pickup" + (item.sellerRatingCount === 1 ? "" : "s")}
-              style={{ marginLeft: "auto", alignSelf: "center", display: "flex", alignItems: "center", gap: 3, fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink }}
+              style={{ marginLeft: "auto", alignSelf: "center", display: "flex", alignItems: "center", gap: 3, fontFamily: CARD.font, fontSize: 14, fontWeight: 650, color: CARD.ink }}
             >
-              <Star size={13} fill={C.amber} strokeWidth={0} style={{ color: C.amber }}/> {item.sellerRating.toFixed(1)}
+              <Star size={14} fill={C.amber} strokeWidth={0} style={{ color: C.amber }}/> {item.sellerRating.toFixed(1)}
             </span>
           )}
         </div>
 
-        <div style={{ paddingTop: 12, borderTop: "1px solid " + C.fawn, display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            <div style={{ width: 20, height: 20, borderRadius: "50%", background: avatarBg(item.seller), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 9, fontWeight: 800 }}>{item.seller.charAt(0)}</div>
-            <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, color: C.ink }}>{item.seller}</span>
+        {/* Seller row — avatar beside a stacked name + metadata line, the way
+            the handoff lays it out. The distance used to sit far right on its
+            own; it belongs with the seller, since it's their distance. */}
+        <div style={{ paddingTop: 16, borderTop: "1px solid " + CARD.border, display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+          <div style={{ width: 38, height: 38, flexShrink: 0, borderRadius: "50%", background: avatarBg(item.seller), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: CARD.font, fontSize: 16, fontWeight: 700 }}>{item.seller.charAt(0)}</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: CARD.font, fontSize: 15, fontWeight: 650, color: CARD.ink, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.seller}</div>
+            <div style={{ fontFamily: CARD.font, fontSize: 13, fontWeight: 450, color: CARD.muted, lineHeight: 1.45, display: "flex", alignItems: "center", gap: 5 }}>
+              <span>Neighbour</span>
+              {sellerPlace && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <MapPin size={12} style={{ flexShrink: 0 }}/>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sellerPlace}</span>
+                </>
+              )}
+            </div>
           </div>
-          <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.mink, display: "flex", alignItems: "center", gap: 3 }}>
-            <MapPin size={10}/> {item.dist}
-          </span>
         </div>
 
         <button
@@ -2173,28 +2239,32 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             if (onClaimNow) onClaimNow(); else if (onOpen) onOpen();
           }}
           disabled={!isOwn && (isClaimed || hasPendingOffer)}
+          onMouseEnter={() => setCtaHovered(true)}
+          onMouseLeave={() => setCtaHovered(false)}
           className="cta-primary"
           style={{
             width: "100%",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            padding: "10px 0", borderRadius: 12,
-            border: isOwn ? "1.5px solid " + C.fawn : "none",
-            background: isOwn ? C.paper : isPreview ? C.sand : hasPendingOffer ? C.amberMist : ctaBg,
-            color: isOwn ? C.ink : isPreview ? C.mink : hasPendingOffer ? C.amberDeep : "#fff",
-            fontFamily: F.head, fontSize: 12, fontWeight: 800,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            minHeight: 50, padding: "0 12px", borderRadius: 14,
+            border: isOwn ? "1px solid " + CARD.border : "none",
+            background: isOwn ? C.paper : isPreview ? C.sand : hasPendingOffer ? C.amberMist : (ctaHovered && !ctaDisabled ? CARD.greenHover : ctaBg),
+            color: isOwn ? CARD.ink : isPreview ? CARD.muted : hasPendingOffer ? C.amberDeep : "#fff",
+            fontFamily: CARD.font, fontSize: isMobile ? 16 : 17, fontWeight: 700,
             cursor: (!isOwn && (isClaimed || hasPendingOffer)) ? "not-allowed" : "pointer",
             opacity: (isClaimed && !isOwn) ? 0.4 : 1,
             marginTop: "auto",
-            boxShadow: (isOwn || item.layer === "shelf" || isPreview || hasPendingOffer) ? "none" : "0 2px 0 " + ctaBg + "40",
+            // The handoff asks for a flat button; the 2px underglow that gave
+            // the old CTA its weight is gone now that the label carries it.
+            boxShadow: "none",
           }}
         >
           {isOwn
-            ? <><Package size={13}/> Manage in Seller view</>
+            ? <><Package size={17}/> Manage in Seller view</>
             : isPreview
-              ? <><Clock size={13}/> Opens {dropOpenDay()} {dropOpenHour()}</>
+              ? <><Clock size={17}/> Opens {dropOpenDay()} {dropOpenHour()}</>
               : hasPendingOffer
-                ? <><Clock size={13}/> Waiting for seller</>
-                : ctaLabel}
+                ? <><Clock size={17}/> Waiting for seller</>
+                : <><ShoppingBag size={18} strokeWidth={2}/> {ctaLabel}</>}
         </button>
       </div>
     </article>
