@@ -2252,12 +2252,16 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 380px", gap: isMobile ? 24 : 40, alignItems: "start" }}>
         {/* Image area with locked-preview styling */}
         <div>
-          <div style={{ position: "relative", aspectRatio: "4/3", borderRadius: 24, background: "linear-gradient(135deg, " + C.amberMist + " 0%, " + C.sand + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn + "80", marginBottom: 24, overflow: "hidden" }}>
+          {/* Same contain + height cap as the live item detail hero — this is
+              the same page for a queued item, and a cropped preview is worse
+              here: deciding whether to save it is the only thing this page is
+              for. */}
+          <div style={{ position: "relative", aspectRatio: "4/3", maxHeight: isMobile ? 340 : 480, borderRadius: 24, background: "linear-gradient(135deg, " + C.amberMist + " 0%, " + C.sand + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn + "80", marginBottom: 24, overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at center, transparent 40%, " + C.amber + "12 100%)", pointerEvents: "none" }}/>
             <ItemImage
               src={heroSrc}
               emojiSize={160}
-              imgStyle={{ filter: "saturate(0.85)", opacity: 0.92 }}
+              imgStyle={{ objectFit: "contain", padding: isMobile ? 10 : 16, filter: "saturate(0.85)", opacity: 0.92 }}
               spanStyle={{ filter: "saturate(0.85)", opacity: 0.92 }}
             />
 
@@ -3726,8 +3730,20 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
               BUG-066 — heroSrc swaps with the active thumbnail. Photo
               count pill in the bottom-right tells the buyer there's more
               to see when sources > 1. */}
-          <div style={{ position: "relative", aspectRatio: "4/3", borderRadius: 16, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn, marginBottom: isMobile ? 12 : 16, overflow: "hidden" }}>
-            <ItemImage src={heroSrc} emojiSize={160}/>
+          {/* The hero shows the WHOLE item, so it contains rather than covers.
+              It used to inherit ItemImage's default objectFit: "cover", which
+              crops to fill — fine for the uniform card grid, wrong here: a
+              tall item (a trimmer, a floor pump, a chair) had its top and
+              bottom sliced off on the one page where the buyer is trying to
+              judge what they're claiming.
+
+              maxHeight caps the box as well. At 4/3 the left column runs to
+              roughly 640px tall on a desktop, which pushed the item past the
+              fold; the cap keeps the whole photo on screen next to the
+              purchase panel. Padding keeps a contained image clear of the
+              badges and arrows sitting on top of it. */}
+          <div style={{ position: "relative", aspectRatio: "4/3", maxHeight: isMobile ? 340 : 480, borderRadius: 16, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn, marginBottom: isMobile ? 12 : 16, overflow: "hidden" }}>
+            <ItemImage src={heroSrc} emojiSize={160} imgStyle={{ objectFit: "contain", padding: isMobile ? 10 : 16 }}/>
             {/* BUG-068 — prev/next arrow buttons on the hero. Always visible
                 when there are 2+ photos so buyers can flip without scrolling
                 down to thumbnails. Arrow keys on keyboard also work (see
