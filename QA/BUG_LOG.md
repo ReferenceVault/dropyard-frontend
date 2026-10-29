@@ -40,6 +40,31 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-109  ·  P2  ·  Seller onboarding → "Complete your seller profile" → Neighborhood + Postal code  ·  Status: Fixed (verify)
+**Title:** Every seller is "Barrhaven", nobody is anywhere in particular, and buyers see the same distance on every card.
+**Found by:** Barrhaven neighbourhood work · **Found date:** 2026-10-29 · **Test case:** exploratory
+**Repro steps:** Sign in as a buyer → "List New Item" → the seller-profile modal → type any postal code.
+**Expected:** The form establishes *where in Barrhaven* this seller is, and refuses a seller we can't serve.
+**Actual:** Three separate problems in one 4-field form:
+  1. **Neighborhood was free text, autofilled from the FSA table.** `/api/geo/postal` is FSA-level, and all of Barrhaven is a single row — `K2J → "Nepean (Barrhaven)" → "Barrhaven"`. So the autofill could only ever produce the one word everybody already shares, and anything typed by hand ("barrhaven", "Half moon bay", "K2J", "") was saved verbatim and printed to buyers.
+  2. **No service-area check anywhere.** A K2M (Kanata South) seller completed onboarding and listed items, while `/faq` tells visitors we're "currently restricted to people physically located in Barrhaven". Nothing in the product enforced the page.
+  3. **lat/lng came from the FSA centroid**, so every K2J user sat on the exact same point. `computeDistanceLabel` → `haversineKm` → 0 km → `labelDistance` floored it to "Under 2 km" on every single card. The distance that's meant to drive claims carried no information.
+  Separately, this endpoint wrote the **full postal code** into `User.zone` ("K2J 4A8") while buyer onboarding wrote the FSA ("K2J"), so `GET /api/items?zone=` could never match both.
+**Environment:** Chrome, 1280px + 360px, local dev
+**Fix commit:** _(local, sunny branch)_
+**Re-tested:** `tsc` clean both packages, lint clean (same 83 problems in `DropYard_SellerDashboard.jsx` before and after, none in the new files), `next build` compiles. Helper behaviour exercised directly: FSA classification (K2J core / K2G·K2R edge / K2M·K1A outside / garbage invalid), alias resolution ("barrhaven", "Nepean (Barrhaven)", "hearts desire" → canonical), and centroid spread (Quinn's Pointe ↔ Orchard Estates 6.2 km, Longfields ↔ Chapman Mills 1.6 km). Browser pass pending.
+**Notes:** The missing concept was a list of Barrhaven's own neighbourhoods. It now exists in two mirrored modules — [lib/barrhaven.ts](dropyard-frontend/lib/barrhaven.ts) for the picker and [src/lib/barrhaven.ts](dropyard_backend/src/lib/barrhaven.ts) for validation — holding 13 neighbourhoods plus a "Barrhaven (elsewhere)" escape hatch, each with its FSA, a landmark line, and an approximate centroid.
+
+Fix, in the form: postal code moved **first**, because it decides whether the rest applies. It reports one of four states under the field (in / edge / not-your-area-yet / not-a-postal-code) with no network round trip — the check is local data. Neighborhood became a `<select>` grouped as "In K2J" / "Elsewhere in Barrhaven", with the FSA's own neighbourhoods hoisted to the top and a landmark hint under the selection. An FSA with exactly one neighbourhood (K2G → Davidson Heights) is preselected. Outside the area, the submit button is disabled and the panel names the place from the Geonames table ("DropYard isn't in Kanata (Bridlewood) yet") with a mailto — the one use the FSA table is genuinely right for.
+
+Backend: `POST /me/seller-onboarding` and `PATCH /profile` both reject out-of-area postal codes (`code: 'outside_service_area'`, overridable with `DROPYARD_ENFORCE_SERVICE_AREA=false` when the service area expands) and resolve the neighbourhood through the shared list, saving the canonical name. Coordinates now come from the neighbourhood centroid, so distances inside Barrhaven spread over ~1–6 km instead of collapsing to zero. `zone` is the FSA on both paths.
+
+Also: Settings → Pickup's neighbourhood was read-only, labelled "contact support to change" — which strands anyone who moves within Barrhaven, the single most common reason to be selling. It's the same validated dropdown now, and `PATCH /me/preferences` moves the cached centroid with it.
+
+**Existing rows need one pass:** `npx ts-node scripts/normalize-barrhaven-geo.ts` (dry run; `--apply` to write) normalises `zone` to the FSA on users and items, canonicalises free-text neighbourhoods, and re-points lat/lng at neighbourhood centroids. Rows it can't place are listed, not guessed at.
+
+**Known gap:** the buyer half is enforced at the API only. `PATCH /api/auth/profile` is the buyer's postal-code endpoint and now runs the same gate, but **no UI calls it** — and `POST /api/claims` has no caller either, so there is currently no "buyer initiates a purchase" moment to hang a form on. When the claim flow is wired, the same two questions belong there.
+
 ### BUG-108  ·  P1  ·  /buyer Discover feed — only the first 20 items exist  ·  Status: Fixed (verify)
 **Title:** Listings show "Live in Drop" to their seller but never appear on the buyer dashboard.
 **Found by:** Narveer · **Found date:** 2026-10-18 · **Test case:** exploratory

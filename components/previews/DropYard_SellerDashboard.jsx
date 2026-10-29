@@ -21,6 +21,15 @@ import {
 } from "@/lib/dropCycle";
 import { submitSubmission, isValidEmail } from "@/lib/submissions";
 import {
+  BARRHAVEN_NEIGHBOURHOODS,
+  SUPPORT_EMAIL,
+  findNeighbourhood,
+  formatPostalCode,
+  groupedNeighbourhoodOptions,
+  neighbourhoodsForFsa,
+  serviceAreaForPostalCode,
+} from "@/lib/barrhaven";
+import {
   Camera, X, Check, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Sparkles, Zap,
   MessageCircle, Package, Eye, EyeOff, ArrowRight, User, Clock, Calendar,
   CheckCircle, MapPin, LayoutGrid, Box, DollarSign, ClipboardList,
@@ -10632,26 +10641,42 @@ function SettingsPayments({ user, onSuccess }) {
 }
 
 // ─── Settings · Pickup ───
-// Single editable field — defaultPickupAddress — plus a read-only "buyer-facing
-// neighbourhood" pulled from User.neighborhood (managed in onboarding).
+// defaultPickupAddress plus the buyer-facing neighbourhood. The neighbourhood
+// used to be read-only ("contact support to change"), which left anyone who
+// moved within Barrhaven — the most common reason to be selling in the first
+// place — showing buyers the wrong end of town. It's the same validated list
+// as onboarding, so changing it can't produce a name we don't know.
 function SettingsPickup({ user, onSuccess }) {
   const { refreshUser } = useAuth();
   const [address, setAddress] = useState(user?.defaultPickupAddress || "");
+  const [neighborhoodId, setNeighborhoodId] = useState(
+    () => findNeighbourhood(user?.neighborhood)?.id ?? ""
+  );
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => { setAddress(user?.defaultPickupAddress || ""); }, [user?.defaultPickupAddress]);
+  useEffect(() => {
+    setNeighborhoodId(findNeighbourhood(user?.neighborhood)?.id ?? "");
+  }, [user?.neighborhood]);
 
-  const dirty = address.trim() !== (user?.defaultPickupAddress || "");
+  const savedNeighborhoodId = findNeighbourhood(user?.neighborhood)?.id ?? "";
+  const dirty =
+    address.trim() !== (user?.defaultPickupAddress || "") ||
+    neighborhoodId !== savedNeighborhoodId;
 
   async function submit(e) {
     e.preventDefault();
     setSaving(true); setError("");
     try {
+      const selected = BARRHAVEN_NEIGHBOURHOODS.find(n => n.id === neighborhoodId);
       await apiRequest("/api/auth/me/preferences", {
         method: "PATCH",
-        body: JSON.stringify({ defaultPickupAddress: address.trim() }),
+        body: JSON.stringify({
+          defaultPickupAddress: address.trim(),
+          ...(selected ? { neighborhood: selected.name } : {}),
+        }),
       });
       await refreshUser();
       setSavedAt(Date.now());
@@ -10674,8 +10699,22 @@ function SettingsPickup({ user, onSuccess }) {
           disabled={saving}
         />
       </SF_Field>
-      <SF_Field label="Buyer-facing neighbourhood" helper="Set during onboarding — contact support to change.">
-        <SF_Input value={user?.neighborhood || ""} readOnly disabled style={{ background: C.sand, color: C.mink }}/>
+      <SF_Field label="Buyer-facing neighbourhood" helper="Shown on every listing, and what buyers sort by. Update it if you move within Barrhaven.">
+        <select
+          value={neighborhoodId}
+          onChange={e => setNeighborhoodId(e.target.value)}
+          disabled={saving}
+          style={{
+            width: "100%", padding: "11px 14px", borderRadius: 12,
+            border: "1.5px solid " + C.fawn, background: C.paper, color: neighborhoodId ? C.ink : C.ash,
+            fontFamily: F.body, fontSize: 14, outline: "none", cursor: saving ? "not-allowed" : "pointer",
+          }}
+        >
+          <option value="">Choose your neighbourhood…</option>
+          {BARRHAVEN_NEIGHBOURHOODS.map(n => (
+            <option key={n.id} value={n.id}>{n.name}</option>
+          ))}
+        </select>
       </SF_Field>
       {error && <SF_ErrorBanner message={error}/>}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: 12, borderTop: "1px solid " + C.fawn }}>
@@ -10699,10 +10738,21 @@ function SettingsPickup({ user, onSuccess }) {
    Replaces the old Moving Sale registration flow as the buyer→seller
    upgrade path. Server-side gate at POST /api/items enforces the same
    check, so this UI is the primary mechanism but not the only one.
+
+   Location is two questions, in this order:
+     postal code  → are we in your area at all? (lib/barrhaven, local)
+     neighbourhood→ which part of Barrhaven, from a fixed list.
+   It used to be one free-text box autofilled from the FSA table, which
+   could only ever answer "Barrhaven" — every seller got the same name and
+   the same centroid, so every buyer saw the same distance. The list is
+   also what makes the name safe to print on a listing: the backend
+   rejects anything that isn't on it.
    ============================================================ */
 function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
-  const [neighborhood, setNeighborhood] = useState(user?.neighborhood ?? "");
-  const [postalCode, setPostalCode]     = useState(user?.postalCode ?? "");
+  const [neighborhoodId, setNeighborhoodId] = useState(
+    () => findNeighbourhood(user?.neighborhood)?.id ?? ""
+  );
+  const [postalCode, setPostalCode]     = useState(() => formatPostalCode(user?.postalCode ?? ""));
   const [pickupAddress, setPickupAddress] = useState(user?.defaultPickupAddress ?? "");
   const [methods, setMethods] = useState(() => {
     const initial = Array.isArray(user?.acceptedPaymentMethods) && user.acceptedPaymentMethods.length > 0
@@ -10713,41 +10763,46 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // ── Neighborhood autofill from postal code ──────────────────────────────
-  // GET /api/geo/postal reads the local Geonames FSA table — no third-party
-  // geocoder, no API key. We only fill the field while the user hasn't typed
-  // their own value, so autofill never fights the person using the form.
-  // Clearing the field re-arms it.
-  const neighborhoodTouched = useRef(Boolean(user?.neighborhood));
-  const [autofillNote, setAutofillNote] = useState("");
+  // ── Service area ────────────────────────────────────────────────────────
+  // DropYard is Barrhaven-only, so the postal code decides whether this form
+  // can be submitted at all, and which neighbourhoods we show first. The
+  // check is local (lib/barrhaven) — no request, no spinner, no waiting on
+  // the network to tell someone they're in the right place.
+  const area = serviceAreaForPostalCode(postalCode);
+  const optionGroups = useMemo(() => groupedNeighbourhoodOptions(area.fsa), [area.fsa]);
+  const selected = BARRHAVEN_NEIGHBOURHOODS.find(n => n.id === neighborhoodId) ?? null;
 
+  // One FSA, one neighbourhood (K2G → Davidson Heights): pick it rather than
+  // making the seller confirm the only possible answer. Never overrides a
+  // choice already made.
+  const neighborhoodTouched = useRef(Boolean(user?.neighborhood));
   useEffect(() => {
-    const fsa = postalCode.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase();
-    if (!/^[A-Z]\d[A-Z]$/.test(fsa) || neighborhoodTouched.current) {
-      setAutofillNote("");
-      return;
-    }
+    if (neighborhoodTouched.current || !area.inServiceArea) return;
+    const candidates = neighbourhoodsForFsa(area.fsa);
+    if (candidates.length === 1) setNeighborhoodId(candidates[0].id);
+  }, [area.fsa, area.inServiceArea]);
+
+  // Name the place we don't serve yet — "We're not in Kanata (Bridlewood)
+  // yet" lands better than a generic refusal, and it's the one case where
+  // the Geonames FSA table is the right source. Debounced; failure is silent.
+  const [outsidePlace, setOutsidePlace] = useState("");
+  useEffect(() => {
+    if (area.status !== "outside" || !area.fsa) { setOutsidePlace(""); return; }
     let cancelled = false;
-    // Debounced so typing a full postal code sends one request, not six.
     const timer = setTimeout(async () => {
       try {
-        const data = await apiRequest(`/api/geo/postal?code=${encodeURIComponent(fsa)}`);
-        if (cancelled || neighborhoodTouched.current || !data?.neighborhood) return;
-        setNeighborhood(data.neighborhood);
-        setAutofillNote(`Filled from ${data.fsa} — edit if it's not right.`);
+        const data = await apiRequest(`/api/geo/postal?code=${encodeURIComponent(area.fsa)}`);
+        if (!cancelled && data?.place) setOutsidePlace(data.place);
       } catch {
-        // Unknown FSA or offline: leave the field for the user to type.
-        if (!cancelled) setAutofillNote("");
+        if (!cancelled) setOutsidePlace("");
       }
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [postalCode]);
+  }, [area.status, area.fsa]);
 
   const onNeighborhoodChange = (value) => {
-    // Empty again → let autofill take over on the next postal-code change.
-    neighborhoodTouched.current = value.trim().length > 0;
-    setAutofillNote("");
-    setNeighborhood(value);
+    neighborhoodTouched.current = value.length > 0;
+    setNeighborhoodId(value);
   };
 
   const toggleMethod = (m) => {
@@ -10761,8 +10816,13 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
   const submit = async (e) => {
     e.preventDefault();
     setError("");
-    if (!neighborhood.trim()) { setError("Neighborhood is required."); return; }
-    if (postalCode.trim().length < 3) { setError("Enter a valid postal code."); return; }
+    if (!area.inServiceArea) {
+      setError(area.status === "outside"
+        ? "That postal code is outside Barrhaven."
+        : "Enter your Barrhaven postal code.");
+      return;
+    }
+    if (!selected) { setError("Choose your neighbourhood."); return; }
     if (pickupAddress.trim().length < 5) { setError("Enter a pickup address."); return; }
     if (methods.size === 0) { setError("Choose at least one payment method."); return; }
     setSubmitting(true);
@@ -10771,7 +10831,7 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
         method: "POST",
         token:  accessToken ?? undefined,
         body: JSON.stringify({
-          neighborhood:           neighborhood.trim(),
+          neighborhood:           selected.name,
           postalCode:             postalCode.trim(),
           defaultPickupAddress:   pickupAddress.trim(),
           acceptedPaymentMethods: Array.from(methods),
@@ -10815,7 +10875,7 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
           Complete your seller profile
         </h2>
         <p style={{ fontFamily: F.body, fontSize: 14, color: C.mink, marginBottom: 20, lineHeight: 1.55 }}>
-          We need a few details before you can list items. Buyers in your neighborhood will see this when they consider claiming your items.
+          We need a few details before you can list items. Buyers see your neighbourhood and how far away you are when they consider claiming — the closer you are, the more likely they claim.
         </p>
 
         {error && (
@@ -10825,34 +10885,71 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
         )}
 
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <Field label="Neighborhood">
-            <input
-              type="text" value={neighborhood} onChange={e => onNeighborhoodChange(e.target.value)}
-              placeholder="e.g. Barrhaven"
-              required
-              style={fieldInput}
-            />
-            {autofillNote && (
-              <p style={{ fontFamily: F.body, fontSize: 11, color: C.mink, marginTop: 5 }}>
-                {autofillNote}
-              </p>
-            )}
-          </Field>
+          {/* Postal code comes first: it decides whether the rest of the form
+              applies at all, and which neighbourhoods we list. */}
           <Field label="Postal code">
             <input
-              type="text" value={postalCode} onChange={e => setPostalCode(e.target.value.toUpperCase())}
-              placeholder="K2J"
-              required maxLength={10}
-              style={fieldInput}
+              type="text" value={postalCode}
+              onChange={e => setPostalCode(formatPostalCode(e.target.value))}
+              placeholder="K2J 4A8"
+              required maxLength={7}
+              inputMode="text" autoComplete="postal-code" autoCapitalize="characters"
+              style={{ ...fieldInput, letterSpacing: "0.08em" }}
             />
+            <ServiceAreaNote area={area} place={outsidePlace}/>
           </Field>
+
+          <Field label="Neighbourhood">
+            <div style={{ position: "relative" }}>
+              <select
+                value={neighborhoodId}
+                onChange={e => onNeighborhoodChange(e.target.value)}
+                disabled={!area.inServiceArea}
+                required
+                style={{
+                  ...fieldInput,
+                  appearance: "none",
+                  paddingRight: 38,
+                  cursor: area.inServiceArea ? "pointer" : "not-allowed",
+                  background: area.inServiceArea ? C.paper : C.sand,
+                  color: area.inServiceArea && neighborhoodId ? C.ink : C.ash,
+                }}
+              >
+                <option value="">
+                  {area.inServiceArea ? "Choose your neighbourhood…" : "Enter a Barrhaven postal code first"}
+                </option>
+                {optionGroups.map(group => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.options.map(n => (
+                      <option key={n.id} value={n.id}>{n.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <ChevronDown
+                size={16}
+                style={{ position: "absolute", right: 13, top: "50%", transform: "translateY(-50%)", color: C.ash, pointerEvents: "none" }}
+              />
+            </div>
+            <p style={{ fontFamily: F.body, fontSize: 11, color: C.mink, marginTop: 5, lineHeight: 1.5 }}>
+              {selected
+                ? selected.landmark
+                : "Barrhaven is one Drop, but buyers sort by how close you are. Pick the part you actually live in."}
+            </p>
+          </Field>
+
           <Field label="Default pickup address">
             <input
               type="text" value={pickupAddress} onChange={e => setPickupAddress(e.target.value)}
-              placeholder="123 Example St, Ottawa"
+              placeholder="123 Longfields Dr, Barrhaven"
               required
-              style={fieldInput}
+              disabled={!area.inServiceArea}
+              autoComplete="street-address"
+              style={{ ...fieldInput, background: area.inServiceArea ? C.paper : C.sand }}
             />
+            <p style={{ fontFamily: F.body, fontSize: 11, color: C.mink, marginTop: 5 }}>
+              Only shared with a buyer after you confirm their claim.
+            </p>
           </Field>
           <Field label="Accepted payment methods">
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -10888,15 +10985,15 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
               Cancel
             </button>
             <button
-              type="submit" disabled={submitting}
+              type="submit" disabled={submitting || !area.inServiceArea}
               style={{
                 padding: "11px 22px", borderRadius: 12, border: "none",
-                background: submitting ? C.greenMist : C.green,
-                color: submitting ? C.greenDeep : "#fff",
+                background: submitting || !area.inServiceArea ? C.greenMist : C.green,
+                color: submitting || !area.inServiceArea ? C.greenDeep : "#fff",
                 fontFamily: F.head, fontSize: 13, fontWeight: 800,
-                cursor: submitting ? "not-allowed" : "pointer",
+                cursor: submitting || !area.inServiceArea ? "not-allowed" : "pointer",
                 display: "inline-flex", alignItems: "center", gap: 6,
-                boxShadow: submitting ? "none" : "0 2px 0 " + C.greenDeep,
+                boxShadow: submitting || !area.inServiceArea ? "none" : "0 2px 0 " + C.greenDeep,
               }}
             >
               {submitting && <Loader2 size={14} className="animate-spin"/>}
@@ -10917,6 +11014,54 @@ function Field({ label, children }) {
       </span>
       {children}
     </label>
+  );
+}
+
+/* Live verdict under the postal-code field. Four states, because "we don't
+   serve you yet" and "that isn't a postal code" need different answers —
+   one is a product boundary, the other is a typo. */
+function ServiceAreaNote({ area, place }) {
+  if (area.status === "partial") {
+    return (
+      <p style={{ fontFamily: F.body, fontSize: 11, color: C.mink, marginTop: 5 }}>
+        We&rsquo;re live in Barrhaven — K2J, plus the K2G and K2R edges.
+      </p>
+    );
+  }
+
+  if (area.status === "invalid") {
+    return (
+      <p style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: F.body, fontSize: 11, color: C.claret, marginTop: 6 }}>
+        <AlertCircle size={13}/> That doesn&rsquo;t look like a postal code. Try K2J 4A8.
+      </p>
+    );
+  }
+
+  if (area.status === "outside") {
+    return (
+      <div style={{ marginTop: 8, padding: "11px 13px", borderRadius: 12, background: C.amberMist, border: "1px solid " + C.amberSoft }}>
+        <p style={{ display: "flex", alignItems: "flex-start", gap: 7, fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.amberDeep, marginBottom: 4 }}>
+          <MapPin size={14} style={{ marginTop: 1, flexShrink: 0 }}/>
+          DropYard isn&rsquo;t in {place || area.fsa} yet
+        </p>
+        <p style={{ fontFamily: F.body, fontSize: 12, color: C.mink, lineHeight: 1.5 }}>
+          We&rsquo;re Barrhaven-only while the first Drops find their feet. Email{" "}
+          <a href={`mailto:${SUPPORT_EMAIL}?subject=DropYard%20in%20${encodeURIComponent(place || area.fsa || "my area")}`} style={{ color: C.green, fontWeight: 700 }}>
+            {SUPPORT_EMAIL}
+          </a>{" "}
+          and tell us where you are — it genuinely decides where we go next.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <p style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: F.body, fontSize: 11, color: C.greenDeep, marginTop: 6, fontWeight: 600 }}>
+      <Check size={13} strokeWidth={3}/>
+      {area.status === "core"
+        ? `${area.fsa} — you're in the Barrhaven Drop.`
+        : `${area.fsa} — Barrhaven edge, you're in.`}
+    </p>
   );
 }
 
