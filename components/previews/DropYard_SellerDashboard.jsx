@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiRequest, uploadItemPhoto } from "@/lib/api";
 import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
+import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { useAuth } from "@/context/AuthContext";
 import { useDropCycle } from "@/context/DropCycleContext";
 import { formatPickupDateList, formatPickupDateLong } from "@/lib/pickupDates";
@@ -21,13 +22,23 @@ import {
 } from "@/lib/dropCycle";
 import { submitSubmission, isValidEmail } from "@/lib/submissions";
 import {
-  Camera, X, Check, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Sparkles, Zap,
-  MessageCircle, Package, Eye, ArrowRight, User, Clock, Calendar,
+  BARRHAVEN_NEIGHBOURHOODS,
+  SUPPORT_EMAIL,
+  findNeighbourhood,
+  formatPostalCode,
+  groupedNeighbourhoodOptions,
+  neighbourhoodsForFsa,
+  serviceAreaForPostalCode,
+} from "@/lib/barrhaven";
+import {
+  Camera, X, Check, CheckCheck, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Sparkles, Zap,
+  MessageCircle, Package, Eye, EyeOff, ArrowRight, User, Clock, Calendar,
   CheckCircle, MapPin, LayoutGrid, Box, DollarSign, ClipboardList,
   MessageSquare, Plus, Truck, History, ArrowLeft, Shield, Tag, TrendingDown,
   Home, Heart, Users, Mail, Phone, Info, Lock, CreditCard, Banknote, Upload, RefreshCw,
   Star, Settings, BarChart3, Bell, Award, Leaf, Send, Share2, AlertCircle,
-  Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag, Archive
+  Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag, Archive,
+  Paperclip, Smile
 } from "lucide-react";
 
 /* ============================================================
@@ -86,6 +97,31 @@ const F = {
   h:    '"Nunito", -apple-system, BlinkMacSystemFont, sans-serif',
   b:    '"Nunito", -apple-system, BlinkMacSystemFont, sans-serif',
 };
+
+/* ============================================================
+   PRICE DISPLAY
+   A $0 listing is a giveaway, not an item that costs nothing —
+   "$0" reads like a bug or a missing value. Everywhere a price
+   is printed it becomes "Free", in claret rather than the usual
+   green, so it reads as its own thing and not as the cheapest
+   price on the page.
+
+   Two helpers rather than one component: the price sits inside
+   a dozen different type scales and accents, so each call site
+   keeps its own styling and only swaps the text and the colour.
+   `normal` is whatever colour that site already used.
+   Mirrored in DropYard_BuyerDashboard.jsx — the two dashboards
+   keep their own copies of these tokens by design.
+   ============================================================ */
+function isFreePrice(p) {
+  return typeof p === "number" && p <= 0;
+}
+function priceText(p) {
+  return isFreePrice(p) ? "Free" : "$" + p;
+}
+function priceColor(p, normal) {
+  return isFreePrice(p) ? C.claret : normal;
+}
 
 // Viewport hook — reused across views that need a mobile branch (Inventory,
 // later: Orders / Messages / etc). 768px matches the sidebar collapse breakpoint.
@@ -1696,7 +1732,7 @@ function GoingLivePreview({ items, onNav }) {
             </div>
             <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.ink, lineHeight: 1.3, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.005em" }}>{it.title}</p>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
-              <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 900, color: C.greenDeep, letterSpacing: "-0.01em" }}>${it.price}</span>
+              <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 900, color: priceColor(it.price, C.greenDeep), letterSpacing: "-0.01em" }}>{priceText(it.price)}</span>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 6, background: it.layer === "drop" ? C.amberMist : C.greenMist, color: it.layer === "drop" ? C.amberDeep : C.greenDeep, letterSpacing: "0.04em", textTransform: "uppercase", border: "1px solid " + (it.layer === "drop" ? C.amber + "30" : C.green + "30") }}>
                 <span style={{ position: "relative", display: "inline-flex", width: 5, height: 5 }}>
                   <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: it.layer === "drop" ? C.amberDeep : C.greenDeep, opacity: 0.4, animation: "pulseLive 1.8s ease-in-out infinite" }}/>
@@ -5728,6 +5764,33 @@ function ConversationItemThumb({ item, size, emojiSize }) {
   );
 }
 
+// ─── Read receipts ──────────────────────────────────────────────────────────
+// Mirror of the buyer dashboard's ReadTicks. The server records how far each
+// side has read and pushes `conversation:read` to the other party, so "seen"
+// is a comparison between a message's createdAt and the buyer's cursor.
+//
+// Two states, not WhatsApp's three: one grey tick means the server has it,
+// two blue ticks mean the buyer has opened the thread since. Nothing here
+// tracks delivery to a device, so there is no grey double-tick to claim it.
+const SEEN_BLUE = "#2F6FB3";
+function ReadTicks({ sentAt, otherLastReadAt }) {
+  if (!sentAt) return null;
+  const sent = new Date(sentAt).getTime();
+  const read = otherLastReadAt ? new Date(otherLastReadAt).getTime() : 0;
+  const seen = Number.isFinite(sent) && read >= sent;
+  return (
+    <span
+      title={seen ? "Seen" : "Sent"}
+      aria-label={seen ? "Seen" : "Sent"}
+      style={{ display: "inline-flex", alignItems: "center", marginLeft: 4, verticalAlign: "middle" }}
+    >
+      {seen
+        ? <CheckCheck size={13} strokeWidth={2.6} style={{ color: SEEN_BLUE }}/>
+        : <Check size={13} strokeWidth={2.6} style={{ color: C.ash }}/>}
+    </span>
+  );
+}
+
 function adaptSellerConversation(api, myId) {
   if (!api) return null;
   // Seller view only shows conversations where the current user IS the seller.
@@ -5770,6 +5833,9 @@ function adaptSellerConversation(api, myId) {
         ? api.otherUser.previousPurchases
         : 0,
     },
+    // How far the buyer has read — the basis of the read ticks on my own
+    // messages. Any message I sent at or before this moment has been seen.
+    otherLastReadAt: api.otherLastReadAt || null,
     lastMsg:  api.lastMessage?.body || "",
     lastTime: relativeTimeShort(api.lastMessageAt),
     messages: [],
@@ -6232,6 +6298,36 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   const [errorMsg, setErrorMsg]         = useState(null);
   const [successMsg, setSuccessMsg]     = useState(null);
 
+  // Chat attachments. The seller composer had none at all: a buyer could send
+  // a photo of a scratch and the seller could neither see it (adaptMessage
+  // dropped attachmentUrl) nor reply with one. Picking a file stages it —
+  // upload and send happen when the seller presses send, never on the OS
+  // file dialog's own "Open".
+  const chatFileInputRef = useRef(null);
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const clearPendingAttachment = useCallback(() => {
+    setPendingAttachment((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  }, []);
+  // Switching threads drops the staged file — it was picked for one buyer and
+  // must not follow the seller into a different conversation.
+  useEffect(() => { clearPendingAttachment(); }, [activeId, clearPendingAttachment]);
+
+  // Emoji tray above the composer. Closes on pick, on Escape, and whenever
+  // the thread changes — leaving it hanging open over a different buyer's
+  // conversation is worse than making the seller tap twice.
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  useEffect(() => { setEmojiOpen(false); }, [activeId]);
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const onKey = (e) => { if (e.key === "Escape") setEmojiOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [emojiOpen]);
+
   // Inbox list — owned by the dashboard root (so the nav badge stays in
   // sync even when this view is unmounted). Falls back to local state for
   // isolated rendering / preview mode.
@@ -6294,26 +6390,42 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   // without leaving the conversation view. Refreshes on every claim:updated
   // socket event.
   const [activeClaimByConv, setActiveClaimByConv] = useState({});
+  // The CURRENT claim per conversation whatever its status, including the
+  // terminal ones activeClaimByConv drops. The thread badge reads off this:
+  // a cancelled claim used to leave the chip saying "Unanswered", i.e. the
+  // seller still owes the buyer a reply, on a thread whose claim is gone —
+  // and it counted toward the "needs action" tally with it.
+  const [latestClaimByConv, setLatestClaimByConv] = useState({});
   const [pendingClaimTick, setPendingClaimTick]   = useState(0);
   useSocketEvent("claim:updated", () => setPendingClaimTick(t => t + 1));
   useSocketEvent("claim:new",     () => setPendingClaimTick(t => t + 1));
   useEffect(() => {
     if (!accessToken) return;
     let cancelled = false;
-    // BUG-055 — fetch PROPOSED + ACCEPTED both so the chat banner can show
-    // Accept/Counter/Decline (PROPOSED) OR Mark Picked up (ACCEPTED).
-    Promise.all([
-      apiRequest("/api/claims/incoming?status=PROPOSED", { token: accessToken }).catch(() => ({ claims: [] })),
-      apiRequest("/api/claims/incoming?status=ACCEPTED", { token: accessToken }).catch(() => ({ claims: [] })),
-    ])
-      .then(([p, a]) => {
+    // One unfiltered call instead of the two status-filtered ones this used
+    // to make. /api/claims/incoming with no filter returns every claim on
+    // the seller's items newest-first, which gives the active claims (the
+    // chat banner's Accept/Counter/Decline and Mark Picked up) AND the
+    // terminal ones the badge needs — in a single request.
+    apiRequest("/api/claims/incoming", { token: accessToken })
+      .then((data) => {
         if (cancelled) return;
-        const list = [...(Array.isArray(p?.claims) ? p.claims : []), ...(Array.isArray(a?.claims) ? a.claims : [])];
+        const list = Array.isArray(data?.claims) ? data.claims : [];
         const idx = {};
-        for (const c of list) if (c.conversationId) idx[c.conversationId] = c;
+        const latest = {};
+        for (const c of list) {
+          if (!c.conversationId) continue;
+          // Newest-first, so the first claim seen for a conversation is the
+          // one that counts.
+          if (!latest[c.conversationId]) latest[c.conversationId] = c;
+          if (c.status === "PROPOSED" || c.status === "ACCEPTED") {
+            idx[c.conversationId] = c;
+          }
+        }
         setActiveClaimByConv(idx);
+        setLatestClaimByConv(latest);
       })
-      .catch(() => { if (!cancelled) setActiveClaimByConv({}); });
+      .catch(() => { if (!cancelled) { setActiveClaimByConv({}); setLatestClaimByConv({}); } });
     return () => { cancelled = true; };
   }, [accessToken, pendingClaimTick]);
 
@@ -6421,6 +6533,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     const TYPE_MAP = {
       TEXT: "text", OFFER: "offer", COUNTER: "counter", CLAIM: "claim",
       WHATSAPP: "whatsapp", NOTICE: "notice", REMINDER: "reminder",
+      IMAGE: "image",
     };
     const renderType = TYPE_MAP[api.messageType] || "text";
     return {
@@ -6428,8 +6541,15 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       from: fromMe ? "seller" : "buyer",
       text: api.body,
       time: new Date(api.createdAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }),
+      // Raw timestamp alongside the display string — read receipts compare it
+      // against the buyer's cursor, which a formatted time can't do.
+      sentAt: api.createdAt || null,
       type: renderType,
       amount: typeof api.amount === "number" ? api.amount : undefined,
+      // IMAGE was missing from the map and attachmentUrl was dropped
+      // entirely, so a photo a buyer sent arrived as an empty text bubble —
+      // the seller could see that something came through and not what.
+      attachmentUrl: typeof api.attachmentUrl === "string" ? api.attachmentUrl : undefined,
     };
   }
 
@@ -6514,9 +6634,65 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     }
   });
 
+  // Pick → stage. Validated here so a bad file is refused at pick time, and
+  // mirroring the upload route's own filter (jpg/png/webp/gif, 10 MB).
+  function stageAttachment(file) {
+    if (!file || !activeId) return;
+    if (!usingBackend) {
+      setErrorMsg("Attachments need a signed-in session.");
+      return;
+    }
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+      setErrorMsg("Only jpg, png, webp or gif images can be attached.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg("That image is over 10 MB — please attach a smaller one.");
+      return;
+    }
+    setErrorMsg(null);
+    setPendingAttachment((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return { file, previewUrl: URL.createObjectURL(file), name: file.name, size: file.size };
+    });
+  }
+
+  // Upload the staged file, then post one message carrying the photo and any
+  // caption. On failure the file stays staged so send can be pressed again.
+  async function sendWithAttachment(caption) {
+    if (!activeId || !pendingAttachment) return;
+    setAttachBusy(true);
+    setSending(true);
+    try {
+      const { publicUrl } = await uploadItemPhoto(pendingAttachment.file);
+      const res = await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
+        method: "POST",
+        token:  accessToken,
+        body:   JSON.stringify({ body: caption, messageType: "IMAGE", attachmentUrl: publicUrl }),
+      });
+      setDraft("");
+      clearPendingAttachment();
+      if (res?.message) {
+        setActiveMsgs((prev) => {
+          const list = prev || [];
+          if (list.some((m) => m.id === res.message.id)) return list;
+          return [...list, adaptMessage(res.message)];
+        });
+      }
+    } catch (err) {
+      setErrorMsg("Couldn't send that image: " + (err?.message || "try again"));
+      setTimeout(() => setErrorMsg(null), 4500);
+    } finally {
+      setAttachBusy(false);
+      setSending(false);
+    }
+  }
+
   async function handleSend() {
     const body = draft.trim();
-    if (!body) return;
+    // A staged photo is enough on its own — the caption is optional.
+    if (!body && !pendingAttachment) return;
+    if (pendingAttachment) { await sendWithAttachment(body); return; }
     if (!usingBackend) {
       // Demo mode: append locally to the demo conversation's messages.
       setConvList(prev => prev.map(c => c.id === activeId
@@ -6641,11 +6817,33 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     "needs-response":    { label: "Needs response",    color: C.claret,    bg: C.claretMist,  icon: AlertCircle },
     "pending":           { label: "Unanswered",        color: C.amberDeep, bg: C.amberMist,   icon: Clock      },
     "answered":          { label: "Answered",          color: C.ai,        bg: C.aiMist,      icon: MessageSquare },
+    "cancelled":         { label: "Cancelled",         color: C.ash,       bg: C.sand,        icon: X          },
+    "declined":          { label: "Declined",          color: C.ash,       bg: C.sand,        icon: X          },
+    "expired":           { label: "Expired",           color: C.ash,       bg: C.sand,        icon: Clock      },
     "completed":         { label: "Completed",         color: C.ash,       bg: C.sand,        icon: Check      },
   };
 
+  // The badge has to read off the claim, not just off who spoke last.
+  // `c.status` only says needs-response / answered / pending, which is right
+  // while a negotiation is live and wrong the moment the claim ends: a claim
+  // the buyer waived kept the thread reading "Unanswered". A terminal claim
+  // overrides; anything still live falls through to the conversation's own
+  // reading. Mirrors threadStatus in the buyer dashboard.
+  const threadStatus = useCallback((c) => {
+    if (!c) return "completed";
+    switch (latestClaimByConv[c.id]?.status) {
+      case "CANCELLED":                 return "cancelled";
+      case "DECLINED": case "REJECTED": return "declined";
+      case "EXPIRED":                   return "expired";
+      case "PICKED_UP":                 return "completed";
+      default:                          return c.status;
+    }
+  }, [latestClaimByConv]);
+
   const unreadCount = conversations.filter(c => c.unread).length;
-  const needsAction = conversations.filter(c => ["needs-response","pending","pickup-today"].includes(c.status)).length;
+  // Counted through threadStatus so a finished thread stops asking the seller
+  // to do something about it.
+  const needsAction = conversations.filter(c => ["needs-response","pending","pickup-today"].includes(threadStatus(c))).length;
 
   // No type filter any more (BUG-088) — the list is every thread, newest first.
   const filtered = conversations;
@@ -6655,7 +6853,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   const active = conversations.find(c => c.id === activeId)
     || archivedList.find(c => c.id === activeId)
     || conversations[0];
-  const activeStatus = active ? statusMeta[active.status] : null;
+  const activeStatus = active ? (statusMeta[threadStatus(active)] || statusMeta.completed) : null;
 
   // Archive / unarchive. The endpoint and the per-side flag
   // (`archivedBySeller`) already existed — the seller inbox simply never
@@ -6707,7 +6905,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   // One row renderer, shared by the inbox and the Archived group below it.
   function renderThreadRow(c, muted = false) {
     const isActive = c.id === activeId;
-    const meta = statusMeta[c.status] || statusMeta.completed;
+    const meta = statusMeta[threadStatus(c)] || statusMeta.completed;
     const Ic = meta.icon;
     return (
       <button key={c.id} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative", opacity: muted && !isActive ? 0.62 : 1 }}>
@@ -6744,6 +6942,33 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     const isYou = m.from === "seller"; // viewer is the seller; "buyer" is counterparty
     const isBuyer = m.from === "buyer";
     const isAI = m.from === "ai";
+
+    // Keyed on the URL rather than the type, so a row that carries a photo
+    // always renders it. Any caption travels in `text` and sits underneath.
+    if (m.attachmentUrl) {
+      return (
+        <div key={i} style={{ display: "flex", justifyContent: isYou ? "flex-end" : "flex-start", marginBottom: 10 }}>
+          <div style={{ maxWidth: "72%" }}>
+            <div style={{ borderRadius: 16, overflow: "hidden", border: "1px solid " + (isYou ? C.green + "55" : C.fawn), background: isYou ? C.greenMist : C.paper }}>
+              <a href={m.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ display: "block", lineHeight: 0 }}>
+                <img
+                  src={m.attachmentUrl}
+                  alt={m.text ? m.text : "Attached photo"}
+                  style={{ display: "block", width: "100%", maxWidth: 300, maxHeight: 300, objectFit: "cover", cursor: "zoom-in" }}
+                />
+              </a>
+              {m.text && (
+                <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.45 }}>{m.text}</p>
+              )}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: isYou ? "flex-end" : "flex-start", marginTop: 4 }}>
+              <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash }}>{m.time}</span>
+              {isYou && <ReadTicks sentAt={m.sentAt} otherLastReadAt={active?.otherLastReadAt}/>}
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     if (m.type === "whatsapp") {
       return (
@@ -6828,7 +7053,10 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             )}
             {m.text}
           </div>
-          <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash, marginTop: 3, textAlign: isBuyer ? "left" : "right", marginLeft: 2, marginRight: 2 }}>{m.time}</p>
+          <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash, marginTop: 3, textAlign: isBuyer ? "left" : "right", marginLeft: 2, marginRight: 2 }}>
+            {m.time}
+            {isYou && <ReadTicks sentAt={m.sentAt} otherLastReadAt={active?.otherLastReadAt}/>}
+          </p>
           {/* BUG-055.1 — Legacy in-bubble Accept/Counter/Decline buttons
               REMOVED. They were keyed on message id and routed through
               `submitCounter(m.id)` which 404'd against the new claim-id
@@ -7013,7 +7241,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 15, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{active.item.title}</p>
                 <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, marginTop: 2, flexWrap: "wrap" }}>
-                  <span style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 16, fontWeight: 900, color: C.green }}>${active.item.price}</span>
+                  <span style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 16, fontWeight: 900, color: priceColor(active.item.price, C.green) }}>{priceText(active.item.price)}</span>
                   <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4 }}>
                     <User size={11}/> {active.buyer.name}{!isMobile && active.buyer.hood && (" · " + active.buyer.hood)}
                   </span>
@@ -7236,7 +7464,55 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 </div>
               </div>
             ) : (
-            <div style={{ padding: isMobile ? "10px 12px" : "12px 16px", display: "flex", gap: isMobile ? 8 : 10, alignItems: "center", background: C.paper }}>
+            <>
+            {/* Staged photo, waiting on send — same contract as the buyer
+                composer: picking shows it, send shares it. */}
+            {pendingAttachment && (
+              <div style={{ padding: isMobile ? "10px 12px 0" : "12px 16px 0", display: "flex", alignItems: "center", gap: 10, background: C.paper }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 6, paddingRight: 12, borderRadius: 14, border: "1px solid " + C.fawn, background: C.sand, minWidth: 0 }}>
+                  <img src={pendingAttachment.previewUrl} alt="" style={{ width: 44, height: 44, borderRadius: 10, objectFit: "cover", flexShrink: 0, display: "block" }}/>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pendingAttachment.name}</p>
+                    <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.mink }}>
+                      {attachBusy ? "Sending…" : `${(pendingAttachment.size / 1024).toFixed(0)} KB · press send to share`}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearPendingAttachment}
+                    disabled={attachBusy}
+                    title="Remove attachment"
+                    aria-label="Remove attachment"
+                    style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: C.paper, color: C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: attachBusy ? "not-allowed" : "pointer", flexShrink: 0 }}
+                  >
+                    <X size={13} strokeWidth={2.6}/>
+                  </button>
+                </div>
+              </div>
+            )}
+            <div style={{ position: "relative", padding: isMobile ? "10px 12px" : "12px 16px", display: "flex", gap: isMobile ? 8 : 10, alignItems: "center", background: C.paper }}>
+              {/* Hidden input driven by the clip button, so the control looks
+                  like the rest of the composer rather than a browser file
+                  widget. Resetting value lets the same file be picked twice. */}
+              <input
+                ref={chatFileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; stageAttachment(f); }}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                onClick={() => chatFileInputRef.current?.click()}
+                disabled={attachBusy || sending}
+                title="Attach a photo"
+                aria-label="Attach a photo"
+                style={{ width: isMobile ? 34 : 38, height: isMobile ? 34 : 38, borderRadius: "50%", border: "none", background: "transparent", color: (attachBusy || sending) ? C.smoke : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: (attachBusy || sending) ? "not-allowed" : "pointer", flexShrink: 0 }}
+              >
+                {attachBusy
+                  ? <Loader2 size={17} className="animate-spin"/>
+                  : <Paperclip size={17}/>}
+              </button>
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -7245,15 +7521,36 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 disabled={sending}
                 style={{ flex: 1, minWidth: 0, padding: isMobile ? "9px 12px" : "10px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, outline: "none", background: C.paper }}
               />
+              <button
+                type="button"
+                onClick={() => setEmojiOpen(v => !v)}
+                title="Insert an emoji"
+                aria-label="Insert an emoji"
+                aria-expanded={emojiOpen}
+                style={{ width: isMobile ? 34 : 38, height: isMobile ? 34 : 38, borderRadius: "50%", border: "none", background: emojiOpen ? C.sand : "transparent", color: emojiOpen ? C.amberDeep : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+              >
+                <Smile size={isMobile ? 17 : 19}/>
+              </button>
+              {emojiOpen && (
+                <ChatEmojiTray
+                  onPick={(em) => setDraft(d => d + em)}
+                  onClose={() => setEmojiOpen(false)}
+                  colors={{ paper: C.paper, fawn: C.fawn, sand: C.sand, mink: C.mink, accent: C.amberDeep }}
+                  style={{ right: isMobile ? 12 : 16, bottom: "calc(100% + 6px)" }}
+                />
+              )}
               {!usingBackend && (
                 <button title="Let AI respond" disabled style={{ width: isMobile ? 38 : 42, height: isMobile ? 38 : 42, borderRadius: "50%", border: "1.5px solid " + C.ai + "30", background: C.aiMist, cursor: "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: 0.5 }}>
                   <Sparkles size={isMobile ? 14 : 16} style={{ color: C.ai }}/>
                 </button>
               )}
-              <button onClick={handleSend} disabled={sending || !draft.trim()} style={{ width: isMobile ? 38 : 42, height: isMobile ? 38 : 42, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || !draft.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 0 " + C.greenDeep, flexShrink: 0, opacity: (sending || !draft.trim()) ? 0.5 : 1 }}>
-                <Send size={isMobile ? 14 : 16}/>
+              <button onClick={handleSend} disabled={sending || attachBusy || (!draft.trim() && !pendingAttachment)} aria-label="Send message" style={{ width: isMobile ? 38 : 42, height: isMobile ? 38 : 42, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 0 " + C.greenDeep, flexShrink: 0, opacity: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? 0.5 : 1 }}>
+                {sending || attachBusy
+                  ? <Loader2 size={isMobile ? 14 : 16} className="animate-spin"/>
+                  : <Send size={isMobile ? 14 : 16}/>}
               </button>
             </div>
+            </>
             )}
             </div>
           </div>
@@ -7805,7 +8102,7 @@ function HistoryTxRow({ tx, idx, isMobile = false, isOpen = false, onToggle = nu
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          <span style={{ fontFamily: F.head, fontSize: isMobile ? 18 : 22, fontWeight: 900, color: C.green }}>${tx.price}</span>
+          <span style={{ fontFamily: F.head, fontSize: isMobile ? 18 : 22, fontWeight: 900, color: priceColor(tx.price, C.green) }}>{priceText(tx.price)}</span>
           {onToggle && <ChevronDown size={14} style={{ color: C.smoke, transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 200ms" }}/>}
         </div>
       </div>
@@ -8236,7 +8533,7 @@ function ItemDetailView({ item, onBack, onEdit, accessToken: _accessToken }) {
       <div style={{ marginBottom: isMobile ? 14 : 18 }}>
         <h1 style={{ fontFamily: F.head, fontSize: isMobile ? 22 : 30, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.05 }}>{item.t}</h1>
         <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", fontFamily: F.body, fontSize: 13, color: C.mink }}>
-          <span style={{ fontFamily: F.head, fontWeight: 900, fontSize: isMobile ? 19 : 22, color: C.green }}>${item.price}</span>
+          <span style={{ fontFamily: F.head, fontWeight: 900, fontSize: isMobile ? 19 : 22, color: priceColor(item.price, C.green) }}>{priceText(item.price)}</span>
           <span>·</span>
           <span>{item.cat}</span>
           <span>·</span>
@@ -9363,7 +9660,7 @@ function AIListingPreviewModal({ item, onClose, onApprove, onEdit, isApproved, a
             <div style={{ textAlign: "right" }}>
               <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>Listing price</p>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, justifyContent: "flex-end" }}>
-                <span style={{ fontFamily: F.head, fontSize: 32, fontWeight: 900, color: C.green, letterSpacing: "-0.02em" }}>${item.price}</span>
+                <span style={{ fontFamily: F.head, fontSize: 32, fontWeight: 900, color: priceColor(item.price, C.green), letterSpacing: "-0.02em" }}>{priceText(item.price)}</span>
               </div>
               {item.aiPrice && String(item.aiPrice) === String(item.price) ? (
                 <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ai, marginTop: 3, display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
@@ -9717,8 +10014,8 @@ function AIPhotoFlow({ onDone, onBack, aiSettings = {} }) {
                           style={{ width: 68, padding: "3px 6px", borderRadius: 6, border: "1.5px solid " + C.green, fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.green, outline: "none", background: C.paper, textAlign: "center" }}/>
                       </div>
                     ) : (
-                      <button onClick={() => beginPriceEdit(it)} title="Click to change price" style={{ border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: F.head, fontSize: 20, fontWeight: 900, color: C.green, textDecoration: "underline dotted", textDecorationColor: C.green + "60", textUnderlineOffset: 4, textAlign: "left" }}>
-                        ${it.price}
+                      <button onClick={() => beginPriceEdit(it)} title="Click to change price" style={{ border: "none", background: "none", padding: 0, cursor: "pointer", fontFamily: F.head, fontSize: 20, fontWeight: 900, color: priceColor(it.price, C.green), textDecoration: "underline dotted", textDecorationColor: priceColor(it.price, C.green) + "60", textUnderlineOffset: 4, textAlign: "left" }}>
+                        {priceText(it.price)}
                       </button>
                     )}
                     {editingPriceId !== it.id && (
@@ -9887,6 +10184,27 @@ function SF_Input({ style, ...props }) {
   );
 }
 
+/* Password input with a reveal toggle. The caller owns `show` so one piece of
+   state can drive both the new and confirm fields at once — revealing them
+   together is the point: "do not match" is unactionable when you can't see
+   which of the two has the typo. Right padding clears the eye button. */
+function SF_PasswordInput({ show, onToggleShow, ...props }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <SF_Input {...props} type={show ? "text" : "password"} style={{ paddingRight: 42 }}/>
+      <button
+        type="button"
+        onClick={onToggleShow}
+        tabIndex={-1}
+        aria-label={show ? "Hide password" : "Show password"}
+        style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 6, border: "none", background: "none", color: C.ash, cursor: "pointer" }}
+      >
+        {show ? <EyeOff size={15}/> : <Eye size={15}/>}
+      </button>
+    </div>
+  );
+}
+
 function SF_PrimaryButton({ disabled, loading, children, ...props }) {
   return (
     <button
@@ -9942,6 +10260,11 @@ function ProfileTab({ user, onSuccess }) {
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
+  // Each field reveals on its own — clicking one eye must not unmask the
+  // other. Current password stays masked: it's an existing secret, not
+  // something being composed here.
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
   const [savingPw, setSavingPw] = useState(false);
   const [pwError, setPwError] = useState("");
   const [pwSavedAt, setPwSavedAt] = useState(null);
@@ -10074,11 +10397,11 @@ function ProfileTab({ user, onSuccess }) {
         )}
 
         <SF_Field label="New password">
-          <SF_Input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" disabled={savingPw}/>
+          <SF_PasswordInput show={showNewPw} onToggleShow={() => setShowNewPw(v => !v)} value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="At least 8 characters" autoComplete="new-password" disabled={savingPw}/>
         </SF_Field>
 
         <SF_Field label="Confirm new password">
-          <SF_Input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Re-enter new password" autoComplete="new-password" disabled={savingPw}/>
+          <SF_PasswordInput show={showConfirmPw} onToggleShow={() => setShowConfirmPw(v => !v)} value={confirmPw} onChange={e => setConfirmPw(e.target.value)} placeholder="Re-enter new password" autoComplete="new-password" disabled={savingPw}/>
         </SF_Field>
 
         {pwError && <SF_ErrorBanner message={pwError}/>}
@@ -10268,7 +10591,7 @@ function SF_SuccessBanner({ message, onClose }) {
 // `initialSection` lets other screens deep-link into a specific settings pane
 // (e.g. the listing form's "Set your default" payment-method link). null = the
 // normal entry point: desktop opens on Account, mobile opens on the section list.
-function SettingsView({ user, initialSection = null }) {
+function SettingsView({ user, initialSection = null, onBack = null, backLabel = "Back" }) {
   const { isMobile } = useViewport();
   const [activeSection, setActiveSection] = useState(initialSection || "account");
   // Mobile drill-down: null = section list, otherwise section id = detail view.
@@ -10318,6 +10641,21 @@ function SettingsView({ user, initialSection = null }) {
   return (
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
       <SF_SuccessBanner message={toast} onClose={() => setToast(null)}/>
+
+      {/* Return CTA — present only when Settings was opened from inside
+          another flow, e.g. the listing form's "Set your default" payment
+          link. Sits above the header so it is the first thing in the panel
+          on both breakpoints, and stays put on mobile whether the seller is
+          on the section list or drilled into a pane. */}
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: isMobile ? "10px 0 2px" : "12px 0 0", border: "none", background: "none", color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+        >
+          <ArrowLeft size={14}/> {backLabel}
+        </button>
+      )}
 
       {/* Page header — hidden on mobile while drilled into a section. */}
       {(!isMobile || !mobileViewingSection) && (
@@ -10566,26 +10904,42 @@ function SettingsPayments({ user, onSuccess }) {
 }
 
 // ─── Settings · Pickup ───
-// Single editable field — defaultPickupAddress — plus a read-only "buyer-facing
-// neighbourhood" pulled from User.neighborhood (managed in onboarding).
+// defaultPickupAddress plus the buyer-facing neighbourhood. The neighbourhood
+// used to be read-only ("contact support to change"), which left anyone who
+// moved within Barrhaven — the most common reason to be selling in the first
+// place — showing buyers the wrong end of town. It's the same validated list
+// as onboarding, so changing it can't produce a name we don't know.
 function SettingsPickup({ user, onSuccess }) {
   const { refreshUser } = useAuth();
   const [address, setAddress] = useState(user?.defaultPickupAddress || "");
+  const [neighborhoodId, setNeighborhoodId] = useState(
+    () => findNeighbourhood(user?.neighborhood)?.id ?? ""
+  );
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => { setAddress(user?.defaultPickupAddress || ""); }, [user?.defaultPickupAddress]);
+  useEffect(() => {
+    setNeighborhoodId(findNeighbourhood(user?.neighborhood)?.id ?? "");
+  }, [user?.neighborhood]);
 
-  const dirty = address.trim() !== (user?.defaultPickupAddress || "");
+  const savedNeighborhoodId = findNeighbourhood(user?.neighborhood)?.id ?? "";
+  const dirty =
+    address.trim() !== (user?.defaultPickupAddress || "") ||
+    neighborhoodId !== savedNeighborhoodId;
 
   async function submit(e) {
     e.preventDefault();
     setSaving(true); setError("");
     try {
+      const selected = BARRHAVEN_NEIGHBOURHOODS.find(n => n.id === neighborhoodId);
       await apiRequest("/api/auth/me/preferences", {
         method: "PATCH",
-        body: JSON.stringify({ defaultPickupAddress: address.trim() }),
+        body: JSON.stringify({
+          defaultPickupAddress: address.trim(),
+          ...(selected ? { neighborhood: selected.name } : {}),
+        }),
       });
       await refreshUser();
       setSavedAt(Date.now());
@@ -10608,8 +10962,22 @@ function SettingsPickup({ user, onSuccess }) {
           disabled={saving}
         />
       </SF_Field>
-      <SF_Field label="Buyer-facing neighbourhood" helper="Set during onboarding — contact support to change.">
-        <SF_Input value={user?.neighborhood || ""} readOnly disabled style={{ background: C.sand, color: C.mink }}/>
+      <SF_Field label="Buyer-facing neighbourhood" helper="Shown on every listing, and what buyers sort by. Update it if you move within Barrhaven.">
+        <select
+          value={neighborhoodId}
+          onChange={e => setNeighborhoodId(e.target.value)}
+          disabled={saving}
+          style={{
+            width: "100%", padding: "11px 14px", borderRadius: 12,
+            border: "1.5px solid " + C.fawn, background: C.paper, color: neighborhoodId ? C.ink : C.ash,
+            fontFamily: F.body, fontSize: 14, outline: "none", cursor: saving ? "not-allowed" : "pointer",
+          }}
+        >
+          <option value="">Choose your neighbourhood…</option>
+          {BARRHAVEN_NEIGHBOURHOODS.map(n => (
+            <option key={n.id} value={n.id}>{n.name}</option>
+          ))}
+        </select>
       </SF_Field>
       {error && <SF_ErrorBanner message={error}/>}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: 12, borderTop: "1px solid " + C.fawn }}>
@@ -10633,10 +11001,21 @@ function SettingsPickup({ user, onSuccess }) {
    Replaces the old Moving Sale registration flow as the buyer→seller
    upgrade path. Server-side gate at POST /api/items enforces the same
    check, so this UI is the primary mechanism but not the only one.
+
+   Location is two questions, in this order:
+     postal code  → are we in your area at all? (lib/barrhaven, local)
+     neighbourhood→ which part of Barrhaven, from a fixed list.
+   It used to be one free-text box autofilled from the FSA table, which
+   could only ever answer "Barrhaven" — every seller got the same name and
+   the same centroid, so every buyer saw the same distance. The list is
+   also what makes the name safe to print on a listing: the backend
+   rejects anything that isn't on it.
    ============================================================ */
 function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
-  const [neighborhood, setNeighborhood] = useState(user?.neighborhood ?? "");
-  const [postalCode, setPostalCode]     = useState(user?.postalCode ?? "");
+  const [neighborhoodId, setNeighborhoodId] = useState(
+    () => findNeighbourhood(user?.neighborhood)?.id ?? ""
+  );
+  const [postalCode, setPostalCode]     = useState(() => formatPostalCode(user?.postalCode ?? ""));
   const [pickupAddress, setPickupAddress] = useState(user?.defaultPickupAddress ?? "");
   const [methods, setMethods] = useState(() => {
     const initial = Array.isArray(user?.acceptedPaymentMethods) && user.acceptedPaymentMethods.length > 0
@@ -10647,41 +11026,46 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // ── Neighborhood autofill from postal code ──────────────────────────────
-  // GET /api/geo/postal reads the local Geonames FSA table — no third-party
-  // geocoder, no API key. We only fill the field while the user hasn't typed
-  // their own value, so autofill never fights the person using the form.
-  // Clearing the field re-arms it.
-  const neighborhoodTouched = useRef(Boolean(user?.neighborhood));
-  const [autofillNote, setAutofillNote] = useState("");
+  // ── Service area ────────────────────────────────────────────────────────
+  // DropYard is Barrhaven-only, so the postal code decides whether this form
+  // can be submitted at all, and which neighbourhoods we show first. The
+  // check is local (lib/barrhaven) — no request, no spinner, no waiting on
+  // the network to tell someone they're in the right place.
+  const area = serviceAreaForPostalCode(postalCode);
+  const optionGroups = useMemo(() => groupedNeighbourhoodOptions(area.fsa), [area.fsa]);
+  const selected = BARRHAVEN_NEIGHBOURHOODS.find(n => n.id === neighborhoodId) ?? null;
 
+  // One FSA, one neighbourhood (K2G → Davidson Heights): pick it rather than
+  // making the seller confirm the only possible answer. Never overrides a
+  // choice already made.
+  const neighborhoodTouched = useRef(Boolean(user?.neighborhood));
   useEffect(() => {
-    const fsa = postalCode.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase();
-    if (!/^[A-Z]\d[A-Z]$/.test(fsa) || neighborhoodTouched.current) {
-      setAutofillNote("");
-      return;
-    }
+    if (neighborhoodTouched.current || !area.inServiceArea) return;
+    const candidates = neighbourhoodsForFsa(area.fsa);
+    if (candidates.length === 1) setNeighborhoodId(candidates[0].id);
+  }, [area.fsa, area.inServiceArea]);
+
+  // Name the place we don't serve yet — "We're not in Kanata (Bridlewood)
+  // yet" lands better than a generic refusal, and it's the one case where
+  // the Geonames FSA table is the right source. Debounced; failure is silent.
+  const [outsidePlace, setOutsidePlace] = useState("");
+  useEffect(() => {
+    if (area.status !== "outside" || !area.fsa) { setOutsidePlace(""); return; }
     let cancelled = false;
-    // Debounced so typing a full postal code sends one request, not six.
     const timer = setTimeout(async () => {
       try {
-        const data = await apiRequest(`/api/geo/postal?code=${encodeURIComponent(fsa)}`);
-        if (cancelled || neighborhoodTouched.current || !data?.neighborhood) return;
-        setNeighborhood(data.neighborhood);
-        setAutofillNote(`Filled from ${data.fsa} — edit if it's not right.`);
+        const data = await apiRequest(`/api/geo/postal?code=${encodeURIComponent(area.fsa)}`);
+        if (!cancelled && data?.place) setOutsidePlace(data.place);
       } catch {
-        // Unknown FSA or offline: leave the field for the user to type.
-        if (!cancelled) setAutofillNote("");
+        if (!cancelled) setOutsidePlace("");
       }
     }, 400);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [postalCode]);
+  }, [area.status, area.fsa]);
 
   const onNeighborhoodChange = (value) => {
-    // Empty again → let autofill take over on the next postal-code change.
-    neighborhoodTouched.current = value.trim().length > 0;
-    setAutofillNote("");
-    setNeighborhood(value);
+    neighborhoodTouched.current = value.length > 0;
+    setNeighborhoodId(value);
   };
 
   const toggleMethod = (m) => {
@@ -10695,8 +11079,13 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
   const submit = async (e) => {
     e.preventDefault();
     setError("");
-    if (!neighborhood.trim()) { setError("Neighborhood is required."); return; }
-    if (postalCode.trim().length < 3) { setError("Enter a valid postal code."); return; }
+    if (!area.inServiceArea) {
+      setError(area.status === "outside"
+        ? "That postal code is outside Barrhaven."
+        : "Enter your Barrhaven postal code.");
+      return;
+    }
+    if (!selected) { setError("Choose your neighbourhood."); return; }
     if (pickupAddress.trim().length < 5) { setError("Enter a pickup address."); return; }
     if (methods.size === 0) { setError("Choose at least one payment method."); return; }
     setSubmitting(true);
@@ -10705,7 +11094,7 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
         method: "POST",
         token:  accessToken ?? undefined,
         body: JSON.stringify({
-          neighborhood:           neighborhood.trim(),
+          neighborhood:           selected.name,
           postalCode:             postalCode.trim(),
           defaultPickupAddress:   pickupAddress.trim(),
           acceptedPaymentMethods: Array.from(methods),
@@ -10749,7 +11138,7 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
           Complete your seller profile
         </h2>
         <p style={{ fontFamily: F.body, fontSize: 14, color: C.mink, marginBottom: 20, lineHeight: 1.55 }}>
-          We need a few details before you can list items. Buyers in your neighborhood will see this when they consider claiming your items.
+          We need a few details before you can list items. Buyers see your neighbourhood and how far away you are when they consider claiming — the closer you are, the more likely they claim.
         </p>
 
         {error && (
@@ -10759,34 +11148,71 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
         )}
 
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          <Field label="Neighborhood">
-            <input
-              type="text" value={neighborhood} onChange={e => onNeighborhoodChange(e.target.value)}
-              placeholder="e.g. Barrhaven"
-              required
-              style={fieldInput}
-            />
-            {autofillNote && (
-              <p style={{ fontFamily: F.body, fontSize: 11, color: C.mink, marginTop: 5 }}>
-                {autofillNote}
-              </p>
-            )}
-          </Field>
+          {/* Postal code comes first: it decides whether the rest of the form
+              applies at all, and which neighbourhoods we list. */}
           <Field label="Postal code">
             <input
-              type="text" value={postalCode} onChange={e => setPostalCode(e.target.value.toUpperCase())}
-              placeholder="K2J"
-              required maxLength={10}
-              style={fieldInput}
+              type="text" value={postalCode}
+              onChange={e => setPostalCode(formatPostalCode(e.target.value))}
+              placeholder="K2J 4A8"
+              required maxLength={7}
+              inputMode="text" autoComplete="postal-code" autoCapitalize="characters"
+              style={{ ...fieldInput, letterSpacing: "0.08em" }}
             />
+            <ServiceAreaNote area={area} place={outsidePlace}/>
           </Field>
+
+          <Field label="Neighbourhood">
+            <div style={{ position: "relative" }}>
+              <select
+                value={neighborhoodId}
+                onChange={e => onNeighborhoodChange(e.target.value)}
+                disabled={!area.inServiceArea}
+                required
+                style={{
+                  ...fieldInput,
+                  appearance: "none",
+                  paddingRight: 38,
+                  cursor: area.inServiceArea ? "pointer" : "not-allowed",
+                  background: area.inServiceArea ? C.paper : C.sand,
+                  color: area.inServiceArea && neighborhoodId ? C.ink : C.ash,
+                }}
+              >
+                <option value="">
+                  {area.inServiceArea ? "Choose your neighbourhood…" : "Enter a Barrhaven postal code first"}
+                </option>
+                {optionGroups.map(group => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.options.map(n => (
+                      <option key={n.id} value={n.id}>{n.name}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <ChevronDown
+                size={16}
+                style={{ position: "absolute", right: 13, top: "50%", transform: "translateY(-50%)", color: C.ash, pointerEvents: "none" }}
+              />
+            </div>
+            <p style={{ fontFamily: F.body, fontSize: 11, color: C.mink, marginTop: 5, lineHeight: 1.5 }}>
+              {selected
+                ? selected.landmark
+                : "Barrhaven is one Drop, but buyers sort by how close you are. Pick the part you actually live in."}
+            </p>
+          </Field>
+
           <Field label="Default pickup address">
             <input
               type="text" value={pickupAddress} onChange={e => setPickupAddress(e.target.value)}
-              placeholder="123 Example St, Ottawa"
+              placeholder="123 Longfields Dr, Barrhaven"
               required
-              style={fieldInput}
+              disabled={!area.inServiceArea}
+              autoComplete="street-address"
+              style={{ ...fieldInput, background: area.inServiceArea ? C.paper : C.sand }}
             />
+            <p style={{ fontFamily: F.body, fontSize: 11, color: C.mink, marginTop: 5 }}>
+              Only shared with a buyer after you confirm their claim.
+            </p>
           </Field>
           <Field label="Accepted payment methods">
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -10822,15 +11248,15 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
               Cancel
             </button>
             <button
-              type="submit" disabled={submitting}
+              type="submit" disabled={submitting || !area.inServiceArea}
               style={{
                 padding: "11px 22px", borderRadius: 12, border: "none",
-                background: submitting ? C.greenMist : C.green,
-                color: submitting ? C.greenDeep : "#fff",
+                background: submitting || !area.inServiceArea ? C.greenMist : C.green,
+                color: submitting || !area.inServiceArea ? C.greenDeep : "#fff",
                 fontFamily: F.head, fontSize: 13, fontWeight: 800,
-                cursor: submitting ? "not-allowed" : "pointer",
+                cursor: submitting || !area.inServiceArea ? "not-allowed" : "pointer",
                 display: "inline-flex", alignItems: "center", gap: 6,
-                boxShadow: submitting ? "none" : "0 2px 0 " + C.greenDeep,
+                boxShadow: submitting || !area.inServiceArea ? "none" : "0 2px 0 " + C.greenDeep,
               }}
             >
               {submitting && <Loader2 size={14} className="animate-spin"/>}
@@ -10851,6 +11277,54 @@ function Field({ label, children }) {
       </span>
       {children}
     </label>
+  );
+}
+
+/* Live verdict under the postal-code field. Four states, because "we don't
+   serve you yet" and "that isn't a postal code" need different answers —
+   one is a product boundary, the other is a typo. */
+function ServiceAreaNote({ area, place }) {
+  if (area.status === "partial") {
+    return (
+      <p style={{ fontFamily: F.body, fontSize: 11, color: C.mink, marginTop: 5 }}>
+        We&rsquo;re live in Barrhaven — K2J, plus the K2G and K2R edges.
+      </p>
+    );
+  }
+
+  if (area.status === "invalid") {
+    return (
+      <p style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: F.body, fontSize: 11, color: C.claret, marginTop: 6 }}>
+        <AlertCircle size={13}/> That doesn&rsquo;t look like a postal code. Try K2J 4A8.
+      </p>
+    );
+  }
+
+  if (area.status === "outside") {
+    return (
+      <div style={{ marginTop: 8, padding: "11px 13px", borderRadius: 12, background: C.amberMist, border: "1px solid " + C.amberSoft }}>
+        <p style={{ display: "flex", alignItems: "flex-start", gap: 7, fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.amberDeep, marginBottom: 4 }}>
+          <MapPin size={14} style={{ marginTop: 1, flexShrink: 0 }}/>
+          DropYard isn&rsquo;t in {place || area.fsa} yet
+        </p>
+        <p style={{ fontFamily: F.body, fontSize: 12, color: C.mink, lineHeight: 1.5 }}>
+          We&rsquo;re Barrhaven-only while the first Drops find their feet. Email{" "}
+          <a href={`mailto:${SUPPORT_EMAIL}?subject=DropYard%20in%20${encodeURIComponent(place || area.fsa || "my area")}`} style={{ color: C.green, fontWeight: 700 }}>
+            {SUPPORT_EMAIL}
+          </a>{" "}
+          and tell us where you are — it genuinely decides where we go next.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <p style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: F.body, fontSize: 11, color: C.greenDeep, marginTop: 6, fontWeight: 600 }}>
+      <Check size={13} strokeWidth={3}/>
+      {area.status === "core"
+        ? `${area.fsa} — you're in the Barrhaven Drop.`
+        : `${area.fsa} — Barrhaven edge, you're in.`}
+    </p>
   );
 }
 
@@ -10924,6 +11398,10 @@ export default function DropYardSellerDashboard({
   const [aiEntryPoint, setAiEntryPoint] = useState("overview");
   // Which Settings pane to open on. null = default entry point.
   const [settingsSection, setSettingsSection] = useState(null);
+  // Which view Settings should hand control back to, when Settings was opened
+  // from inside another flow rather than from the chrome. null = a normal
+  // entry, and Settings shows no return CTA. See goToSettings.
+  const [settingsReturnTo, setSettingsReturnTo] = useState(null);
   const aiConfigured = !!aiSettings.priceFloor;
 
   // BUG-057 — Sign-out confirmation. All Sign-out paths (TopNav, Sidebar
@@ -10953,6 +11431,10 @@ export default function DropYardSellerDashboard({
     // pane left over from a deep link like "Set your default", otherwise
     // Settings would keep reopening on Payments.
     if (target === "settings") setSettingsSection(null);
+    // Navigating through the chrome abandons any pending "back to your
+    // listing" return. Without this the held form would stay mounted behind
+    // whatever the seller picked instead.
+    setSettingsReturnTo(null);
     if (target === "add-manual" || target === "add-chooser") setListFormNonce(n => n + 1);
     setView(target);
   };
@@ -10963,7 +11445,12 @@ export default function DropYardSellerDashboard({
   // desktop, section list on mobile). Used by the listing form's "Set your
   // default" payment link, which previously called onGoToItems("ai-setup") —
   // a prop that ignores its argument, so it landed on Inventory (BUG-083).
-  function goToSettings(sectionId = null) { setSettingsSection(sectionId); setView("settings"); }
+  // `returnTo` is the view Settings should offer a Back CTA to. The listing
+  // form passes its own view name so the seller can set a payment default and
+  // drop straight back into the draft they were composing (BUG — the link was
+  // a one-way trip; the only way out was the sidebar, which restarted the
+  // listing from scratch).
+  function goToSettings(sectionId = null, returnTo = null) { setSettingsSection(sectionId); setSettingsReturnTo(returnTo); setView("settings"); }
 
   // ─── Conversation inbox (lifted to root for nav badges) ───
   // Owns the seller's conversation list at the root so the Sidebar, TopNav
@@ -10979,6 +11466,11 @@ export default function DropYardSellerDashboard({
     if (!payload?.conversationId || !payload.message) return prev;
     const { conversationId, message } = payload;
     const isFromMe = message.senderId === myUserId;
+    // Mirrors unreadCountFor on the server: a NOTICE is system narration of a
+    // claim transition, not a message someone sent you, so it must not raise
+    // the Messages badge. Without this the socket path would put back the
+    // phantom unread the backend no longer counts, until the next refetch.
+    const isNotice = message.messageType === "NOTICE";
     const existing = prev.find((c) => c.id === conversationId);
     if (!existing) {
       if (accessToken) {
@@ -10996,7 +11488,7 @@ export default function DropYardSellerDashboard({
     // refresh the data but the row stays put.
     const updated = prev.map((c) => {
       if (c.id !== conversationId) return c;
-      const newUnread = isFromMe ? (c.unreadCount || 0) : (c.unreadCount || 0) + 1;
+      const newUnread = (isFromMe || isNotice) ? (c.unreadCount || 0) : (c.unreadCount || 0) + 1;
       return {
         ...c,
         lastMsg:       message.body || c.lastMsg,
@@ -11036,13 +11528,22 @@ export default function DropYardSellerDashboard({
     setConvList((prev) => upsertConvFromSocket(prev, payload));
   });
 
+  // The server emits this to the OTHER party, so it normally means "the buyer
+  // has just read your messages" — which is what the read ticks need. Clearing
+  // MY unread on it was the wrong side of the conversation: the buyer opening
+  // the thread says nothing about whether I've read what they wrote. That
+  // branch now only runs when the reader is me on another device.
   useSocketEvent("conversation:read", (payload) => {
     const cid = payload?.conversationId;
     if (!cid) return;
-    setConvList((prev) => prev.map((c) => c.id === cid
-      ? { ...c, unreadCount: 0, unread: false, status: c.status === "needs-response" ? "answered" : c.status }
-      : c
-    ));
+    const readByMe = payload?.readByUserId && payload.readByUserId === myUserId;
+    setConvList((prev) => prev.map((c) => {
+      if (c.id !== cid) return c;
+      if (readByMe) {
+        return { ...c, unreadCount: 0, unread: false, status: c.status === "needs-response" ? "answered" : c.status };
+      }
+      return { ...c, otherLastReadAt: payload?.readAt || c.otherLastReadAt };
+    }));
   });
 
   const messagesUnreadCount = useMemo(
@@ -11126,11 +11627,32 @@ export default function DropYardSellerDashboard({
             {/* Keyed on the requested pane so arriving from a deep link while
                 Settings is already mounted still lands on the right section —
                 `initialSection` only seeds useState on mount. */}
-            {view === "settings" && <SettingsView key={settingsSection || "default"} user={user} initialSection={settingsSection}/>}
+            {view === "settings" && (
+              <SettingsView
+                key={settingsSection || "default"}
+                user={user}
+                initialSection={settingsSection}
+                onBack={settingsReturnTo ? () => { const back = settingsReturnTo; setSettingsReturnTo(null); setView(back); } : null}
+                backLabel="Back to your listing"
+              />
+            )}
             {view === "edit-item" && <EditItemView onBack={() => setView("items")} editingItem={editingItem} aiSettings={aiSettings} accessToken={accessToken} onItemsChange={onItemsChange}/>}
 
-            {view === "add-chooser" && <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
-            {view === "add-manual" && <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={goToSettings} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>}
+            {/* The listing form stays MOUNTED — just hidden — while the seller
+                is away in Settings via its "Set your default" link. Unmounting
+                it would throw away the half-typed draft, which is the whole
+                reason the Back CTA exists. `settingsReturnTo` is cleared by
+                safeNav, so any other navigation drops the held form normally. */}
+            {(view === "add-chooser" || settingsReturnTo === "add-chooser") && (
+              <div style={{ display: view === "add-chooser" ? undefined : "none" }}>
+                <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={section => goToSettings(section, "add-chooser")} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>
+              </div>
+            )}
+            {(view === "add-manual" || settingsReturnTo === "add-manual") && (
+              <div style={{ display: view === "add-manual" ? undefined : "none" }}>
+                <ManualItemForm key={listFormNonce} onDone={() => setView("items")} onBack={() => setView("items")} onGoToItems={() => setView("items")} onGoToSettings={section => goToSettings(section, "add-manual")} onEnhanceAI={() => {setAiEntryPoint("add-manual");setView(aiConfigured ? "add-ai" : "ai-setup")}} aiSettings={aiSettings} accessToken={accessToken} onItemCreated={onItemCreated}/>
+              </div>
+            )}
             {view === "add-ai" && <AIPhotoFlow onDone={() => setView("items")} onBack={() => setView("add-manual")} aiSettings={aiSettings}/>}
 
             {view === "ai-setup" && <AISetup settings={aiSettings} onSave={setAiSettings} onComplete={() => {setView(aiEntryPoint==="add-manual"?"add-ai":"ai-photos")}} onBack={() => setView(aiEntryPoint==="add-manual"?"add-manual":"overview")} />}

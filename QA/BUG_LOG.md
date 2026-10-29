@@ -40,6 +40,54 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-110  ·  P1  ·  Signup → email verification banner  ·  Status: Fixed (verify)
+**Title:** Google signups are told "We sent a link to you" about an email that was never sent.
+**Found by:** Sunny · **Found date:** 2026-10-29 · **Test case:** exploratory
+**Repro steps:** Sign up with Google → land on `/buyer`.
+**Expected:** Nothing to verify — Google already proved the address.
+**Actual:** Amber banner: "Verify your email… We sent a link to `<email>`", with a "Resend email" button. No email was sent, and pressing resend sends a verification for an address Google had already verified.
+**Environment:** Chrome, 1280px
+**Fix commit:** _(local, sunny branch)_
+**Re-tested:** `tsc` clean both packages, lint clean, `next build` compiles, server boots with the new limiter wired (`/me/resend-verification` → 401 unauthenticated, route mounted). Backfill script dry-run against the dev DB: 1 Google account would be marked verified, 54 password accounts correctly left alone. Live Google sign-in pass pending.
+**Notes:** `verifiedAt` was written in exactly one place — the `/verify-email` token route. `POST /api/auth/google` never set it and never sent an email, so every Google account sat at `verifiedAt: null` forever and the banner, which renders on that condition alone, asserted a send that only the password path performs.
+
+Fix: `verifyGoogleIdToken` / `verifyGoogleAccessToken` now return `emailVerified` (they already *reject* an explicit `email_verified: false`, so this just surfaces the positive assertion), and the route sets `verifiedAt` on account creation — plus backfills it on sign-in for accounts created before this, including a password account that later links Google, since Google proved the same address. Existing Google users with a live session won't hit that route for up to 30 days, so `scripts/backfill-google-verified.ts` (dry run; `--apply`) closes the window in one pass.
+
+**Four more found while tracing the flow:**
+  1. **`/me/resend-verification` shared one rate-limit bucket per IP.** It borrowed `forgotPasswordLimiter`, which keys on `(IP, req.body.email)` — but the route is authenticated and sends **no body**, so the email half was always `""`. Two users on one network shared a 3/hour budget, and the 429 read "Too many password reset requests". Now `resendVerificationLimiter`, keyed on the user id, 5/hour in prod.
+  2. **Resend always claimed success.** It called the fire-and-forget helper without awaiting the result, so an SMTP failure was logged server-side while the banner said "Verification email sent". `sendVerificationEmail` now returns a boolean; signup still ignores it (a slow provider shouldn't stall the response), the resend route returns 502 `email_send_failed`, and the banner shows the server's actual message.
+  3. **"Verify your email to unlock the full DropYard experience"** — nothing is gated on `verifiedAt` anywhere in the codebase. Copy now says what verification actually buys (claim and pickup updates) and points at the spam folder, which is the likelier problem.
+  4. **"This verification link has already been used"** fires for links that were never used. `sendVerificationEmail` marks prior unused tokens `usedAt` so only the newest link is live, which is indistinguishable from a real use — and clicking the older email in your inbox is the common case. Reworded to say a newer email replaces it.
+
+Also removed from the banner: the `Sparkles` icon on the CTA (reported as "an AI icon"), the hover shimmer sweep, and the pulsing halo. It's a nag on a warning strip, not a feature announcement. Dismissal now persists in `sessionStorage` instead of reappearing on every navigation.
+
+**Not fixed — needs prod access, and it's the one that matters most:** in the dev DB, **0 of 54** password accounts have ever verified, against 64 tokens issued. That pattern says the mail isn't arriving, not that nobody clicks. Local transport is Gmail SMTP and connects fine (`📧 Email: SMTP ready` at boot) with `EMAIL_FROM` matching `SMTP_USER`, which Gmail requires. On prod, check (a) that boot line in the PM2 logs, (b) `EMAIL_FROM` vs `SMTP_USER` — a mismatch like `support@dropyard.app` over a personal Gmail relay is rejected or rewritten silently, and (c) `APP_URL`, since an unset value points every verification link at `localhost:3000`. Longer term, Resend with a verified `dropyard.app` domain plus SPF/DKIM is what gets mail into Yahoo and Outlook; the reported account is `@yahoo.com`, which treats Gmail-relayed mail from a personal address harshly.
+
+### BUG-109  ·  P2  ·  Seller onboarding → "Complete your seller profile" → Neighborhood + Postal code  ·  Status: Fixed (verify)
+**Title:** Every seller is "Barrhaven", nobody is anywhere in particular, and buyers see the same distance on every card.
+**Found by:** Barrhaven neighbourhood work · **Found date:** 2026-10-29 · **Test case:** exploratory
+**Repro steps:** Sign in as a buyer → "List New Item" → the seller-profile modal → type any postal code.
+**Expected:** The form establishes *where in Barrhaven* this seller is, and refuses a seller we can't serve.
+**Actual:** Three separate problems in one 4-field form:
+  1. **Neighborhood was free text, autofilled from the FSA table.** `/api/geo/postal` is FSA-level, and all of Barrhaven is a single row — `K2J → "Nepean (Barrhaven)" → "Barrhaven"`. So the autofill could only ever produce the one word everybody already shares, and anything typed by hand ("barrhaven", "Half moon bay", "K2J", "") was saved verbatim and printed to buyers.
+  2. **No service-area check anywhere.** A K2M (Kanata South) seller completed onboarding and listed items, while `/faq` tells visitors we're "currently restricted to people physically located in Barrhaven". Nothing in the product enforced the page.
+  3. **lat/lng came from the FSA centroid**, so every K2J user sat on the exact same point. `computeDistanceLabel` → `haversineKm` → 0 km → `labelDistance` floored it to "Under 2 km" on every single card. The distance that's meant to drive claims carried no information.
+  Separately, this endpoint wrote the **full postal code** into `User.zone` ("K2J 4A8") while buyer onboarding wrote the FSA ("K2J"), so `GET /api/items?zone=` could never match both.
+**Environment:** Chrome, 1280px + 360px, local dev
+**Fix commit:** _(local, sunny branch)_
+**Re-tested:** `tsc` clean both packages, lint clean (same 83 problems in `DropYard_SellerDashboard.jsx` before and after, none in the new files), `next build` compiles. Helper behaviour exercised directly: FSA classification (K2J core / K2G·K2R edge / K2M·K1A outside / garbage invalid), alias resolution ("barrhaven", "Nepean (Barrhaven)", "hearts desire" → canonical), and centroid spread (Quinn's Pointe ↔ Orchard Estates 6.2 km, Longfields ↔ Chapman Mills 1.6 km). Browser pass pending.
+**Notes:** The missing concept was a list of Barrhaven's own neighbourhoods. It now exists in two mirrored modules — [lib/barrhaven.ts](dropyard-frontend/lib/barrhaven.ts) for the picker and [src/lib/barrhaven.ts](dropyard_backend/src/lib/barrhaven.ts) for validation — holding 13 neighbourhoods plus a "Barrhaven (elsewhere)" escape hatch, each with its FSA, a landmark line, and an approximate centroid.
+
+Fix, in the form: postal code moved **first**, because it decides whether the rest applies. It reports one of four states under the field (in / edge / not-your-area-yet / not-a-postal-code) with no network round trip — the check is local data. Neighborhood became a `<select>` grouped as "In K2J" / "Elsewhere in Barrhaven", with the FSA's own neighbourhoods hoisted to the top and a landmark hint under the selection. An FSA with exactly one neighbourhood (K2G → Davidson Heights) is preselected. Outside the area, the submit button is disabled and the panel names the place from the Geonames table ("DropYard isn't in Kanata (Bridlewood) yet") with a mailto — the one use the FSA table is genuinely right for.
+
+Backend: `POST /me/seller-onboarding` and `PATCH /profile` both reject out-of-area postal codes (`code: 'outside_service_area'`, overridable with `DROPYARD_ENFORCE_SERVICE_AREA=false` when the service area expands) and resolve the neighbourhood through the shared list, saving the canonical name. Coordinates now come from the neighbourhood centroid, so distances inside Barrhaven spread over ~1–6 km instead of collapsing to zero. `zone` is the FSA on both paths.
+
+Also: Settings → Pickup's neighbourhood was read-only, labelled "contact support to change" — which strands anyone who moves within Barrhaven, the single most common reason to be selling. It's the same validated dropdown now, and `PATCH /me/preferences` moves the cached centroid with it.
+
+**Existing rows need one pass:** `npx ts-node scripts/normalize-barrhaven-geo.ts` (dry run; `--apply` to write) normalises `zone` to the FSA on users and items, canonicalises free-text neighbourhoods, and re-points lat/lng at neighbourhood centroids. Rows it can't place are listed, not guessed at.
+
+**Known gap:** the buyer half is enforced at the API only. `PATCH /api/auth/profile` is the buyer's postal-code endpoint and now runs the same gate, but **no UI calls it** — and `POST /api/claims` has no caller either, so there is currently no "buyer initiates a purchase" moment to hang a form on. When the claim flow is wired, the same two questions belong there.
+
 ### BUG-108  ·  P1  ·  /buyer Discover feed — only the first 20 items exist  ·  Status: Fixed (verify)
 **Title:** Listings show "Live in Drop" to their seller but never appear on the buyer dashboard.
 **Found by:** Narveer · **Found date:** 2026-10-18 · **Test case:** exploratory

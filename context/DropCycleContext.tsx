@@ -78,10 +78,22 @@ export function DropCycleProvider({ children }: { children: React.ReactNode }) {
     setSimulatedDateState(parsed);
   }, []);
 
-  // Only start the clock on the client to avoid SSR/client mismatch
+  // Only start the clock on the client to avoid SSR/client mismatch.
+  //
+  // A simulated clock RUNS from the moment it pins rather than standing
+  // still: it used to be set once and left there, which froze every
+  // countdown driven by it — a Drop banner reading the same "28m 49s"
+  // forever looks broken, not simulated. Real elapsed time is added to the
+  // simulated start, so one second of yours is one second of its.
   useEffect(() => {
-    setNow(simulatedDate ?? new Date());
-    if (simulatedDate) return;
+    if (simulatedDate) {
+      const simStart  = simulatedDate.getTime();
+      const realStart = Date.now();
+      setNow(new Date(simStart));
+      const id = setInterval(() => setNow(new Date(simStart + (Date.now() - realStart))), 1000);
+      return () => clearInterval(id);
+    }
+    setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, [simulatedDate]);

@@ -169,7 +169,9 @@ export default async function PublicItemPage({ params }: { params: Promise<{ id:
           <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">{item.title}</h1>
 
           <div className="mt-2 flex items-baseline gap-3">
-            <p className="text-3xl font-bold text-emerald-700">{priceLabel(item.price)}</p>
+            {/* Free reads in red, not the usual green: a giveaway is its own
+                thing, not the cheapest price on the page. */}
+            <p className={`text-3xl font-bold ${item.price === 0 ? "text-red-600" : "text-emerald-700"}`}>{priceLabel(item.price)}</p>
             {typeof item.originalPrice === "number" && item.originalPrice > item.price && (
               <p className="text-lg font-medium text-slate-400 line-through">${item.originalPrice}</p>
             )}
