@@ -2206,10 +2206,18 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
     ? peekBar + "0 4px 16px rgba(31, 29, 25, 0.08)"
     : peekBar + "0 1px 2px rgba(31, 29, 25, 0.03)";
 
-  // "In Barrhaven" when we know the seller's neighbourhood. `item.dist` falls
-  // back to a distance label ("0.9 km"), which reads wrong behind "In", so it
-  // goes in bare.
-  const sellerPlace = item.sellerHood ? "In " + item.sellerHood : (item.dist || null);
+  // The distance wins whenever the server could compute one. This used to
+  // prefer the neighbourhood — "In Barrhaven" — which is the one thing every
+  // buyer already knows, since the whole product is one neighbourhood deep.
+  // It also hid the km even when the backend had sent it. "~2.4 km" answers
+  // the question the buyer is actually asking: walk, drive, or skip.
+  //
+  // distanceBucket is "unknown" when one side has no coordinates yet; only
+  // then does the place name carry any information, so only then is it shown.
+  const hasRealDistance = item.distBucket && item.distBucket !== "unknown";
+  const sellerPlace = hasRealDistance
+    ? item.dist
+    : (item.sellerHood ? "In " + item.sellerHood : (item.dist || null));
 
   return (
     <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 22, overflow: "hidden", border: "1px solid " + CARD.border, cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-2px)" : "translateY(0)", boxShadow: cardShadow, animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
