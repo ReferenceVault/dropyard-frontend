@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import Link from "next/link";
-import { apiRequest } from "@/lib/api";
+// uploadItemPhoto is named for its first caller but is a generic authed
+// multipart POST to /api/uploads/s3 — same endpoint, same CSRF and
+// token-refresh handling — so chat attachments reuse it rather than
+// re-implementing that wiring.
+import { apiRequest, uploadItemPhoto } from "@/lib/api";
 import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { formatPickupDateList, formatPickupWeekday } from "@/lib/pickupDates";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
@@ -35,6 +39,7 @@ import {
   Star, Shield, Send, ArrowRight, ArrowLeft, Home, Tag, Bell, MessageCircle,
   CalendarDays, Compass, Archive, RefreshCw, Eye, EyeOff, Info, TrendingDown,
   DollarSign, AlertCircle, CheckCircle, Share2, Award, Leaf,
+  Smile, Paperclip,
   Mail,
   Banknote, Wallet,
   Phone,
@@ -640,7 +645,7 @@ function HeroPhotoMosaic({ photos, fallbackSrc, objectPosition, tileBg = C.paper
 }
 
 function GlobalStyle() {
-  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #FAF7F2; color: #1F1D19; font-family: 'Nunito', sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #D8EDD2; color: #1F5A18; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; } .cta-primary { transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1); } .cta-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(48, 132, 36, 0.3); } .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #9A948B !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border-radius: 22px; overflow: hidden; border: 1px solid #E7E3DD; box-shadow: 0 1px 2px rgba(31, 29, 25, 0.03); } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 767px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
+  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #FAF7F2; color: #1F1D19; font-family: 'Nunito', sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #D8EDD2; color: #1F5A18; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; } .cta-primary { transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1); } .cta-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(48, 132, 36, 0.3); } .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #9A948B !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } @keyframes spin { to { transform: rotate(360deg); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border-radius: 22px; overflow: hidden; border: 1px solid #E7E3DD; box-shadow: 0 1px 2px rgba(31, 29, 25, 0.03); } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 767px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
   // 100vw counts the vertical scrollbar, so the bleed overhangs the viewport
   // by its width. The clip goes on body, not on the dashboard wrapper: an
   // overflow value there would make that div a scroll container and break the
@@ -873,7 +878,10 @@ function MobileBottomNav({ page, setPage, savedCount, claimsCount, unreadCount =
   );
 }
 
-function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, onSwitchRole, onReset, dropState, user, onSignout }) {
+// dropState is gone from the params: the nav's only use for it was choosing
+// between the amber pill and the green pill, and there is one active
+// treatment now. MobileBottomNav still takes it for its own accent.
+function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, onSwitchRole, onReset, user, onSignout }) {
   const { isMobile } = useViewport();
   const navItems = [
     { id:"discover", label:"Discover" },
@@ -897,19 +905,32 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, on
           <nav style={{ display: "flex", alignItems: "center", gap: 4 }}>
             {navItems.map(item => {
               const active = page === item.id;
+              // Two active treatments, read straight off the design comps:
+              // Claims goes green with a bar under it, every other tab wears
+              // the pale amber pill. Six comps show this split and none
+              // contradict it (Claims green in both its shots, Saved /
+              // Messages / History amber in all four of theirs), so it's
+              // deliberate rather than drift. `underlined` is the whole rule
+              // — flip it to a constant to unify the two.
+              const underlined = active && item.id === "claims";
               return (
                 <button key={item.id} onClick={() => { onReset && onReset(); setPage(item.id); }} style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  padding: "8px 15px", border: "none", borderRadius: 999,
-                  background: active ? (dropState === "between" ? C.amberMist : C.greenMist) : "transparent",
-                  color: active ? (dropState === "between" ? C.amberDeep : C.green) : C.mink,
-                  fontSize: 14, fontWeight: active ? 800 : 600,
+                  position: "relative",
+                  display: "flex", alignItems: "center", gap: 7,
+                  padding: underlined ? "8px 15px 13px" : "9px 16px",
+                  border: "none", borderRadius: underlined ? 0 : 999,
+                  background: active && !underlined ? C.amberMist : "transparent",
+                  color: active ? (underlined ? C.green : C.amberDeep) : C.mink,
+                  fontSize: 15, fontWeight: active ? 800 : 600,
                   cursor: "pointer", fontFamily: F.head,
-                  transition: "all 200ms",
+                  transition: "color 200ms, background 200ms",
                 }}>
                   {item.label}
                   {item.badge && (
-                    <span style={{ fontSize: 10, fontWeight: 800, padding: "1px 7px", borderRadius: 20, background: active ? (dropState === "between" ? C.amber : C.green) : C.fawn, color: active ? "#fff" : C.mink }}>{item.badge}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, padding: "1px 8px", borderRadius: 20, background: active ? (underlined ? C.green : C.amber) : C.fawn, color: active ? "#fff" : C.mink }}>{item.badge}</span>
+                  )}
+                  {underlined && (
+                    <span aria-hidden="true" style={{ position: "absolute", left: 12, right: 12, bottom: 0, height: 3, borderRadius: "3px 3px 0 0", background: C.green }}/>
                   )}
                 </button>
               );
@@ -934,42 +955,123 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, on
 }
 
 /* ============================================================
-   PAGE TITLE - shared header for non-discover pages
+   PAGE BAR — shared header for Saved / Claims / Messages / History
+
+   Replaces PageTitle, which stacked an uppercase eyebrow, a 38px
+   h1, a subtitle and a 56px icon tile above every one of these
+   pages. The redesign drops all four: the tab you're on already
+   names the page, so the h1 repeated it, and the icon tile
+   repeated the icon in the nav. What's left is the back pill and
+   a count chip on the right.
+
+   The h1 survives as screen-reader-only text. A page with no
+   heading at all is hostile to anyone navigating by headings, and
+   nothing in the design depends on it being visible.
    ============================================================ */
-function PageTitle({ eyebrow, title, subtitle, action, eyebrowBg, eyebrowColor, icon: IconComp, iconBg, iconColor, onBack }) {
+function PageBar({ title, chip, chipIcon: ChipIcon, chipTone = "green", onBack }) {
   const { isMobile } = useViewport();
+  const tone = chipTone === "amber"
+    ? { bg: C.amberMist, fg: C.amberDeep, ring: C.amber + "33" }
+    : { bg: C.greenMist, fg: C.greenDeep, ring: C.green + "2E" };
   return (
-    <div style={{ padding: isMobile ? "0 0 8px" : "4px 0 16px", marginBottom: isMobile ? 8 : 12, position: "relative" }}>
-      {onBack && (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", rowGap: 10, marginBottom: isMobile ? 16 : 22 }}>
+      <h1 style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 }}>{title}</h1>
+      {onBack ? (
         <button
           onClick={onBack}
-          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.mink, marginBottom: isMobile ? 8 : 10 }}
+          style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: isMobile ? "9px 16px" : "11px 20px", borderRadius: 999, border: "1px solid " + C.fawn, background: C.paper, cursor: "pointer", fontFamily: F.head, fontSize: isMobile ? 13 : 15, fontWeight: 700, color: C.ink, boxShadow: "0 1px 2px rgba(31,29,25,0.04)" }}
           onMouseEnter={(e) => { e.currentTarget.style.background = C.sand; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = C.paper; }}
         >
-          <ArrowLeft size={14}/> Back to Discover
+          <ArrowLeft size={isMobile ? 15 : 17} strokeWidth={2.2}/>
+          Back to Discover
+          {/* Decorative, not a second control — the pill it sits in is the
+              only thing clickable here. It's the shape of the grid this
+              button goes back to. */}
+          <GridGlyph/>
         </button>
+      ) : <span/>}
+      {chip && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: isMobile ? "8px 14px" : "9px 18px", borderRadius: 999, background: tone.bg, border: "1px solid " + tone.ring, fontFamily: F.head, fontSize: isMobile ? 12 : 14, fontWeight: 700, color: tone.fg, whiteSpace: "nowrap" }}>
+          {ChipIcon && <ChipIcon size={isMobile ? 13 : 15} strokeWidth={2.2}/>}
+          {chip}
+        </span>
       )}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: isMobile ? 12 : 24, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 18, flex: 1, minWidth: 0 }}>
-          {IconComp && (
-            <div style={{ width: isMobile ? 44 : 56, height: isMobile ? 44 : 56, borderRadius: isMobile ? 14 : 18, background: iconBg || C.greenMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: isMobile ? 2 : 6, boxShadow: "0 2px 0 " + (iconBg ? iconBg : C.fawn) }}>
-              <IconComp size={isMobile ? 20 : 24} style={{ color: iconColor || C.greenDeep }} strokeWidth={2.2}/>
-            </div>
-          )}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {eyebrow && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <span style={{ width: 22, height: 2.5, background: eyebrowColor || C.green, borderRadius: 2 }}/>
-                <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: eyebrowColor || C.green, letterSpacing: "0.16em", textTransform: "uppercase" }}>{eyebrow}</p>
-              </div>
-            )}
-            <h1 style={{ fontFamily: F.head, fontSize: isMobile ? 26 : 38, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.02, marginBottom: subtitle ? 8 : 0 }}>{title}</h1>
-            {subtitle && <p style={{ fontFamily: F.body, fontSize: isMobile ? 13 : 15, fontWeight: 500, color: C.mink, lineHeight: 1.55, maxWidth: 560 }}>{subtitle}</p>}
-          </div>
-        </div>
-        {action}
-      </div>
+    </div>
+  );
+}
+
+// 3×3 dot grid drawn inline — lucide has no 9-dot icon at this weight, and
+// LayoutGrid's four fat squares read as a view-mode toggle rather than the
+// item grid.
+function GridGlyph() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" style={{ display: "block", flexShrink: 0 }}>
+      {[1, 6.5, 12].map((cy) => [1, 6.5, 12].map((cx) => (
+        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.3" fill={C.amber}/>
+      )))}
+    </svg>
+  );
+}
+
+/* ============================================================
+   HILLS BACKDROP
+   The neighbourhood the whole product is about, drawn once at the
+   bottom of the viewport. Fixed rather than page-bottom so a short
+   page (an empty Saved tab) and a long one (History) both sit on
+   the same horizon instead of the art sliding up into the content.
+
+   aria-hidden + pointerEvents:none — it is decoration and must
+   never swallow a click meant for the content above it.
+   ============================================================ */
+function HillsBackdrop() {
+  return (
+    <div
+      aria-hidden="true"
+      style={{ position: "fixed", left: 0, right: 0, bottom: 0, pointerEvents: "none", zIndex: 0 }}
+    >
+      {/* No fixed height and no `slice`. The band used to be a clamped height
+          with preserveAspectRatio="xMidYMax slice", which crops whichever axis
+          overflows — on a wide desktop that ate the top of the village and cut
+          the houses in half. Here `width: 100%` + `height: auto` lets the
+          viewBox's own 1440:190 ratio set the height, so the artwork is always
+          drawn whole, full-bleed, at any viewport width. */}
+      <svg viewBox="0 0 1440 190" preserveAspectRatio="xMidYMax meet" style={{ width: "100%", height: "auto", display: "block" }}>
+        {/* Back ridge — the village stands on this one */}
+        <path d="M0 112 C 180 92, 360 124, 540 120 C 740 115, 880 74, 1060 80 C 1220 86, 1340 112, 1440 104 L1440 190 L0 190 Z" fill="#EDF4E6"/>
+        {/* Village spans x 941–1424, which keeps the rightmost cottage 16
+            units clear of the viewBox edge. An SVG clips to its viewport, so
+            anything past x=1440 would have its wall sliced flat against the
+            screen edge. */}
+        <g fill="#DCE9CF">
+          {/* left cottage */}
+          <path d="M1008 96 L1044 72 L1080 96 L1080 122 L1008 122 Z"/>
+          <rect x="1036" y="104" width="13" height="18" rx="2" fill="#F5F9F0"/>
+          {/* tall house — the centrepiece, two storeys */}
+          <path d="M1206 80 L1264 46 L1322 80 L1322 122 L1206 122 Z"/>
+          <rect x="1226" y="88" width="15" height="14" rx="2" fill="#F5F9F0"/>
+          <rect x="1256" y="88" width="15" height="14" rx="2" fill="#F5F9F0"/>
+          <rect x="1286" y="88" width="15" height="14" rx="2" fill="#F5F9F0"/>
+          <rect x="1226" y="108" width="15" height="14" rx="2" fill="#F5F9F0"/>
+          <rect x="1286" y="108" width="15" height="14" rx="2" fill="#F5F9F0"/>
+          <rect x="1256" y="106" width="15" height="16" rx="2" fill="#F5F9F0"/>
+          {/* right cottage */}
+          <path d="M1360 98 L1392 76 L1424 98 L1424 122 L1360 122 Z"/>
+          <rect x="1386" y="106" width="12" height="16" rx="2" fill="#F5F9F0"/>
+          {/* trees */}
+          <circle cx="960" cy="96" r="19"/>
+          <rect x="956" y="106" width="7" height="20" rx="3"/>
+          <circle cx="1116" cy="92" r="15"/>
+          <rect x="1113" y="100" width="6" height="24" rx="3"/>
+          <circle cx="1158" cy="101" r="22"/>
+          <rect x="1154" y="114" width="7" height="14" rx="3"/>
+          <circle cx="1342" cy="100" r="14"/>
+          <rect x="1339" y="108" width="6" height="18" rx="3"/>
+        </g>
+        {/* Front ridge — sits lower than the village baseline so it frames the
+            houses rather than swallowing them */}
+        <path d="M0 150 C 170 132, 330 158, 520 154 C 700 150, 860 126, 1040 132 C 1200 138, 1330 156, 1440 148 L1440 190 L0 190 Z" fill="#E2EDD6"/>
+      </svg>
     </div>
   );
 }
@@ -2996,11 +3098,16 @@ function EmptyState({ icon: Icon, illustration, title, message, cta, onCtaClick,
     accentColor === C.amber ? C.amberDeep :
     accentColor;
   return (
-    <div style={{ textAlign: "center", padding: "72px 24px 64px", background: C.paper, borderRadius: 24, border: "1.5px dashed " + C.fawn, position: "relative", overflow: "hidden" }}>
+    // Padding and illustration trimmed (72/64 → 48/44, 132 → 104): the card
+    // was tall enough on a desktop viewport to reach down over the hills
+    // backdrop and hide the village behind it. Transparent background rather
+    // than C.paper so the hills read through the lower edge, which is what
+    // makes it sit on the landscape instead of masking it.
+    <div style={{ textAlign: "center", padding: "48px 24px 44px", background: "transparent", borderRadius: 24, border: "1.5px dashed " + C.fawn, position: "relative", overflow: "hidden" }}>
       <div aria-hidden="true" style={{ position: "absolute", top: -40, left: "50%", transform: "translateX(-50%)", width: 280, height: 200, borderRadius: "50%", background: "radial-gradient(ellipse at center, " + accentColor + "12 0%, transparent 70%)", filter: "blur(12px)", pointerEvents: "none" }}/>
       <div style={{ position: "relative" }}>
         {illustration ? (
-          <div style={{ width: 132, height: 132, margin: "0 auto 22px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ width: 104, height: 104, margin: "0 auto 18px", display: "flex", alignItems: "center", justifyContent: "center" }}>
             {illustration}
           </div>
         ) : Icon ? (
@@ -4362,7 +4469,7 @@ function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggle
     : (Array.isArray(itemsSource) ? itemsSource : allItems).filter(i => savedIds.has(i.id));
   return (
     <>
-      <PageTitle onBack={onBack} eyebrow="Your saves" eyebrowColor={C.claret} title="Saved items" subtitle={items.length + " item" + (items.length !== 1 ? "s" : "") + " you're watching"} icon={Heart} iconBg={C.claretMist} iconColor={C.claret}/>
+      <PageBar onBack={onBack} title="Saved items" chipIcon={Heart} chip={items.length + " saved item" + (items.length !== 1 ? "s" : "")}/>
       {items.length === 0 ? (
         <EmptyState illustration={<EmptySavedIllustration/>} title="Nothing saved yet" message="Tap the heart on items you’re interested in — they’ll gather here so you can claim them when the Drop opens." cta="Browse Discover" onCtaClick={onBrowse} accent={C.amber}/>
       ) : (
@@ -4578,16 +4685,21 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
   const todayCount     = claims.filter(c => c.status === "pickup-today" || c.status === "pickup-overdue").length;
   const scheduledCount = claims.filter(c => c.status === "pickup-scheduled").length;
   const pendingCount   = claims.filter(c => c.status === "offer-pending").length;
+  // "completed" is already one of stageInfo's statuses — a claim sits here
+  // until the buyer confirms receipt, so the count was derivable all along
+  // and the row was just three cards wide.
+  const completedCount = claims.filter(c => c.status === "completed").length;
 
   const stats = [
     { label: "Pickup today",   value: todayCount,     icon: Clock,       color: C.claret,    bg: C.claretMist, urgent: todayCount > 0 },
     { label: "Scheduled",      value: scheduledCount, icon: Calendar,    color: C.greenDeep, bg: C.greenMist,  urgent: false },
     { label: "Offer pending",  value: pendingCount,   icon: RefreshCw,   color: C.amberDeep, bg: C.amberMist,  urgent: false },
+    { label: "Completed",      value: completedCount, icon: Star,        color: C.greenDeep, bg: C.greenMist,  urgent: false },
   ];
 
   return (
     <>
-      <PageTitle onBack={onBack} eyebrow="Your claims" eyebrowColor={C.green} title="Pickups & offers" subtitle={claims.length + " active claim" + (claims.length !== 1 ? "s" : "")} icon={ShoppingBag} iconBg={C.greenMist} iconColor={C.greenDeep}/>
+      <PageBar onBack={onBack} title="Pickups & offers" chip={claims.length + " active claim" + (claims.length !== 1 ? "s" : "")}/>
 
       {/* Success toast */}
       {toast && (
@@ -4598,18 +4710,19 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
         </div>
       )}
 
-      {/* Stats grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 22 }}>
+      {/* Stats grid — four across, 2×2 on mobile. Same template as History's
+          row so the two pages' stat strips line up instead of drifting. */}
+      <div style={{ display: "grid", gridTemplateColumns: __isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: __isMobile ? 10 : 14, marginBottom: __isMobile ? 16 : 22 }}>
         {stats.map((s, i) => {
           const Ic = s.icon;
           return (
-            <div key={i} className="fade-in" style={{ padding: "18px 20px", borderRadius: 18, background: s.urgent ? s.bg : C.paper, border: "1.5px solid " + (s.urgent ? s.color + "40" : C.fawn), animationDelay: (i * 40) + "ms", display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 14, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Ic size={19} style={{ color: s.color }}/>
+            <div key={i} className="fade-in" style={{ padding: "20px 22px", borderRadius: 18, background: s.urgent ? s.bg : C.paper, border: "1px solid " + (s.urgent ? s.color + "40" : C.fawn), animationDelay: (i * 40) + "ms", display: "flex", alignItems: "center", gap: 16 }}>
+              <div style={{ width: 52, height: 52, borderRadius: 16, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Ic size={23} strokeWidth={2.1} style={{ color: s.color }}/>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontFamily: F.head, fontSize: 28, fontWeight: 900, color: s.color, letterSpacing: "-0.02em", lineHeight: 1 }}>{s.value}</p>
-                <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, marginTop: 4 }}>{s.label}</p>
+                <p style={{ fontFamily: F.head, fontSize: 33, fontWeight: 900, color: s.color, letterSpacing: "-0.02em", lineHeight: 1 }}>{s.value}</p>
+                <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.mink, marginTop: 5 }}>{s.label}</p>
               </div>
               {s.urgent && (
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: s.color, boxShadow: "0 0 0 3px " + s.color + "35", animation: "pulseGreen 2s infinite" }}/>
@@ -4631,7 +4744,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
             const isRating = ratingId === c.id;
 
             return (
-              <article key={c.id} className="fade-in" style={{ padding: "18px 22px", borderRadius: 20, background: c.status === "pickup-overdue" ? C.amberMist : (urgent ? "#FFF5F5" : C.paper), border: "1.5px solid " + (highlightId === c.id ? C.green : c.status === "pickup-overdue" ? C.amber + "40" : urgent ? C.claret + "40" : C.fawn), boxShadow: highlightId === c.id ? "0 0 0 4px " + C.greenMist + ", 0 8px 24px rgba(48,132,36,0.18)" : "none", transition: "box-shadow 200ms, border-color 200ms", animationDelay: (idx * 50) + "ms" }}>
+              <article key={c.id} className="fade-in" style={{ padding: "20px 24px", borderRadius: 20, background: c.status === "pickup-overdue" ? C.amberMist : (urgent ? "#FFF5F5" : C.paper), border: "1px solid " + (highlightId === c.id ? C.green : c.status === "pickup-overdue" ? C.amber + "40" : urgent ? C.claret + "40" : C.fawn), boxShadow: highlightId === c.id ? "0 0 0 4px " + C.greenMist + ", 0 8px 24px rgba(48,132,36,0.18)" : "none", transition: "box-shadow 200ms, border-color 200ms", animationDelay: (idx * 50) + "ms" }}>
                 {c.status === "pickup-overdue" && c.autoCancelsIn && (
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "10px 14px", borderRadius: 12, background: C.paper, border: "1px solid " + C.amber + "35", marginBottom: 14 }}>
                     <AlertCircle size={14} style={{ color: C.amberDeep, flexShrink: 0, marginTop: 1 }}/>
@@ -4650,22 +4763,22 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                   </div>
                 )}
 
-                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                  <div style={{ width: 64, height: 64, borderRadius: 16, background: "linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
-                    <ItemImage src={c.img || c.e} emojiSize={40}/>
+                <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+                  <div style={{ width: 104, height: 104, borderRadius: 18, background: "linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                    <ItemImage src={c.img || c.e} emojiSize={52}/>
                   </div>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-                      <h3 style={{ fontFamily: F.head, fontSize: 17, fontWeight: 800, color: C.ink }}>{c.t}</h3>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 999, background: stage.bg, color: stage.color, letterSpacing: "0.06em" }}>
-                        <StageIcon size={10}/> {stage.label}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6, flexWrap: "wrap" }}>
+                      <h3 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em" }}>{c.t}</h3>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 13, fontWeight: 800, padding: "5px 13px", borderRadius: 999, background: stage.bg, color: stage.color, letterSpacing: "0.02em" }}>
+                        <StageIcon size={13}/> {stage.label}
                       </span>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                      <span style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: priceColor(c.price, C.green) }}>{priceText(c.price)}</span>
-                      <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4 }}>
-                        <User size={12}/> {c.seller}
+                    <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                      <span style={{ fontFamily: F.head, fontSize: 28, fontWeight: 900, color: priceColor(c.price, C.green), letterSpacing: "-0.02em" }}>{priceText(c.price)}</span>
+                      <span style={{ fontFamily: F.head, fontSize: 15, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 5 }}>
+                        <User size={14}/> {c.seller}
                       </span>
                     </div>
                     {!urgent && (c.date || c.time) && c.status !== "offer-pending" && (
@@ -4733,8 +4846,14 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                         made the last offer, show "Waiting for seller" pill. */}
                     {c.status === "offer-pending" && c.iMadeTheOffer && (
                       <>
-                        <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, color: C.amberDeep, padding: "9px 14px", background: C.amberMist, borderRadius: 999, border: "1px solid " + C.amber + "30", display: "flex", alignItems: "center", gap: 5 }}>
-                          <Clock size={12}/> Waiting for seller…
+                        {/* "Waiting for seller…" read as a clipped string —
+                            the ellipsis was literal text, not overflow. Full
+                            wording now, outlined rather than filled, with the
+                            chevron the design puts on it. Still a span: it was
+                            never clickable and that hasn't changed. */}
+                        <span style={{ fontFamily: F.head, fontSize: 15, fontWeight: 700, color: C.amberDeep, padding: "12px 18px", background: C.paper, borderRadius: 999, border: "1.5px solid " + C.amber + "66", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
+                          <Clock size={16}/> Waiting for seller response
+                          <ChevronRight size={16} style={{ opacity: 0.75 }}/>
                         </span>
                         {/* Waive — the buyer's way out while the offer is still
                             with the seller. Without it the only exits were the
@@ -4742,8 +4861,8 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                             listed-price claim holding the item RESERVED against
                             a buyer who had already moved on. Same confirm modal
                             and same PATCH /cancel as a scheduled pickup. */}
-                        <button onClick={() => setCancelTarget(c)} title="Release this claim so other neighbours can take the item" style={{ padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                          <X size={12}/> Waive item
+                        <button onClick={() => setCancelTarget(c)} title="Release this claim so other neighbours can take the item" style={{ padding: "12px 18px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap" }}>
+                          <X size={16}/> Waive item
                         </button>
                       </>
                     )}
@@ -4927,6 +5046,15 @@ const DEMO_BUYER_CONVERSATIONS = [
     },
 ];
 
+// Emoji offered in the composer tray. Deliberately a short, pickup-shaped
+// set rather than a full picker: these threads are about agreeing a price and
+// a time, so the useful ones are acknowledgements, money, and logistics.
+const COMPOSER_EMOJI = [
+  "👍", "🙏", "😊", "😁", "😂", "❤️", "🔥", "🎉",
+  "✅", "👌", "🤝", "🙌", "👋", "😅", "🤔", "😬",
+  "💰", "📦", "🚗", "⏰", "📍", "📸", "❓", "⭐",
+];
+
 function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCounter = null, onDeclineCounter = null, openThreadId = null, onConsumeOpenThread = null, onBack = null, convList: convListProp = null, onConvListChange = null }) {
   const { isMobile } = useViewport();
   const usingBackend = !!accessToken;
@@ -4943,7 +5071,15 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   // conversations and coming back, mirroring v2 / FB Messenger behavior.
   const [drafts, setDrafts]             = useState({});
   const draft = activeId ? (drafts[activeId] || "") : "";
-  const setDraft = (value) => setDrafts(d => ({ ...d, [activeId]: value }));
+  // Accepts an updater as well as a value, the way a real useState setter
+  // does. It didn't, and `setDraft(d => d + emoji)` stored the function
+  // itself as the draft — the next render then called draft.trim() on a
+  // function and the thread crashed. Anything shaped like a state setter has
+  // to honour the functional form or every caller has to remember it can't.
+  const setDraft = (value) => setDrafts(d => ({
+    ...d,
+    [activeId]: typeof value === "function" ? value(d[activeId] || "") : value,
+  }));
   const [sending, setSending]           = useState(false);
   const [errorMsg, setErrorMsg]         = useState(null);
   const [successMsg, setSuccessMsg]     = useState(null);
@@ -4951,6 +5087,21 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   // OFFER message without leaving the conversation. Opens with a numeric
   // input + Send/Cancel; submits via POST /messages with messageType OFFER.
   const [offerComposerOpen, setOfferComposerOpen] = useState(false);
+  // Attachment upload. `attachBusy` disables the composer while the file is
+  // in flight so a second pick can't race the first.
+  const fileInputRef = useRef(null);
+  const [attachBusy, setAttachBusy] = useState(false);
+  // Emoji tray above the composer. Closes on pick, on Escape, and whenever
+  // the thread changes — leaving it hanging open over a different
+  // conversation is worse than making the buyer tap twice.
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  useEffect(() => { setEmojiOpen(false); }, [activeId]);
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const onKey = (e) => { if (e.key === "Escape") setEmojiOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [emojiOpen]);
   const [offerComposerAmt, setOfferComposerAmt]   = useState("");
 
   // BUG-055 — active claims for buyer's conversations (PROPOSED + ACCEPTED).
@@ -5138,7 +5289,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
     // Map backend MessageType (uppercase enum) to the lowercase keys the
     // render switch in renderMessage() uses. Unknown / missing → "text".
     const TYPE_MAP = {
-      TEXT: "text", OFFER: "offer", COUNTER: "counter", CLAIM: "claim",
+      TEXT: "text", IMAGE: "image", OFFER: "offer", COUNTER: "counter", CLAIM: "claim",
       WHATSAPP: "whatsapp", NOTICE: "notice", REMINDER: "reminder",
     };
     const renderType = TYPE_MAP[api.messageType] || "text";
@@ -5151,6 +5302,10 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
       // amount surfaces in the OFFER/COUNTER/CLAIM bubble header as "· $30"
       // — render side reads m.amount directly.
       amount: typeof api.amount === "number" ? api.amount : undefined,
+      // Fall back to an image bubble whenever a row carries an attachment,
+      // even if its messageType says TEXT — a picture with no <img> renders
+      // as an empty bubble, which is the worse failure.
+      attachmentUrl: typeof api.attachmentUrl === "string" ? api.attachmentUrl : undefined,
     };
   }
 
@@ -5242,6 +5397,53 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
         : c));
     }
   });
+
+  // Pick → upload → send, as two requests: POST /api/uploads/s3 stores the
+  // file and hands back a public URL, then the usual message POST carries that
+  // URL as `attachmentUrl`. Whatever is already typed rides along as the
+  // caption, so attaching never silently discards a draft.
+  async function handleAttach(file) {
+    if (!file || !activeId) return;
+    if (!usingBackend) {
+      setErrorMsg("Attachments need a signed-in session.");
+      return;
+    }
+    // Mirrors the upload route's own filter (jpg/png/webp/gif, 10 MB) so the
+    // buyer hears about a bad file before spending the round trip on it.
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+      setErrorMsg("Only jpg, png, webp or gif images can be attached.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg("That image is over 10 MB — please attach a smaller one.");
+      return;
+    }
+    setErrorMsg(null);
+    setAttachBusy(true);
+    try {
+      const { publicUrl } = await uploadItemPhoto(file);
+      const caption = draft.trim();
+      const res = await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
+        method: "POST",
+        token:  accessToken,
+        body:   JSON.stringify({ body: caption, messageType: "IMAGE", attachmentUrl: publicUrl }),
+      });
+      setDraft("");
+      // Same reason as handleSend: append from the POST response rather than
+      // waiting on the socket echo, which the handler dedupes by id anyway.
+      if (res?.message) {
+        setActiveMsgs((prev) => {
+          const list = prev || [];
+          if (list.some((m) => m.id === res.message.id)) return list;
+          return [...list, adaptMessage(res.message)];
+        });
+      }
+    } catch (err) {
+      setErrorMsg("Couldn't attach that image: " + (err?.message || "try again"));
+    } finally {
+      setAttachBusy(false);
+    }
+  }
 
   async function handleSend() {
     const body = draft.trim();
@@ -5458,6 +5660,19 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
     return { activeThreads: act, earlierThreads: earlier };
   }, [conversations, isThreadActive]);
 
+  // Thread search. Purely client-side over the conversations already loaded —
+  // it filters which rows are drawn and nothing else. The inbox counts in the
+  // header chip deliberately keep reporting the whole inbox rather than the
+  // match count, so searching doesn't look like threads disappeared.
+  const [threadQuery, setThreadQuery] = useState("");
+  const searching = threadQuery.trim().length > 0;
+  const matchesQuery = useCallback((c) => {
+    const q = threadQuery.trim().toLowerCase();
+    if (!q) return true;
+    return [c?.item?.title, c?.seller?.name, c?.lastMsg]
+      .some((field) => typeof field === "string" && field.toLowerCase().includes(q));
+  }, [threadQuery]);
+
   const [showEarlier, setShowEarlier] = useState(false);
   // Opening an older thread (e.g. from the Claims tab or History) must not
   // leave the selection hidden inside a collapsed group.
@@ -5626,6 +5841,39 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
       );
     }
 
+    // Image attachment — a bubble whose content is the picture. Keyed off the
+    // URL rather than the type so a row that carries one always renders it.
+    // Any caption travels in `text` and sits under the photo.
+    if (m.attachmentUrl) {
+      return (
+        <div key={i} style={{ display: "flex", justifyContent: isYou ? "flex-end" : "flex-start", marginBottom: 10 }}>
+          <div style={{ maxWidth: "72%" }}>
+            {m.from === "seller" && (
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4, marginLeft: 2 }}>
+                <User size={10} style={{ color: C.mink }}/>
+                <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.mink }}>{active?.seller?.name}</span>
+              </div>
+            )}
+            <div style={{ borderRadius: 16, overflow: "hidden", border: "1px solid " + (isYou ? C.green + "55" : C.fawn), background: isYou ? C.greenMist : C.paper }}>
+              <a href={m.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ display: "block", lineHeight: 0 }}>
+                <img
+                  src={m.attachmentUrl}
+                  alt={m.text ? m.text : "Attached photo"}
+                  style={{ display: "block", width: "100%", maxWidth: 300, maxHeight: 300, objectFit: "cover", cursor: "zoom-in" }}
+                />
+              </a>
+              {m.text && (
+                <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.45 }}>{m.text}</p>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: isYou ? "flex-end" : "flex-start", marginTop: 4 }}>
+              <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash }}>{m.time}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // Claim / offer / counter / question chat bubbles
     const bubbleBg = isYou ? C.green : (m.from === "ai" ? C.aiMist : C.paper);
     const bubbleColor = isYou ? "#fff" : C.ink;
@@ -5670,7 +5918,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
 
   return (
     <>
-      <PageTitle onBack={onBack} eyebrow="Messages" eyebrowColor={C.ai} title="Conversations" subtitle={inboxSubtitle} icon={MessageSquare} iconBg={C.aiMist} iconColor={C.ai}/>
+      <PageBar onBack={onBack} title="Conversations" chipIcon={MessageCircle} chip={inboxSubtitle}/>
 
       {/* Success toast — celebration banner when an offer/counter is accepted. */}
       {successMsg && (
@@ -5707,27 +5955,55 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
           has a claim, offer when it has OFFER/COUNTER messages, else
           question) — the chips are the easy half. */}
 
+      {/* Two cards side by side, not one box split by a divider. The wrapper
+          used to carry the border, radius and white fill, with the thread list
+          drawing a borderRight as the seam — but it also had a 20px grid gap,
+          so that seam floated in the middle of a white field instead of
+          sitting between the panels. The border moves onto each panel and the
+          gap becomes real space between two cards. */}
       <div style={{
         display: isMobile ? "flex" : "grid",
         flexDirection: isMobile ? "column" : undefined,
         gridTemplateColumns: isMobile ? undefined : "380px 1fr",
         gap: isMobile ? 0 : 20,
-        height: isMobile ? "auto" : 680,
+        // Was a flat 680px, which on a laptop pushed the composer below the
+        // fold — you had to scroll the page to type. Sized off the viewport
+        // instead: 290px covers the top bar, the page padding and the PageBar
+        // row above, so the composer lands on screen at any window height.
+        // Capped at 620 so it doesn't stretch into a letterbox on a tall
+        // monitor, floored at 400 so the thread never collapses to a sliver.
+        height: isMobile ? "auto" : "clamp(400px, calc(100vh - 290px), 620px)",
         minHeight: isMobile ? "60vh" : undefined,
-        border: isMobile ? "none" : "1.5px solid " + C.fawn,
-        borderRadius: isMobile ? 0 : 20,
-        overflow: isMobile ? "visible" : "hidden",
-        background: isMobile ? "transparent" : C.paper,
       }}>
         {/* Thread list — hidden on mobile while a thread is open. */}
         {(!isMobile || !mobileViewingId) && (
         <div style={{
-          borderRight: isMobile ? "none" : "1px solid " + C.fawn,
           overflowY: "auto",
-          background: isMobile ? C.paper : undefined,
-          border: isMobile ? "1.5px solid " + C.fawn : undefined,
-          borderRadius: isMobile ? 16 : 0,
+          background: C.paper,
+          border: "1px solid " + C.fawn,
+          borderRadius: isMobile ? 16 : 18,
+          height: isMobile ? undefined : "100%",
         }}>
+          {/* Search — sticky so it stays reachable while the list scrolls
+              under it. */}
+          <div style={{ position: "sticky", top: 0, zIndex: 3, padding: 12, background: C.paper, borderBottom: "1px solid " + C.fawn }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 14px", borderRadius: 999, border: "1px solid " + C.fawn, background: C.paper }}>
+              <Search size={16} style={{ color: C.ash, flexShrink: 0 }}/>
+              <input
+                value={threadQuery}
+                onChange={(e) => setThreadQuery(e.target.value)}
+                placeholder="Search conversations..."
+                aria-label="Search conversations"
+                style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink }}
+              />
+              {searching && (
+                <button onClick={() => setThreadQuery("")} aria-label="Clear search" style={{ border: "none", background: "transparent", color: C.ash, cursor: "pointer", padding: 0, display: "flex", flexShrink: 0 }}>
+                  <X size={15}/>
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* `archivedList` counts here too — otherwise archiving your last
               live thread renders "No threads" over an Archived group that
               never gets a chance to draw. */}
@@ -5738,11 +6014,23 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
             </div>
           ) : (
             <>
-              {activeThreads.map(renderThreadRow)}
+              {activeThreads.filter(matchesQuery).map(renderThreadRow)}
+
+              {/* While searching, "no matches" is the honest message — the
+                  inbox isn't empty, the query just didn't hit anything. */}
+              {searching && activeThreads.filter(matchesQuery).length === 0 && (
+                <div style={{ padding: "28px 20px", textAlign: "center" }}>
+                  <Search size={24} style={{ color: C.smoke, marginBottom: 8 }}/>
+                  <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No matches in your inbox.</p>
+                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, marginTop: 2 }}>
+                    Earlier and archived threads are searched too.
+                  </p>
+                </div>
+              )}
 
               {/* Nothing live, but history exists — say so rather than showing
                   a bare "No threads" over a list that isn't actually empty. */}
-              {activeThreads.length === 0 && (
+              {!searching && activeThreads.length === 0 && (
                 <div style={{ padding: "28px 20px", textAlign: "center" }}>
                   <MessageSquare size={24} style={{ color: C.smoke, marginBottom: 8 }}/>
                   <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No active threads.</p>
@@ -5755,43 +6043,45 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
               {/* Earlier — everything with no live claim and no activity in the
                   last ACTIVE_WINDOW_DAYS. Collapsed by default: it's history,
                   so it shouldn't compete with live threads for attention. */}
-              {earlierThreads.length > 0 && (
+              {/* A search forces the group open — a match hidden behind a
+                  collapsed header reads as "not found". */}
+              {earlierThreads.filter(matchesQuery).length > 0 && (
                 <>
                   <button
                     onClick={() => setShowEarlier(v => !v)}
                     style={{ width: "100%", textAlign: "left", padding: "11px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: C.sand, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
                   >
-                    {showEarlier ? <ChevronUp size={14} style={{ color: C.mink }}/> : <ChevronDown size={14} style={{ color: C.mink }}/>}
+                    {(showEarlier || searching) ? <ChevronUp size={14} style={{ color: C.mink }}/> : <ChevronDown size={14} style={{ color: C.mink }}/>}
                     <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase" }}>
                       Earlier
                     </span>
                     <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash, marginLeft: "auto" }}>
-                      {earlierThreads.length} thread{earlierThreads.length !== 1 ? "s" : ""}
+                      {earlierThreads.filter(matchesQuery).length} thread{earlierThreads.filter(matchesQuery).length !== 1 ? "s" : ""}
                     </span>
                   </button>
-                  {showEarlier && earlierThreads.map(c => renderThreadRow(c, true))}
+                  {(showEarlier || searching) && earlierThreads.filter(matchesQuery).map(c => renderThreadRow(c, true))}
                 </>
               )}
 
               {/* Archived — threads the buyer put away by hand. Collapsed, at
                   the very bottom, the way WhatsApp and Telegram park theirs.
                   Open one to read it; Unarchive puts it back in the inbox. */}
-              {archivedList.length > 0 && (
+              {archivedList.filter(matchesQuery).length > 0 && (
                 <>
                   <button
                     onClick={() => setShowArchived(v => !v)}
                     style={{ width: "100%", textAlign: "left", padding: "11px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: C.sand, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
                   >
-                    {showArchived ? <ChevronUp size={14} style={{ color: C.mink }}/> : <ChevronDown size={14} style={{ color: C.mink }}/>}
+                    {(showArchived || searching) ? <ChevronUp size={14} style={{ color: C.mink }}/> : <ChevronDown size={14} style={{ color: C.mink }}/>}
                     <Archive size={12} style={{ color: C.mink }}/>
                     <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase" }}>
                       Archived
                     </span>
                     <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash, marginLeft: "auto" }}>
-                      {archivedList.length} thread{archivedList.length !== 1 ? "s" : ""}
+                      {archivedList.filter(matchesQuery).length} thread{archivedList.filter(matchesQuery).length !== 1 ? "s" : ""}
                     </span>
                   </button>
-                  {showArchived && archivedList.map(c => (
+                  {(showArchived || searching) && archivedList.filter(matchesQuery).map(c => (
                     <div key={c.id} style={{ position: "relative" }}>
                       {renderThreadRow(c, true)}
                       <button
@@ -5824,8 +6114,8 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
           <div style={{
             display: "flex", flexDirection: "column", minWidth: 0,
             background: C.paper,
-            border: isMobile ? "1.5px solid " + C.fawn : undefined,
-            borderRadius: isMobile ? 16 : 0,
+            border: "1px solid " + C.fawn,
+            borderRadius: isMobile ? 16 : 18,
             overflow: "hidden",
             minHeight: isMobile ? "70vh" : undefined,
             height: isMobile ? "calc(100vh - 200px)" : undefined,
@@ -5836,22 +6126,22 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
               </button>
             )}
             {/* Thread header */}
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
-                <ItemImage src={active.item.img} emojiSize={30}/>
+            <div style={{ padding: isMobile ? "14px 16px" : "18px 22px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", gap: 16 }}>
+              <div style={{ width: isMobile ? 48 : 60, height: isMobile ? 48 : 60, borderRadius: 14, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
+                <ItemImage src={active.item.img} emojiSize={34}/>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontFamily: F.head, fontSize: 15, fontWeight: 800, color: C.ink }}>{active.item.title}</p>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 2, flexWrap: "wrap" }}>
-                  <span style={{ fontFamily: F.head, fontSize: 16, fontWeight: 900, color: priceColor(active.item.price, C.green) }}>{priceText(active.item.price)}</span>
-                  <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4 }}>
-                    <User size={11}/> {active.seller.name} · {active.seller.hood}
+                <p style={{ fontFamily: F.head, fontSize: isMobile ? 16 : 19, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em" }}>{active.item.title}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 3, flexWrap: "wrap" }}>
+                  <span style={{ fontFamily: F.head, fontSize: isMobile ? 18 : 22, fontWeight: 900, color: priceColor(active.item.price, C.green), letterSpacing: "-0.02em" }}>{priceText(active.item.price)}</span>
+                  <span style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 5 }}>
+                    <User size={13}/> {active.seller.name} · {active.seller.hood}
                   </span>
                 </div>
               </div>
               {activeStatus && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 11, fontWeight: 800, padding: "4px 11px", borderRadius: 999, background: activeStatus.bg, color: activeStatus.color, flexShrink: 0 }}>
-                  <activeStatus.icon size={11}/> {activeStatus.label}
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: F.head, fontSize: 13, fontWeight: 800, padding: "7px 14px", borderRadius: 999, background: activeStatus.bg, color: activeStatus.color, flexShrink: 0 }}>
+                  <activeStatus.icon size={13}/> {activeStatus.label}
                 </span>
               )}
               {/* Put this thread away by hand, for when the buyer is done with
@@ -6087,17 +6377,78 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                         <DollarSign size={13} strokeWidth={2.4}/> Offer
                       </button>
                     )}
-                    <input
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                      placeholder={"Message " + active.seller.name.split(" ")[0] + "..."}
-                      disabled={sending}
-                      style={{ flex: 1, padding: "10px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, outline: "none", background: C.paper }}
-                    />
-                    <button onClick={handleSend} disabled={sending || !draft.trim()} style={{ width: 42, height: 42, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || !draft.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 0 " + C.greenDeep, flexShrink: 0, opacity: (sending || !draft.trim()) ? 0.5 : 1 }}>
-                      <Send size={16}/>
-                    </button>
+                    {/* One pill holding attach, the field, emoji and send —
+                        the field used to be its own bordered pill with the
+                        send button floating beside it. */}
+                    <div style={{ position: "relative", flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 6, padding: "5px 6px 5px 8px", borderRadius: 999, border: "1px solid " + C.fawn, background: C.paper }}>
+                      {/* The input stays hidden and the paperclip triggers it,
+                          so the control matches the rest of the composer
+                          instead of being a browser file widget. Resetting
+                          e.target.value lets the same file be picked twice in
+                          a row — without it the second change event never
+                          fires. */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; handleAttach(f); }}
+                        style={{ display: "none" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={attachBusy || sending}
+                        title="Attach a photo"
+                        aria-label="Attach a photo"
+                        style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: "transparent", color: attachBusy ? C.smoke : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: (attachBusy || sending) ? "not-allowed" : "pointer", flexShrink: 0 }}
+                      >
+                        {attachBusy
+                          ? <Loader2 size={18} style={{ animation: "spin 900ms linear infinite" }}/>
+                          : <Paperclip size={18}/>}
+                      </button>
+                      <input
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                        placeholder="Type a message..."
+                        disabled={sending}
+                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", border: "none", fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink, outline: "none", background: "transparent" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setEmojiOpen(v => !v)}
+                        title="Insert an emoji"
+                        aria-label="Insert an emoji"
+                        aria-expanded={emojiOpen}
+                        style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: emojiOpen ? C.sand : "transparent", color: emojiOpen ? C.amberDeep : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                      >
+                        <Smile size={19}/>
+                      </button>
+                      <button onClick={handleSend} disabled={sending || attachBusy || !draft.trim()} aria-label="Send message" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || attachBusy || !draft.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: (sending || attachBusy || !draft.trim()) ? 0.45 : 1 }}>
+                        <Send size={17}/>
+                      </button>
+
+                      {emojiOpen && (
+                        <div
+                          className="fade-in"
+                          style={{ position: "absolute", right: 0, bottom: "calc(100% + 10px)", width: 268, padding: 10, borderRadius: 16, background: C.paper, border: "1px solid " + C.fawn, boxShadow: "0 10px 28px rgba(31,29,25,0.14)", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 2, zIndex: 20 }}
+                        >
+                          {COMPOSER_EMOJI.map((em) => (
+                            <button
+                              key={em}
+                              type="button"
+                              onClick={() => { setDraft(d => d + em); setEmojiOpen(false); }}
+                              title={em}
+                              style={{ width: "100%", aspectRatio: "1", border: "none", borderRadius: 8, background: "transparent", fontSize: 19, lineHeight: 1, cursor: "pointer", padding: 0 }}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = C.sand; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                            >
+                              {em}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -6197,7 +6548,7 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
   const years = Object.keys(grouped).map(Number).sort((a, b) => b - a);
 
   const stats = [
-    { label: "Items bought", value: totalItems,          icon: Package,      color: C.green,     bg: C.greenMist  },
+    { label: "Items bought", value: totalItems,          icon: ShoppingBag,  color: C.green,     bg: C.greenMist  },
     { label: "Total spent",  value: "$" + totalSpent,    icon: DollarSign,   color: C.amberDeep, bg: C.amberMist  },
     { label: "Total saved",  value: "$" + totalSaved,    icon: TrendingDown, color: C.greenDeep, bg: C.greenMist,  sub: "vs original" },
     { label: "Avg rating",   value: (withReviews.filter(t => t.rating).reduce((a,t) => a+t.rating, 0) / Math.max(1, withReviews.filter(t => t.rating).length)).toFixed(1), icon: Star, color: C.amberDeep, bg: C.amberMist },
@@ -6237,43 +6588,55 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
     const layerBadge = tx.layer === "drop" ? { label: "Drop", bg: C.green, color: "#fff" } : tx.layer === "shelf" ? { label: "Shelf", bg: C.amber, color: "#fff" } : { label: "Drop", bg: C.green, color: "#fff" };
 
     return (
-      <article style={{ padding: "16px 18px", borderRadius: 16, background: C.paper, border: "1.5px solid " + (highlightId === tx.id ? C.green : C.fawn), boxShadow: highlightId === tx.id ? "0 0 0 4px " + C.greenMist + ", 0 8px 24px rgba(48,132,36,0.18)" : "none", transition: "box-shadow 200ms, border-color 200ms", marginBottom: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 14, background: layerTint, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
-            <ItemImage src={tx.img} emojiSize={28}/>
+      // A row inside the month card now, not a card of its own: no radius or
+      // outer margin, and a hairline on top to separate it from whatever sits
+      // above — the month header for the first row, the previous purchase for
+      // the rest. The highlight flash moves from a ring to a tinted row with
+      // a green edge, since a ring needs a gap around it to read.
+      <article style={{ padding: __isMobile ? "14px 16px" : "16px 22px", background: highlightId === tx.id ? C.greenMist : "transparent", borderTop: "1px solid " + C.fawn, boxShadow: highlightId === tx.id ? "inset 3px 0 0 " + C.green : "none", transition: "box-shadow 200ms, background 200ms" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: __isMobile ? 14 : 18 }}>
+          <div style={{ width: __isMobile ? 64 : 88, height: __isMobile ? 64 : 88, borderRadius: 14, background: layerTint, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+            <ItemImage src={tx.img} emojiSize={__isMobile ? 30 : 40}/>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
-              <p style={{ fontFamily: F.head, fontSize: 15, fontWeight: 800, color: C.ink }}>{tx.title}</p>
-              <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 5, background: layerBadge.bg, color: layerBadge.color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{layerBadge.label}</span>
+            {/* Badge leads the line — the design puts the layer before the
+                title rather than trailing it. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+              <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 6, background: layerBadge.bg, color: layerBadge.color, letterSpacing: "0.06em", textTransform: "uppercase" }}>{layerBadge.label}</span>
+              <p style={{ fontFamily: F.head, fontSize: __isMobile ? 16 : 19, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em" }}>{tx.title}</p>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink }}>{tx.seller}</span>
-              <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 3 }}><MapPin size={10}/> {tx.hood}</span>
-              <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash }}>{new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", fontFamily: F.body, fontSize: 13.5, fontWeight: 600, color: C.mink }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><User size={13}/> {tx.seller}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><MapPin size={13}/> {tx.hood}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Calendar size={13}/> {new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
             </div>
             {tx.rated && (
-              <div style={{ display: "flex", gap: 2, marginTop: 6 }}>
-                {[1,2,3,4,5].map(n => <Star key={n} size={13} style={{ color: n <= tx.rating ? C.amber : C.fawn }} fill={n <= tx.rating ? C.amber : "none"} strokeWidth={n <= tx.rating ? 0 : 1.5}/>)}
+              <div style={{ display: "flex", gap: 3, marginTop: 8 }}>
+                {[1,2,3,4,5].map(n => <Star key={n} size={15} style={{ color: n <= tx.rating ? C.amber : C.fawn }} fill={n <= tx.rating ? C.amber : "none"} strokeWidth={n <= tx.rating ? 0 : 1.5}/>)}
               </div>
             )}
           </div>
-          <div style={{ textAlign: "right", flexShrink: 0 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 6, justifyContent: "flex-end" }}>
-              <span style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: priceColor(tx.price, C.green) }}>{priceText(tx.price)}</span>
-              {tx.origPrice && <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.ash, textDecoration: "line-through" }}>${tx.origPrice}</span>}
-            </div>
-            {saved > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end", marginTop: 3 }}>
-                <TrendingDown size={11} style={{ color: C.greenDeep }}/>
-                <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.greenDeep }}>Saved ${saved}</span>
+          {/* Price, review action and chevron sit side by side on the right
+              rather than stacked under the price. */}
+          <div style={{ display: "flex", alignItems: "center", gap: __isMobile ? 10 : 18, flexShrink: 0 }}>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, justifyContent: "flex-end" }}>
+                <span style={{ fontFamily: F.head, fontSize: __isMobile ? 22 : 27, fontWeight: 900, color: priceColor(tx.price, C.green), letterSpacing: "-0.02em" }}>{priceText(tx.price)}</span>
+                {tx.origPrice && <span style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.ash, textDecoration: "line-through" }}>${tx.origPrice}</span>}
               </div>
-            )}
+              {saved > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
+                  <TrendingDown size={13} style={{ color: C.greenDeep }}/>
+                  <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.greenDeep }}>Saved ${saved}</span>
+                </div>
+              )}
+            </div>
             {!tx.rated && !isReviewing && (
-              <button onClick={() => { setReviewId(tx.id); setReviewStars(0); }} style={{ marginTop: 8, padding: "6px 12px", borderRadius: 999, border: "1.5px solid " + C.amber, background: C.amberMist, color: C.amberDeep, fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                <Star size={11}/> Leave review
+              <button onClick={() => { setReviewId(tx.id); setReviewStars(0); }} style={{ padding: "11px 18px", borderRadius: 999, border: "1.5px solid " + C.amber, background: C.paper, color: C.amberDeep, fontFamily: F.head, fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
+                <Star size={16}/> Leave review
               </button>
             )}
+            <ChevronRight aria-hidden="true" size={20} style={{ color: C.smoke, flexShrink: 0 }}/>
           </div>
         </div>
 
@@ -6301,22 +6664,32 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
 
   return (
     <>
-      <PageTitle onBack={onBack} eyebrow="Your history" eyebrowColor={C.amberDeep} title="Purchase history" subtitle={totalItems + " completed pickup" + (totalItems !== 1 ? "s" : "") + " across all channels"} icon={Award} iconBg={C.amberMist} iconColor={C.amberDeep}/>
+      {/* No chip here — the four stat cards directly below already lead with
+          "3 Items bought", so a "3 completed pickups" chip above them would
+          be the same number twice. Matches the History shot. */}
+      <PageBar onBack={onBack} title="Purchase history"/>
 
       {/* Stats grid */}
       <div style={{ display: "grid", gridTemplateColumns: __isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: __isMobile ? 10 : 14, marginBottom: __isMobile ? 16 : 22 }}>
         {stats.map((s, i) => {
           const Ic = s.icon;
           return (
-            <div key={i} className="fade-in" style={{ padding: "18px 20px", borderRadius: 18, background: C.paper, border: "1.5px solid " + C.fawn, animationDelay: (i * 40) + "ms" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 12, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Ic size={17} style={{ color: s.color }}/>
-                </div>
-                {s.sub && <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.ash }}>{s.sub}</span>}
+            // Icon beside the number instead of stacked above it, so this row
+            // is the same component shape as the Claims row. `sub` ("vs
+            // original") moves from the card's top corner to a chip sitting
+            // next to the value it qualifies — floated up there it read as a
+            // label for the whole card.
+            <div key={i} className="fade-in" style={{ padding: "20px 22px", borderRadius: 18, background: C.paper, border: "1px solid " + C.fawn, animationDelay: (i * 40) + "ms", display: "flex", alignItems: "center", gap: 16 }}>
+              <div style={{ width: 52, height: 52, borderRadius: 16, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Ic size={23} strokeWidth={2.1} style={{ color: s.color }}/>
               </div>
-              <p style={{ fontFamily: F.head, fontSize: 26, fontWeight: 900, color: s.color, letterSpacing: "-0.02em" }}>{s.value}</p>
-              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, marginTop: 2 }}>{s.label}</p>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+                  <p style={{ fontFamily: F.head, fontSize: 33, fontWeight: 900, color: s.color, letterSpacing: "-0.02em", lineHeight: 1 }}>{s.value}</p>
+                  {s.sub && <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.ash, background: C.sand, border: "1px solid " + C.fawn, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>{s.sub}</span>}
+                </div>
+                <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.mink, marginTop: 5 }}>{s.label}</p>
+              </div>
             </div>
           );
         })}
@@ -6331,54 +6704,40 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
         </div>
       )}
 
-      {/* Timeline grouped by year / month — collapsible */}
-      {years.map(year => {
-        const yearTxs = withReviews.filter(t => new Date(t.date).getFullYear() === year);
-        const yearSpent = yearTxs.reduce((a, t) => a + t.price, 0);
-        const months = Object.keys(grouped[year]);
-        const yearKey = "year-" + year;
-        const yearCollapsed = !!collapsed[yearKey];
+      {/* Timeline grouped by month — one card per month, header on top and
+          its purchases stacked under it with hairline dividers.
+
+          The year used to get a header of its own ("2026", with a rule under
+          it) above a row of uppercase month chips. The design folds the two
+          into a single "October 2026" row, so the year loop stays only to
+          keep newest-year-first ordering and draws nothing itself. Month
+          collapse still works off the same `collapsed[monthKey]` state; the
+          year-level collapse goes with its header. */}
+      {years.map(year => Object.keys(grouped[year]).map(month => {
+        const monthKey = year + "-" + month;
+        const monthTxs = grouped[year][month];
+        const monthSpent = monthTxs.reduce((a, t) => a + t.price, 0);
+        const monthSaved = monthTxs.reduce((a, t) => a + (t.origPrice ? t.origPrice - t.price : 0), 0);
+        const monthCollapsed = !!collapsed[monthKey];
         return (
-          <section key={year} style={{ marginBottom: 28 }}>
-            {/* Year header — full-width button, collapsible */}
-            <button onClick={() => toggleCollapse(yearKey)} style={{ width: "100%", display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "12px 0 10px", marginBottom: yearCollapsed ? 0 : 14, borderBottom: "2px solid " + C.fawn, background: "none", border: "none", borderBottomStyle: "solid", cursor: "pointer", textAlign: "left" }}>
+          <section key={monthKey} style={{ marginBottom: 16, borderRadius: 18, border: "1px solid " + C.fawn, background: C.paper, overflow: "hidden" }}>
+            <button onClick={() => toggleCollapse(monthKey)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: __isMobile ? "14px 16px" : "16px 22px", border: "none", background: "transparent", cursor: "pointer", textAlign: "left", flexWrap: "wrap", rowGap: 6 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                {yearCollapsed ? <ChevronRight size={20} style={{ color: C.mink, flexShrink: 0 }}/> : <ChevronDown size={20} style={{ color: C.mink, flexShrink: 0 }}/>}
-                <h2 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em" }}>{year}</h2>
+                {monthCollapsed ? <ChevronRight size={18} style={{ color: C.mink, flexShrink: 0 }}/> : <ChevronDown size={18} style={{ color: C.mink, flexShrink: 0 }}/>}
+                <h2 style={{ fontFamily: F.head, fontSize: __isMobile ? 16 : 19, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em" }}>{month} {year}</h2>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink }}>{yearTxs.length} item{yearTxs.length !== 1 ? "s" : ""}</span>
-                <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.green }}>${yearSpent}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: F.body, fontSize: __isMobile ? 12 : 13.5, fontWeight: 600, color: C.mink }}>
+                <span>{monthTxs.length} item{monthTxs.length !== 1 ? "s" : ""}</span>
+                <span aria-hidden="true" style={{ color: C.smoke }}>•</span>
+                <span>${monthSpent} spent</span>
+                <span aria-hidden="true" style={{ color: C.smoke }}>•</span>
+                <span style={{ fontFamily: F.head, fontWeight: 800, color: C.greenDeep }}>${monthSaved} saved</span>
               </div>
             </button>
-
-            {!yearCollapsed && months.map(month => {
-              const monthKey = year + "-" + month;
-              const monthTxs = grouped[year][month];
-              const monthSpent = monthTxs.reduce((a, t) => a + t.price, 0);
-              const monthCollapsed = !!collapsed[monthKey];
-              return (
-                <div key={month} style={{ marginBottom: 14 }}>
-                  {/* Month header — collapsible chip */}
-                  <button onClick={() => toggleCollapse(monthKey)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", marginBottom: monthCollapsed ? 0 : 10, borderRadius: 12, border: "1px solid " + C.fawn, background: monthCollapsed ? C.paper : C.sand, cursor: "pointer", textAlign: "left", transition: "all 150ms" }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = C.smoke; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = C.fawn; }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      {monthCollapsed ? <ChevronRight size={14} style={{ color: C.mink, flexShrink: 0 }}/> : <ChevronDown size={14} style={{ color: C.mink, flexShrink: 0 }}/>}
-                      <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.ink, letterSpacing: "0.12em", textTransform: "uppercase" }}>{month}</p>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink }}>{monthTxs.length} item{monthTxs.length !== 1 ? "s" : ""}</span>
-                      <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.green }}>${monthSpent}</span>
-                    </div>
-                  </button>
-                  {!monthCollapsed && monthTxs.map((tx, idx) => <TxRow key={tx.id} tx={tx} idx={idx}/>)}
-                </div>
-              );
-            })}
+            {!monthCollapsed && monthTxs.map((tx, idx) => <TxRow key={tx.id} tx={tx} idx={idx}/>)}
           </section>
         );
-      })}
+      }))}
 
       {/* Community impact strip */}
       <div style={{ padding: "24px 28px", borderRadius: 22, background: "linear-gradient(135deg, " + C.ink + ", #3A3730)", position: "relative", overflow: "hidden", marginTop: 20 }}>
@@ -7786,10 +8145,15 @@ export default function DropYardBuyerDashboard({
   return (
     <>
       <GlobalStyle/>
-      <div style={{ minHeight: "100vh", background: C.page, color: C.ink }}>
-        <TopBar page={page} setPage={setPage} savedCount={savedIds.size} claimsCount={claims.length} messagesUnread={messagesUnreadCount} onSwitchRole={onSwitchRole} onReset={resetNav} dropState={dropState} user={user} onSignout={onSignoutRequest}/>
+      <div style={{ minHeight: "100vh", background: C.page, color: C.ink, position: "relative" }}>
+        <HillsBackdrop/>
+        <TopBar page={page} setPage={setPage} savedCount={savedIds.size} claimsCount={claims.length} messagesUnread={messagesUnreadCount} onSwitchRole={onSwitchRole} onReset={resetNav} user={user} onSignout={onSignoutRequest}/>
 
-        <div style={{ maxWidth: 1280, margin: "0 auto", padding: isMobile ? "16px 16px calc(76px + env(safe-area-inset-bottom, 0))" : "24px 32px 64px" }}>
+        {/* position + z-index are load-bearing: HillsBackdrop is fixed with
+            z-index 0, and a positioned element paints above unpositioned
+            content no matter how low its z-index. Without this the hills
+            would sit on top of the page. */}
+        <div style={{ position: "relative", zIndex: 1, maxWidth: 1280, margin: "0 auto", padding: isMobile ? "16px 16px calc(76px + env(safe-area-inset-bottom, 0))" : "24px 32px 64px" }}>
           {/* BUG-080 — nav stack: Discover → seller profile → item detail.
               `viewingItem` now OUTRANKS `viewingSellerName`, so tapping a card
               on a seller's profile opens the item (previously the profile kept
