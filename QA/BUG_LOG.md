@@ -40,6 +40,29 @@ Consequences:
 
 ## P2 — Fixed this session
 
+### BUG-110  ·  P1  ·  Signup → email verification banner  ·  Status: Fixed (verify)
+**Title:** Google signups are told "We sent a link to you" about an email that was never sent.
+**Found by:** Sunny · **Found date:** 2026-10-29 · **Test case:** exploratory
+**Repro steps:** Sign up with Google → land on `/buyer`.
+**Expected:** Nothing to verify — Google already proved the address.
+**Actual:** Amber banner: "Verify your email… We sent a link to `<email>`", with a "Resend email" button. No email was sent, and pressing resend sends a verification for an address Google had already verified.
+**Environment:** Chrome, 1280px
+**Fix commit:** _(local, sunny branch)_
+**Re-tested:** `tsc` clean both packages, lint clean, `next build` compiles, server boots with the new limiter wired (`/me/resend-verification` → 401 unauthenticated, route mounted). Backfill script dry-run against the dev DB: 1 Google account would be marked verified, 54 password accounts correctly left alone. Live Google sign-in pass pending.
+**Notes:** `verifiedAt` was written in exactly one place — the `/verify-email` token route. `POST /api/auth/google` never set it and never sent an email, so every Google account sat at `verifiedAt: null` forever and the banner, which renders on that condition alone, asserted a send that only the password path performs.
+
+Fix: `verifyGoogleIdToken` / `verifyGoogleAccessToken` now return `emailVerified` (they already *reject* an explicit `email_verified: false`, so this just surfaces the positive assertion), and the route sets `verifiedAt` on account creation — plus backfills it on sign-in for accounts created before this, including a password account that later links Google, since Google proved the same address. Existing Google users with a live session won't hit that route for up to 30 days, so `scripts/backfill-google-verified.ts` (dry run; `--apply`) closes the window in one pass.
+
+**Four more found while tracing the flow:**
+  1. **`/me/resend-verification` shared one rate-limit bucket per IP.** It borrowed `forgotPasswordLimiter`, which keys on `(IP, req.body.email)` — but the route is authenticated and sends **no body**, so the email half was always `""`. Two users on one network shared a 3/hour budget, and the 429 read "Too many password reset requests". Now `resendVerificationLimiter`, keyed on the user id, 5/hour in prod.
+  2. **Resend always claimed success.** It called the fire-and-forget helper without awaiting the result, so an SMTP failure was logged server-side while the banner said "Verification email sent". `sendVerificationEmail` now returns a boolean; signup still ignores it (a slow provider shouldn't stall the response), the resend route returns 502 `email_send_failed`, and the banner shows the server's actual message.
+  3. **"Verify your email to unlock the full DropYard experience"** — nothing is gated on `verifiedAt` anywhere in the codebase. Copy now says what verification actually buys (claim and pickup updates) and points at the spam folder, which is the likelier problem.
+  4. **"This verification link has already been used"** fires for links that were never used. `sendVerificationEmail` marks prior unused tokens `usedAt` so only the newest link is live, which is indistinguishable from a real use — and clicking the older email in your inbox is the common case. Reworded to say a newer email replaces it.
+
+Also removed from the banner: the `Sparkles` icon on the CTA (reported as "an AI icon"), the hover shimmer sweep, and the pulsing halo. It's a nag on a warning strip, not a feature announcement. Dismissal now persists in `sessionStorage` instead of reappearing on every navigation.
+
+**Not fixed — needs prod access, and it's the one that matters most:** in the dev DB, **0 of 54** password accounts have ever verified, against 64 tokens issued. That pattern says the mail isn't arriving, not that nobody clicks. Local transport is Gmail SMTP and connects fine (`📧 Email: SMTP ready` at boot) with `EMAIL_FROM` matching `SMTP_USER`, which Gmail requires. On prod, check (a) that boot line in the PM2 logs, (b) `EMAIL_FROM` vs `SMTP_USER` — a mismatch like `support@dropyard.app` over a personal Gmail relay is rejected or rewritten silently, and (c) `APP_URL`, since an unset value points every verification link at `localhost:3000`. Longer term, Resend with a verified `dropyard.app` domain plus SPF/DKIM is what gets mail into Yahoo and Outlook; the reported account is `@yahoo.com`, which treats Gmail-relayed mail from a personal address harshly.
+
 ### BUG-109  ·  P2  ·  Seller onboarding → "Complete your seller profile" → Neighborhood + Postal code  ·  Status: Fixed (verify)
 **Title:** Every seller is "Barrhaven", nobody is anywhere in particular, and buyers see the same distance on every card.
 **Found by:** Barrhaven neighbourhood work · **Found date:** 2026-10-29 · **Test case:** exploratory
