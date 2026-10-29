@@ -36,7 +36,8 @@ import {
   MessageSquare, Plus, Truck, History, ArrowLeft, Shield, Tag, TrendingDown,
   Home, Heart, Users, Mail, Phone, Info, Lock, CreditCard, Banknote, Upload, RefreshCw,
   Star, Settings, BarChart3, Bell, Award, Leaf, Send, Share2, AlertCircle,
-  Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag, Archive
+  Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag, Archive,
+  Paperclip
 } from "lucide-react";
 
 /* ============================================================
@@ -6266,6 +6267,24 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   const [errorMsg, setErrorMsg]         = useState(null);
   const [successMsg, setSuccessMsg]     = useState(null);
 
+  // Chat attachments. The seller composer had none at all: a buyer could send
+  // a photo of a scratch and the seller could neither see it (adaptMessage
+  // dropped attachmentUrl) nor reply with one. Picking a file stages it —
+  // upload and send happen when the seller presses send, never on the OS
+  // file dialog's own "Open".
+  const chatFileInputRef = useRef(null);
+  const [attachBusy, setAttachBusy] = useState(false);
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const clearPendingAttachment = useCallback(() => {
+    setPendingAttachment((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  }, []);
+  // Switching threads drops the staged file — it was picked for one buyer and
+  // must not follow the seller into a different conversation.
+  useEffect(() => { clearPendingAttachment(); }, [activeId, clearPendingAttachment]);
+
   // Inbox list — owned by the dashboard root (so the nav badge stays in
   // sync even when this view is unmounted). Falls back to local state for
   // isolated rendering / preview mode.
@@ -6471,6 +6490,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     const TYPE_MAP = {
       TEXT: "text", OFFER: "offer", COUNTER: "counter", CLAIM: "claim",
       WHATSAPP: "whatsapp", NOTICE: "notice", REMINDER: "reminder",
+      IMAGE: "image",
     };
     const renderType = TYPE_MAP[api.messageType] || "text";
     return {
@@ -6480,6 +6500,10 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       time: new Date(api.createdAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }),
       type: renderType,
       amount: typeof api.amount === "number" ? api.amount : undefined,
+      // IMAGE was missing from the map and attachmentUrl was dropped
+      // entirely, so a photo a buyer sent arrived as an empty text bubble —
+      // the seller could see that something came through and not what.
+      attachmentUrl: typeof api.attachmentUrl === "string" ? api.attachmentUrl : undefined,
     };
   }
 
@@ -6564,9 +6588,65 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     }
   });
 
+  // Pick → stage. Validated here so a bad file is refused at pick time, and
+  // mirroring the upload route's own filter (jpg/png/webp/gif, 10 MB).
+  function stageAttachment(file) {
+    if (!file || !activeId) return;
+    if (!usingBackend) {
+      setErrorMsg("Attachments need a signed-in session.");
+      return;
+    }
+    if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
+      setErrorMsg("Only jpg, png, webp or gif images can be attached.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg("That image is over 10 MB — please attach a smaller one.");
+      return;
+    }
+    setErrorMsg(null);
+    setPendingAttachment((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return { file, previewUrl: URL.createObjectURL(file), name: file.name, size: file.size };
+    });
+  }
+
+  // Upload the staged file, then post one message carrying the photo and any
+  // caption. On failure the file stays staged so send can be pressed again.
+  async function sendWithAttachment(caption) {
+    if (!activeId || !pendingAttachment) return;
+    setAttachBusy(true);
+    setSending(true);
+    try {
+      const { publicUrl } = await uploadItemPhoto(pendingAttachment.file);
+      const res = await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
+        method: "POST",
+        token:  accessToken,
+        body:   JSON.stringify({ body: caption, messageType: "IMAGE", attachmentUrl: publicUrl }),
+      });
+      setDraft("");
+      clearPendingAttachment();
+      if (res?.message) {
+        setActiveMsgs((prev) => {
+          const list = prev || [];
+          if (list.some((m) => m.id === res.message.id)) return list;
+          return [...list, adaptMessage(res.message)];
+        });
+      }
+    } catch (err) {
+      setErrorMsg("Couldn't send that image: " + (err?.message || "try again"));
+      setTimeout(() => setErrorMsg(null), 4500);
+    } finally {
+      setAttachBusy(false);
+      setSending(false);
+    }
+  }
+
   async function handleSend() {
     const body = draft.trim();
-    if (!body) return;
+    // A staged photo is enough on its own — the caption is optional.
+    if (!body && !pendingAttachment) return;
+    if (pendingAttachment) { await sendWithAttachment(body); return; }
     if (!usingBackend) {
       // Demo mode: append locally to the demo conversation's messages.
       setConvList(prev => prev.map(c => c.id === activeId
@@ -6816,6 +6896,32 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     const isYou = m.from === "seller"; // viewer is the seller; "buyer" is counterparty
     const isBuyer = m.from === "buyer";
     const isAI = m.from === "ai";
+
+    // Keyed on the URL rather than the type, so a row that carries a photo
+    // always renders it. Any caption travels in `text` and sits underneath.
+    if (m.attachmentUrl) {
+      return (
+        <div key={i} style={{ display: "flex", justifyContent: isYou ? "flex-end" : "flex-start", marginBottom: 10 }}>
+          <div style={{ maxWidth: "72%" }}>
+            <div style={{ borderRadius: 16, overflow: "hidden", border: "1px solid " + (isYou ? C.green + "55" : C.fawn), background: isYou ? C.greenMist : C.paper }}>
+              <a href={m.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ display: "block", lineHeight: 0 }}>
+                <img
+                  src={m.attachmentUrl}
+                  alt={m.text ? m.text : "Attached photo"}
+                  style={{ display: "block", width: "100%", maxWidth: 300, maxHeight: 300, objectFit: "cover", cursor: "zoom-in" }}
+                />
+              </a>
+              {m.text && (
+                <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.45 }}>{m.text}</p>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: isYou ? "flex-end" : "flex-start", marginTop: 4 }}>
+              <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash }}>{m.time}</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     if (m.type === "whatsapp") {
       return (
@@ -7308,7 +7414,55 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 </div>
               </div>
             ) : (
+            <>
+            {/* Staged photo, waiting on send — same contract as the buyer
+                composer: picking shows it, send shares it. */}
+            {pendingAttachment && (
+              <div style={{ padding: isMobile ? "10px 12px 0" : "12px 16px 0", display: "flex", alignItems: "center", gap: 10, background: C.paper }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 6, paddingRight: 12, borderRadius: 14, border: "1px solid " + C.fawn, background: C.sand, minWidth: 0 }}>
+                  <img src={pendingAttachment.previewUrl} alt="" style={{ width: 44, height: 44, borderRadius: 10, objectFit: "cover", flexShrink: 0, display: "block" }}/>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pendingAttachment.name}</p>
+                    <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.mink }}>
+                      {attachBusy ? "Sending…" : `${(pendingAttachment.size / 1024).toFixed(0)} KB · press send to share`}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearPendingAttachment}
+                    disabled={attachBusy}
+                    title="Remove attachment"
+                    aria-label="Remove attachment"
+                    style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: C.paper, color: C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: attachBusy ? "not-allowed" : "pointer", flexShrink: 0 }}
+                  >
+                    <X size={13} strokeWidth={2.6}/>
+                  </button>
+                </div>
+              </div>
+            )}
             <div style={{ padding: isMobile ? "10px 12px" : "12px 16px", display: "flex", gap: isMobile ? 8 : 10, alignItems: "center", background: C.paper }}>
+              {/* Hidden input driven by the clip button, so the control looks
+                  like the rest of the composer rather than a browser file
+                  widget. Resetting value lets the same file be picked twice. */}
+              <input
+                ref={chatFileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; stageAttachment(f); }}
+                style={{ display: "none" }}
+              />
+              <button
+                type="button"
+                onClick={() => chatFileInputRef.current?.click()}
+                disabled={attachBusy || sending}
+                title="Attach a photo"
+                aria-label="Attach a photo"
+                style={{ width: isMobile ? 34 : 38, height: isMobile ? 34 : 38, borderRadius: "50%", border: "none", background: "transparent", color: (attachBusy || sending) ? C.smoke : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: (attachBusy || sending) ? "not-allowed" : "pointer", flexShrink: 0 }}
+              >
+                {attachBusy
+                  ? <Loader2 size={17} className="animate-spin"/>
+                  : <Paperclip size={17}/>}
+              </button>
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -7322,10 +7476,13 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                   <Sparkles size={isMobile ? 14 : 16} style={{ color: C.ai }}/>
                 </button>
               )}
-              <button onClick={handleSend} disabled={sending || !draft.trim()} style={{ width: isMobile ? 38 : 42, height: isMobile ? 38 : 42, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || !draft.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 0 " + C.greenDeep, flexShrink: 0, opacity: (sending || !draft.trim()) ? 0.5 : 1 }}>
-                <Send size={isMobile ? 14 : 16}/>
+              <button onClick={handleSend} disabled={sending || attachBusy || (!draft.trim() && !pendingAttachment)} aria-label="Send message" style={{ width: isMobile ? 38 : 42, height: isMobile ? 38 : 42, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 0 " + C.greenDeep, flexShrink: 0, opacity: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? 0.5 : 1 }}>
+                {sending || attachBusy
+                  ? <Loader2 size={isMobile ? 14 : 16} className="animate-spin"/>
+                  : <Send size={isMobile ? 14 : 16}/>}
               </button>
             </div>
+            </>
             )}
             </div>
           </div>

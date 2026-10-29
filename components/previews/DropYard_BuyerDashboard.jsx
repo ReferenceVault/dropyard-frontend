@@ -5136,10 +5136,26 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   // OFFER message without leaving the conversation. Opens with a numeric
   // input + Send/Cancel; submits via POST /messages with messageType OFFER.
   const [offerComposerOpen, setOfferComposerOpen] = useState(false);
-  // Attachment upload. `attachBusy` disables the composer while the file is
-  // in flight so a second pick can't race the first.
+  // Attachment. Picking a file STAGES it — it is uploaded and sent only when
+  // the buyer presses send. Choosing a file used to post it immediately, so
+  // the OS "Open" button doubled as the send button: no preview, no chance to
+  // add a caption, no way back from the wrong file. `attachBusy` covers the
+  // upload leg of the send.
   const fileInputRef = useRef(null);
   const [attachBusy, setAttachBusy] = useState(false);
+  // { file, previewUrl, name, size } — previewUrl is an object URL, revoked
+  // whenever the staged file is replaced, cleared, or sent.
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+  const clearPendingAttachment = useCallback(() => {
+    setPendingAttachment((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+  }, []);
+  // Switching threads drops the staged file — it belongs to the conversation
+  // it was picked in, and silently carrying it into another one would attach
+  // it to the wrong person.
+  useEffect(() => { clearPendingAttachment(); }, [activeId, clearPendingAttachment]);
   // Emoji tray above the composer. Closes on pick, on Escape, and whenever
   // the thread changes — leaving it hanging open over a different
   // conversation is worse than making the buyer tap twice.
@@ -5447,18 +5463,17 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
     }
   });
 
-  // Pick → upload → send, as two requests: POST /api/uploads/s3 stores the
-  // file and hands back a public URL, then the usual message POST carries that
-  // URL as `attachmentUrl`. Whatever is already typed rides along as the
-  // caption, so attaching never silently discards a draft.
-  async function handleAttach(file) {
+  // Pick → stage. No upload, no message: the file sits in the composer as a
+  // thumbnail until the buyer presses send, so they can see what they picked,
+  // write a caption to go with it, or swap it for a different one.
+  function stageAttachment(file) {
     if (!file || !activeId) return;
     if (!usingBackend) {
       setErrorMsg("Attachments need a signed-in session.");
       return;
     }
     // Mirrors the upload route's own filter (jpg/png/webp/gif, 10 MB) so the
-    // buyer hears about a bad file before spending the round trip on it.
+    // buyer hears about a bad file at pick time rather than on send.
     if (!/^image\/(jpeg|png|webp|gif)$/.test(file.type)) {
       setErrorMsg("Only jpg, png, webp or gif images can be attached.");
       return;
@@ -5468,18 +5483,33 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
       return;
     }
     setErrorMsg(null);
+    setPendingAttachment((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      return { file, previewUrl: URL.createObjectURL(file), name: file.name, size: file.size };
+    });
+  }
+
+  // Upload the staged file, then post one message carrying both the photo and
+  // whatever caption was typed. Two requests: POST /api/uploads/s3 stores the
+  // file and hands back a public URL, then the usual message POST carries it
+  // as `attachmentUrl`. On failure the file STAYS staged so send can be
+  // pressed again — losing someone's photo because S3 blipped is worse than
+  // making them look at an error.
+  async function sendWithAttachment(caption) {
+    if (!activeId || !pendingAttachment) return;
     setAttachBusy(true);
+    setSending(true);
     try {
-      const { publicUrl } = await uploadItemPhoto(file);
-      const caption = draft.trim();
+      const { publicUrl } = await uploadItemPhoto(pendingAttachment.file);
       const res = await apiRequest("/api/conversations/" + encodeURIComponent(activeId) + "/messages", {
         method: "POST",
         token:  accessToken,
         body:   JSON.stringify({ body: caption, messageType: "IMAGE", attachmentUrl: publicUrl }),
       });
       setDraft("");
-      // Same reason as handleSend: append from the POST response rather than
-      // waiting on the socket echo, which the handler dedupes by id anyway.
+      clearPendingAttachment();
+      // Append from the POST response rather than waiting on the socket echo,
+      // which the handler dedupes by id anyway.
       if (res?.message) {
         setActiveMsgs((prev) => {
           const list = prev || [];
@@ -5488,15 +5518,19 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
         });
       }
     } catch (err) {
-      setErrorMsg("Couldn't attach that image: " + (err?.message || "try again"));
+      setErrorMsg("Couldn't send that image: " + (err?.message || "try again"));
+      setTimeout(() => setErrorMsg(null), 4500);
     } finally {
       setAttachBusy(false);
+      setSending(false);
     }
   }
 
   async function handleSend() {
     const body = draft.trim();
-    if (!body) return;
+    // A staged photo is enough on its own — the caption is optional.
+    if (!body && !pendingAttachment) return;
+    if (pendingAttachment) { await sendWithAttachment(body); return; }
     if (!usingBackend) {
       setConvList(prev => prev.map(c => c.id === activeId
         ? { ...c, messages: [...(c.messages || []), { from: "you", text: body, time: "Now", type: "text" }], lastMsg: body, lastTime: "Now" }
@@ -6411,6 +6445,38 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                       <button onClick={() => { setOfferComposerOpen(false); setOfferComposerAmt(""); }} disabled={sending} style={{ padding: "8px 10px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer", flexShrink: 0 }}><X size={12}/></button>
                     </div>
                   )}
+                  {/* Staged photo, waiting on send. Shows what was picked, its
+                      size, and a way out — none of which existed when picking
+                      a file posted it on the spot. */}
+                  {pendingAttachment && (
+                    <div style={{ padding: "10px 16px 0", display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 6, paddingRight: 12, borderRadius: 14, border: "1px solid " + C.fawn, background: C.sand, maxWidth: "100%", minWidth: 0 }}>
+                        <img
+                          src={pendingAttachment.previewUrl}
+                          alt=""
+                          style={{ width: 44, height: 44, borderRadius: 10, objectFit: "cover", flexShrink: 0, display: "block" }}
+                        />
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {pendingAttachment.name}
+                          </p>
+                          <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.mink }}>
+                            {attachBusy ? "Sending…" : `${(pendingAttachment.size / 1024).toFixed(0)} KB · press send to share`}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={clearPendingAttachment}
+                          disabled={attachBusy}
+                          title="Remove attachment"
+                          aria-label="Remove attachment"
+                          style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: C.paper, color: C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: attachBusy ? "not-allowed" : "pointer", flexShrink: 0 }}
+                        >
+                          <X size={13} strokeWidth={2.6}/>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div style={{ padding: "12px 16px", display: "flex", gap: 8, alignItems: "center" }}>
                     {/* BUG-055 — only show "$ Offer" when there's no active
                         claim on this conversation. If a PROPOSED/ACCEPTED
@@ -6440,7 +6506,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                         ref={fileInputRef}
                         type="file"
                         accept="image/jpeg,image/png,image/webp,image/gif"
-                        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; handleAttach(f); }}
+                        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; stageAttachment(f); }}
                         style={{ display: "none" }}
                       />
                       <button
@@ -6473,8 +6539,12 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                       >
                         <Smile size={19}/>
                       </button>
-                      <button onClick={handleSend} disabled={sending || attachBusy || !draft.trim()} aria-label="Send message" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || attachBusy || !draft.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: (sending || attachBusy || !draft.trim()) ? 0.45 : 1 }}>
-                        <Send size={17}/>
+                      {/* A staged photo makes send available on its own — the
+                          caption is optional, so an empty box isn't empty. */}
+                      <button onClick={handleSend} disabled={sending || attachBusy || (!draft.trim() && !pendingAttachment)} aria-label="Send message" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? 0.45 : 1 }}>
+                        {sending || attachBusy
+                          ? <Loader2 size={17} style={{ animation: "spin 900ms linear infinite" }}/>
+                          : <Send size={17}/>}
                       </button>
 
                       {emojiOpen && (
