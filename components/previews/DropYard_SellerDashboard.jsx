@@ -6328,26 +6328,42 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   // without leaving the conversation view. Refreshes on every claim:updated
   // socket event.
   const [activeClaimByConv, setActiveClaimByConv] = useState({});
+  // The CURRENT claim per conversation whatever its status, including the
+  // terminal ones activeClaimByConv drops. The thread badge reads off this:
+  // a cancelled claim used to leave the chip saying "Unanswered", i.e. the
+  // seller still owes the buyer a reply, on a thread whose claim is gone —
+  // and it counted toward the "needs action" tally with it.
+  const [latestClaimByConv, setLatestClaimByConv] = useState({});
   const [pendingClaimTick, setPendingClaimTick]   = useState(0);
   useSocketEvent("claim:updated", () => setPendingClaimTick(t => t + 1));
   useSocketEvent("claim:new",     () => setPendingClaimTick(t => t + 1));
   useEffect(() => {
     if (!accessToken) return;
     let cancelled = false;
-    // BUG-055 — fetch PROPOSED + ACCEPTED both so the chat banner can show
-    // Accept/Counter/Decline (PROPOSED) OR Mark Picked up (ACCEPTED).
-    Promise.all([
-      apiRequest("/api/claims/incoming?status=PROPOSED", { token: accessToken }).catch(() => ({ claims: [] })),
-      apiRequest("/api/claims/incoming?status=ACCEPTED", { token: accessToken }).catch(() => ({ claims: [] })),
-    ])
-      .then(([p, a]) => {
+    // One unfiltered call instead of the two status-filtered ones this used
+    // to make. /api/claims/incoming with no filter returns every claim on
+    // the seller's items newest-first, which gives the active claims (the
+    // chat banner's Accept/Counter/Decline and Mark Picked up) AND the
+    // terminal ones the badge needs — in a single request.
+    apiRequest("/api/claims/incoming", { token: accessToken })
+      .then((data) => {
         if (cancelled) return;
-        const list = [...(Array.isArray(p?.claims) ? p.claims : []), ...(Array.isArray(a?.claims) ? a.claims : [])];
+        const list = Array.isArray(data?.claims) ? data.claims : [];
         const idx = {};
-        for (const c of list) if (c.conversationId) idx[c.conversationId] = c;
+        const latest = {};
+        for (const c of list) {
+          if (!c.conversationId) continue;
+          // Newest-first, so the first claim seen for a conversation is the
+          // one that counts.
+          if (!latest[c.conversationId]) latest[c.conversationId] = c;
+          if (c.status === "PROPOSED" || c.status === "ACCEPTED") {
+            idx[c.conversationId] = c;
+          }
+        }
         setActiveClaimByConv(idx);
+        setLatestClaimByConv(latest);
       })
-      .catch(() => { if (!cancelled) setActiveClaimByConv({}); });
+      .catch(() => { if (!cancelled) { setActiveClaimByConv({}); setLatestClaimByConv({}); } });
     return () => { cancelled = true; };
   }, [accessToken, pendingClaimTick]);
 
@@ -6675,11 +6691,33 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     "needs-response":    { label: "Needs response",    color: C.claret,    bg: C.claretMist,  icon: AlertCircle },
     "pending":           { label: "Unanswered",        color: C.amberDeep, bg: C.amberMist,   icon: Clock      },
     "answered":          { label: "Answered",          color: C.ai,        bg: C.aiMist,      icon: MessageSquare },
+    "cancelled":         { label: "Cancelled",         color: C.ash,       bg: C.sand,        icon: X          },
+    "declined":          { label: "Declined",          color: C.ash,       bg: C.sand,        icon: X          },
+    "expired":           { label: "Expired",           color: C.ash,       bg: C.sand,        icon: Clock      },
     "completed":         { label: "Completed",         color: C.ash,       bg: C.sand,        icon: Check      },
   };
 
+  // The badge has to read off the claim, not just off who spoke last.
+  // `c.status` only says needs-response / answered / pending, which is right
+  // while a negotiation is live and wrong the moment the claim ends: a claim
+  // the buyer waived kept the thread reading "Unanswered". A terminal claim
+  // overrides; anything still live falls through to the conversation's own
+  // reading. Mirrors threadStatus in the buyer dashboard.
+  const threadStatus = useCallback((c) => {
+    if (!c) return "completed";
+    switch (latestClaimByConv[c.id]?.status) {
+      case "CANCELLED":                 return "cancelled";
+      case "DECLINED": case "REJECTED": return "declined";
+      case "EXPIRED":                   return "expired";
+      case "PICKED_UP":                 return "completed";
+      default:                          return c.status;
+    }
+  }, [latestClaimByConv]);
+
   const unreadCount = conversations.filter(c => c.unread).length;
-  const needsAction = conversations.filter(c => ["needs-response","pending","pickup-today"].includes(c.status)).length;
+  // Counted through threadStatus so a finished thread stops asking the seller
+  // to do something about it.
+  const needsAction = conversations.filter(c => ["needs-response","pending","pickup-today"].includes(threadStatus(c))).length;
 
   // No type filter any more (BUG-088) — the list is every thread, newest first.
   const filtered = conversations;
@@ -6689,7 +6727,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   const active = conversations.find(c => c.id === activeId)
     || archivedList.find(c => c.id === activeId)
     || conversations[0];
-  const activeStatus = active ? statusMeta[active.status] : null;
+  const activeStatus = active ? (statusMeta[threadStatus(active)] || statusMeta.completed) : null;
 
   // Archive / unarchive. The endpoint and the per-side flag
   // (`archivedBySeller`) already existed — the seller inbox simply never
@@ -6741,7 +6779,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   // One row renderer, shared by the inbox and the Archived group below it.
   function renderThreadRow(c, muted = false) {
     const isActive = c.id === activeId;
-    const meta = statusMeta[c.status] || statusMeta.completed;
+    const meta = statusMeta[threadStatus(c)] || statusMeta.completed;
     const Ic = meta.icon;
     return (
       <button key={c.id} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative", opacity: muted && !isActive ? 0.62 : 1 }}>
