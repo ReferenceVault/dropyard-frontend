@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiRequest, uploadItemPhoto } from "@/lib/api";
 import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
+import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { useAuth } from "@/context/AuthContext";
 import { useDropCycle } from "@/context/DropCycleContext";
 import { formatPickupDateList, formatPickupDateLong } from "@/lib/pickupDates";
@@ -30,14 +31,14 @@ import {
   serviceAreaForPostalCode,
 } from "@/lib/barrhaven";
 import {
-  Camera, X, Check, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Sparkles, Zap,
+  Camera, X, Check, CheckCheck, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Sparkles, Zap,
   MessageCircle, Package, Eye, EyeOff, ArrowRight, User, Clock, Calendar,
   CheckCircle, MapPin, LayoutGrid, Box, DollarSign, ClipboardList,
   MessageSquare, Plus, Truck, History, ArrowLeft, Shield, Tag, TrendingDown,
   Home, Heart, Users, Mail, Phone, Info, Lock, CreditCard, Banknote, Upload, RefreshCw,
   Star, Settings, BarChart3, Bell, Award, Leaf, Send, Share2, AlertCircle,
   Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag, Archive,
-  Paperclip
+  Paperclip, Smile
 } from "lucide-react";
 
 /* ============================================================
@@ -5763,6 +5764,33 @@ function ConversationItemThumb({ item, size, emojiSize }) {
   );
 }
 
+// ─── Read receipts ──────────────────────────────────────────────────────────
+// Mirror of the buyer dashboard's ReadTicks. The server records how far each
+// side has read and pushes `conversation:read` to the other party, so "seen"
+// is a comparison between a message's createdAt and the buyer's cursor.
+//
+// Two states, not WhatsApp's three: one grey tick means the server has it,
+// two blue ticks mean the buyer has opened the thread since. Nothing here
+// tracks delivery to a device, so there is no grey double-tick to claim it.
+const SEEN_BLUE = "#2F6FB3";
+function ReadTicks({ sentAt, otherLastReadAt }) {
+  if (!sentAt) return null;
+  const sent = new Date(sentAt).getTime();
+  const read = otherLastReadAt ? new Date(otherLastReadAt).getTime() : 0;
+  const seen = Number.isFinite(sent) && read >= sent;
+  return (
+    <span
+      title={seen ? "Seen" : "Sent"}
+      aria-label={seen ? "Seen" : "Sent"}
+      style={{ display: "inline-flex", alignItems: "center", marginLeft: 4, verticalAlign: "middle" }}
+    >
+      {seen
+        ? <CheckCheck size={13} strokeWidth={2.6} style={{ color: SEEN_BLUE }}/>
+        : <Check size={13} strokeWidth={2.6} style={{ color: C.ash }}/>}
+    </span>
+  );
+}
+
 function adaptSellerConversation(api, myId) {
   if (!api) return null;
   // Seller view only shows conversations where the current user IS the seller.
@@ -5805,6 +5833,9 @@ function adaptSellerConversation(api, myId) {
         ? api.otherUser.previousPurchases
         : 0,
     },
+    // How far the buyer has read — the basis of the read ticks on my own
+    // messages. Any message I sent at or before this moment has been seen.
+    otherLastReadAt: api.otherLastReadAt || null,
     lastMsg:  api.lastMessage?.body || "",
     lastTime: relativeTimeShort(api.lastMessageAt),
     messages: [],
@@ -6285,6 +6316,18 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   // must not follow the seller into a different conversation.
   useEffect(() => { clearPendingAttachment(); }, [activeId, clearPendingAttachment]);
 
+  // Emoji tray above the composer. Closes on pick, on Escape, and whenever
+  // the thread changes — leaving it hanging open over a different buyer's
+  // conversation is worse than making the seller tap twice.
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  useEffect(() => { setEmojiOpen(false); }, [activeId]);
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const onKey = (e) => { if (e.key === "Escape") setEmojiOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [emojiOpen]);
+
   // Inbox list — owned by the dashboard root (so the nav badge stays in
   // sync even when this view is unmounted). Falls back to local state for
   // isolated rendering / preview mode.
@@ -6498,6 +6541,9 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       from: fromMe ? "seller" : "buyer",
       text: api.body,
       time: new Date(api.createdAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }),
+      // Raw timestamp alongside the display string — read receipts compare it
+      // against the buyer's cursor, which a formatted time can't do.
+      sentAt: api.createdAt || null,
       type: renderType,
       amount: typeof api.amount === "number" ? api.amount : undefined,
       // IMAGE was missing from the map and attachmentUrl was dropped
@@ -6915,8 +6961,9 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.45 }}>{m.text}</p>
               )}
             </div>
-            <div style={{ display: "flex", justifyContent: isYou ? "flex-end" : "flex-start", marginTop: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: isYou ? "flex-end" : "flex-start", marginTop: 4 }}>
               <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash }}>{m.time}</span>
+              {isYou && <ReadTicks sentAt={m.sentAt} otherLastReadAt={active?.otherLastReadAt}/>}
             </div>
           </div>
         </div>
@@ -7006,7 +7053,10 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             )}
             {m.text}
           </div>
-          <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash, marginTop: 3, textAlign: isBuyer ? "left" : "right", marginLeft: 2, marginRight: 2 }}>{m.time}</p>
+          <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash, marginTop: 3, textAlign: isBuyer ? "left" : "right", marginLeft: 2, marginRight: 2 }}>
+            {m.time}
+            {isYou && <ReadTicks sentAt={m.sentAt} otherLastReadAt={active?.otherLastReadAt}/>}
+          </p>
           {/* BUG-055.1 — Legacy in-bubble Accept/Counter/Decline buttons
               REMOVED. They were keyed on message id and routed through
               `submitCounter(m.id)` which 404'd against the new claim-id
@@ -7440,7 +7490,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 </div>
               </div>
             )}
-            <div style={{ padding: isMobile ? "10px 12px" : "12px 16px", display: "flex", gap: isMobile ? 8 : 10, alignItems: "center", background: C.paper }}>
+            <div style={{ position: "relative", padding: isMobile ? "10px 12px" : "12px 16px", display: "flex", gap: isMobile ? 8 : 10, alignItems: "center", background: C.paper }}>
               {/* Hidden input driven by the clip button, so the control looks
                   like the rest of the composer rather than a browser file
                   widget. Resetting value lets the same file be picked twice. */}
@@ -7471,6 +7521,24 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 disabled={sending}
                 style={{ flex: 1, minWidth: 0, padding: isMobile ? "9px 12px" : "10px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, outline: "none", background: C.paper }}
               />
+              <button
+                type="button"
+                onClick={() => setEmojiOpen(v => !v)}
+                title="Insert an emoji"
+                aria-label="Insert an emoji"
+                aria-expanded={emojiOpen}
+                style={{ width: isMobile ? 34 : 38, height: isMobile ? 34 : 38, borderRadius: "50%", border: "none", background: emojiOpen ? C.sand : "transparent", color: emojiOpen ? C.amberDeep : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+              >
+                <Smile size={isMobile ? 17 : 19}/>
+              </button>
+              {emojiOpen && (
+                <ChatEmojiTray
+                  onPick={(em) => setDraft(d => d + em)}
+                  onClose={() => setEmojiOpen(false)}
+                  colors={{ paper: C.paper, fawn: C.fawn, sand: C.sand, mink: C.mink, accent: C.amberDeep }}
+                  style={{ right: isMobile ? 12 : 16, bottom: "calc(100% + 6px)" }}
+                />
+              )}
               {!usingBackend && (
                 <button title="Let AI respond" disabled style={{ width: isMobile ? 38 : 42, height: isMobile ? 38 : 42, borderRadius: "50%", border: "1.5px solid " + C.ai + "30", background: C.aiMist, cursor: "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: 0.5 }}>
                   <Sparkles size={isMobile ? 14 : 16} style={{ color: C.ai }}/>
@@ -11460,13 +11528,22 @@ export default function DropYardSellerDashboard({
     setConvList((prev) => upsertConvFromSocket(prev, payload));
   });
 
+  // The server emits this to the OTHER party, so it normally means "the buyer
+  // has just read your messages" — which is what the read ticks need. Clearing
+  // MY unread on it was the wrong side of the conversation: the buyer opening
+  // the thread says nothing about whether I've read what they wrote. That
+  // branch now only runs when the reader is me on another device.
   useSocketEvent("conversation:read", (payload) => {
     const cid = payload?.conversationId;
     if (!cid) return;
-    setConvList((prev) => prev.map((c) => c.id === cid
-      ? { ...c, unreadCount: 0, unread: false, status: c.status === "needs-response" ? "answered" : c.status }
-      : c
-    ));
+    const readByMe = payload?.readByUserId && payload.readByUserId === myUserId;
+    setConvList((prev) => prev.map((c) => {
+      if (c.id !== cid) return c;
+      if (readByMe) {
+        return { ...c, unreadCount: 0, unread: false, status: c.status === "needs-response" ? "answered" : c.status };
+      }
+      return { ...c, otherLastReadAt: payload?.readAt || c.otherLastReadAt };
+    }));
   });
 
   const messagesUnreadCount = useMemo(

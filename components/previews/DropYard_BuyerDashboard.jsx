@@ -11,6 +11,7 @@ import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { useDropCycle } from "@/context/DropCycleContext";
 import { formatPickupDateList, formatPickupWeekday } from "@/lib/pickupDates";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
+import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { useAuth } from "@/context/AuthContext";
 import {
   dropOpenHour, dropOpenHourCompact, dropOpenHourBadge,
@@ -37,7 +38,7 @@ function useDropOpenCountdownString() {
 import {
   Search, Heart, Clock, MapPin, Package, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, SlidersHorizontal,
   LayoutGrid, ArrowUpDown,
-  Check, X, User, ShoppingBag, MessageSquare, Sparkles, Truck, Calendar,
+  Check, CheckCheck, X, User, ShoppingBag, MessageSquare, Sparkles, Truck, Calendar,
   Star, Shield, Send, ArrowRight, ArrowLeft, Home, Tag, Bell, MessageCircle,
   CalendarDays, Compass, Archive, RefreshCw, Eye, EyeOff, Info, TrendingDown,
   DollarSign, AlertCircle, CheckCircle, Share2, Award, Leaf,
@@ -101,6 +102,9 @@ function adaptBuyerConversation(api, myId) {
       hood:   api.otherUser?.neighborhood || "—",
       usesAI: false,
     },
+    // How far the seller has read. Any message I sent at or before this
+    // moment has been seen — that's the whole basis of the read ticks.
+    otherLastReadAt: api.otherLastReadAt || null,
     lastMsg:  api.lastMessage?.body || "",
     lastTime: relativeTimeShort(api.lastMessageAt),
     // Raw timestamp — `lastTime` above is a display string and can't be
@@ -109,6 +113,36 @@ function adaptBuyerConversation(api, myId) {
     lastMessageAt: api.lastMessageAt || null,
     messages: [],
   };
+}
+
+// ─── Read receipts ──────────────────────────────────────────────────────────
+// WhatsApp-style ticks under your own messages. The server records how far
+// each side has read (Conversation.lastReadBy{Buyer,Seller}At) and pushes a
+// `conversation:read` event to the other party, so "seen" is a comparison
+// between a message's createdAt and the counterparty's cursor.
+//
+// Two states only, not WhatsApp's three. One grey tick means the server has
+// the message; two blue ticks mean the other person has opened the thread
+// since it arrived. There is no grey double-tick for "delivered" because
+// nothing in this stack tracks delivery to a device — a middle state would
+// be a claim the UI can't stand behind.
+const SEEN_BLUE = "#2F6FB3";
+function ReadTicks({ sentAt, otherLastReadAt }) {
+  if (!sentAt) return null;
+  const sent = new Date(sentAt).getTime();
+  const read = otherLastReadAt ? new Date(otherLastReadAt).getTime() : 0;
+  const seen = Number.isFinite(sent) && read >= sent;
+  return (
+    <span
+      title={seen ? "Seen" : "Sent"}
+      aria-label={seen ? "Seen" : "Sent"}
+      style={{ display: "inline-flex", alignItems: "center", marginLeft: 4, verticalAlign: "middle" }}
+    >
+      {seen
+        ? <CheckCheck size={13} strokeWidth={2.6} style={{ color: SEEN_BLUE }}/>
+        : <Check size={13} strokeWidth={2.6} style={{ color: C.ash }}/>}
+    </span>
+  );
 }
 
 // A thread stays in the "active" group while it's had activity inside this
@@ -5098,12 +5132,6 @@ const DEMO_BUYER_CONVERSATIONS = [
 // Emoji offered in the composer tray. Deliberately a short, pickup-shaped
 // set rather than a full picker: these threads are about agreeing a price and
 // a time, so the useful ones are acknowledgements, money, and logistics.
-const COMPOSER_EMOJI = [
-  "👍", "🙏", "😊", "😁", "😂", "❤️", "🔥", "🎉",
-  "✅", "👌", "🤝", "🙌", "👋", "😅", "🤔", "😬",
-  "💰", "📦", "🚗", "⏰", "📍", "📸", "❓", "⭐",
-];
-
 function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCounter = null, onDeclineCounter = null, openThreadId = null, onConsumeOpenThread = null, onBack = null, convList: convListProp = null, onConvListChange = null }) {
   const { isMobile } = useViewport();
   const usingBackend = !!accessToken;
@@ -5363,6 +5391,9 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
       from: fromMe ? "you" : "seller",
       text: api.body,
       time: new Date(api.createdAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }),
+      // Raw timestamp alongside the display string — read receipts compare it
+      // against the counterparty's cursor, which a formatted time can't do.
+      sentAt: api.createdAt || null,
       type: renderType,
       // amount surfaces in the OFFER/COUNTER/CLAIM bubble header as "· $30"
       // — render side reads m.amount directly.
@@ -5949,8 +5980,9 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                 <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.45 }}>{m.text}</p>
               )}
             </div>
-            <div style={{ display: "flex", justifyContent: isYou ? "flex-end" : "flex-start", marginTop: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: isYou ? "flex-end" : "flex-start", marginTop: 4 }}>
               <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash }}>{m.time}</span>
+              {isYou && <ReadTicks sentAt={m.sentAt} otherLastReadAt={active?.otherLastReadAt}/>}
             </div>
           </div>
         </div>
@@ -5991,7 +6023,10 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
             )}
             {m.text}
           </div>
-          <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash, marginTop: 3, textAlign: isYou ? "right" : "left", marginLeft: 2, marginRight: 2 }}>{m.time}</p>
+          <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash, marginTop: 3, textAlign: isYou ? "right" : "left", marginLeft: 2, marginRight: 2 }}>
+            {m.time}
+            {isYou && <ReadTicks sentAt={m.sentAt} otherLastReadAt={active?.otherLastReadAt}/>}
+          </p>
           {/* BUG-055.1 — Legacy in-bubble Accept/Counter/Decline removed.
               All negotiation is handled by the top-of-chat action banner. */}
         </div>
@@ -6548,24 +6583,12 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                       </button>
 
                       {emojiOpen && (
-                        <div
-                          className="fade-in"
-                          style={{ position: "absolute", right: 0, bottom: "calc(100% + 10px)", width: 268, padding: 10, borderRadius: 16, background: C.paper, border: "1px solid " + C.fawn, boxShadow: "0 10px 28px rgba(31,29,25,0.14)", display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 2, zIndex: 20 }}
-                        >
-                          {COMPOSER_EMOJI.map((em) => (
-                            <button
-                              key={em}
-                              type="button"
-                              onClick={() => { setDraft(d => d + em); setEmojiOpen(false); }}
-                              title={em}
-                              style={{ width: "100%", aspectRatio: "1", border: "none", borderRadius: 8, background: "transparent", fontSize: 19, lineHeight: 1, cursor: "pointer", padding: 0 }}
-                              onMouseEnter={(e) => { e.currentTarget.style.background = C.sand; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                            >
-                              {em}
-                            </button>
-                          ))}
-                        </div>
+                        <ChatEmojiTray
+                          onPick={(em) => setDraft(d => d + em)}
+                          onClose={() => setEmojiOpen(false)}
+                          colors={{ paper: C.paper, fawn: C.fawn, sand: C.sand, mink: C.mink, accent: C.amberDeep }}
+                          style={{ right: 0, bottom: "calc(100% + 10px)" }}
+                        />
                       )}
                     </div>
                   </div>
@@ -7984,19 +8007,25 @@ export default function DropYardBuyerDashboard({
     setConvList((prev) => upsertConvFromSocket(prev, payload));
   });
 
-  // Socket: the OTHER side opened the thread → clear unread on their end is
-  // their concern; we receive `conversation:read` only when WE open a thread
-  // on another device. Either way, clearing unread on the matching conv is
-  // safe — it just won't fire unless we have multi-device.
+  // Socket: someone opened the thread. The server emits this to the OTHER
+  // party, so in practice it means "the seller has just read your messages" —
+  // which is exactly what the read ticks need, and is why the cursor is
+  // recorded here rather than the unread count being cleared.
+  //
+  // It used to clear MY unread count on every one of these, which is the
+  // wrong side of the conversation: the seller opening the thread says
+  // nothing about whether I've read what they wrote. The only case where
+  // clearing is right is a second device of my own reading it, which is what
+  // the readByUserId check below distinguishes.
   useSocketEvent("conversation:read", (payload) => {
     const cid = payload?.conversationId;
     if (!cid) return;
-    // Unread only — `status` tracks who spoke last and is unaffected by the
-    // thread being opened somewhere else.
-    setConvList((prev) => prev.map((c) => c.id === cid
-      ? { ...c, unreadCount: 0, unread: false }
-      : c
-    ));
+    const readByMe = payload?.readByUserId && payload.readByUserId === myUserId;
+    setConvList((prev) => prev.map((c) => {
+      if (c.id !== cid) return c;
+      if (readByMe) return { ...c, unreadCount: 0, unread: false };
+      return { ...c, otherLastReadAt: payload?.readAt || c.otherLastReadAt };
+    }));
   });
 
   // Count of conversations with at least one unread message. Drives the
