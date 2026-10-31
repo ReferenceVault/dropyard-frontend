@@ -18,13 +18,13 @@ const DISMISS_KEY = "dropyard:verify-banner-dismissed";
  * that was never sent, and offered to resend a verification they didn't need.
  *
  * So the only people who see it signed up with a password, and the signup
- * route did fire a message at that address. What it can't promise is
- * delivery — signup sends fire-and-forget and only logs a failure — hence
- * "check spam" rather than a flat assurance, and a resend that reports back
- * honestly when the send fails.
+ * route tried to send to that address. What it can't promise is delivery —
+ * signup sends fire-and-forget and only logs a failure — so the copy never
+ * says the email was sent, and a resend reports back honestly when the send
+ * fails.
  */
 export function EmailVerifyBanner() {
-  const { user, accessToken } = useAuth();
+  const { user, accessToken, refreshUser } = useAuth();
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [dismissed, setDismissed] = useState(() => {
@@ -43,10 +43,16 @@ export function EmailVerifyBanner() {
     setState("sending");
     setErrorMessage("");
     try {
-      await apiRequest("/api/auth/me/resend-verification", {
+      const res = await apiRequest<{ alreadyVerified?: boolean }>("/api/auth/me/resend-verification", {
         method: "POST",
         token:  accessToken,
       });
+      if (res.alreadyVerified) {
+        // Verified in another tab or device, so nothing was sent. Refreshing
+        // the user sets verifiedAt, which removes this banner.
+        await refreshUser();
+        return;
+      }
       setState("sent");
     } catch (err) {
       // The server distinguishes "couldn't send" from "too many requests";
@@ -102,9 +108,9 @@ export function EmailVerifyBanner() {
                   Verify your email so we can send you claim and pickup updates
                 </p>
                 <p className="text-[12px] sm:text-[13px] text-amber-800/85 mt-0.5 truncate">
-                  We sent a link to{" "}
-                  <span className="font-semibold text-amber-900">{user.email}</span> when you
-                  signed up &mdash; check your spam folder if it isn&rsquo;t there.
+                  Look for our link at{" "}
+                  <span className="font-semibold text-amber-900">{user.email}</span> &mdash; check
+                  your spam folder, or send a new one if it isn&rsquo;t there.
                 </p>
               </div>
             )}
