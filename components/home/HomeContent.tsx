@@ -214,7 +214,7 @@ function GoodStuff() {
 export function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { state, featured, shelf, dropStats, neighbourCount, savedIds, toggleSaved } = useHomeData();
+  const { state, featured, shelf, liveItems, feedPhase, reload, dropStats, neighbourCount, savedIds, claimedIds, userId, toggleSaved } = useHomeData();
 
   useEffect(() => {
     const p = searchParams?.get("page");
@@ -228,7 +228,12 @@ export function HomeContent() {
       <Hero />
       <TrustStrip />
       <DropCycleProvider>
-        <NextDropSection stats={state === "ready" ? dropStats : null} neighbourCount={neighbourCount} />
+        <NextDropSection
+          stats={state === "ready" ? dropStats : null}
+          neighbourCount={neighbourCount}
+          live={{ items: liveItems, state, feedPhase, savedIds, claimedIds, userId, onToggleSaved: toggleSaved }}
+          onDropOpened={reload}
+        />
       </DropCycleProvider>
       <FeaturedSection items={featured} state={state} savedIds={savedIds} onToggleSaved={toggleSaved} />
       <DropFeature />

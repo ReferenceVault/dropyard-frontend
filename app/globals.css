@@ -314,6 +314,32 @@ body {
 .dy-ribbon {
   clip-path: polygon(0 0, 100% 0, calc(100% - 0.75em) 50%, 100% 100%, 0 100%);
 }
+/* Next Drop card. Both sides share one grid cell, so the taller sets the
+   card's height and flipping can't shift the page. */
+.dy-flip {
+  perspective: 1600px;
+}
+.dy-flip__inner {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.dy-flip__inner--flipped {
+  transform: rotateY(180deg);
+}
+.dy-flip__face {
+  grid-area: 1 / 1;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.dy-flip__face--back {
+  transform: rotateY(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dy-flip__inner {
+    transition: none;
+  }
+}
 .dy-no-scrollbar {
   scrollbar-width: none;
 }

@@ -30,6 +30,7 @@ export interface HomeItem {
   photo: string | null;
   neighbourhood: string;
   pickup: string;
+  sellerId: string | null;
 }
 
 export interface DropStats {
@@ -64,6 +65,7 @@ function toHomeItem(api: ApiItem): HomeItem {
     photo:         api.photos?.find(Boolean) ?? null,
     neighbourhood: api.seller?.neighborhood || "Nearby",
     pickup:        pickupLabel(api),
+    sellerId:      api.seller?.id ?? null,
   };
 }
 
@@ -89,17 +91,22 @@ export function useHomeData() {
   const [state, setState] = useState<LoadState>("loading");
   const [featured, setFeatured] = useState<HomeItem[]>([]);
   const [shelf, setShelf] = useState<HomeItem[]>([]);
+  const [liveItems, setLiveItems] = useState<HomeItem[]>([]);
+  const [feedPhase, setFeedPhase] = useState<string | null>(null);
   const [dropStats, setDropStats] = useState<DropStats | null>(null);
   const neighbourCount = useNeighbourCount();
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [claimedIds, setClaimedIds] = useState<Set<string>>(new Set());
+  const [loadCount, setLoadCount] = useState(0);
+  const reload = useCallback(() => setLoadCount((n) => n + 1), []);
 
-  // One page of the feed feeds all three surfaces, split by placement. The
-  // feed is empty of Drop items until PREVIEW, so sneak-peek fills "this
-  // week's finds" Monday to Wednesday.
+  // One page of the feed feeds every surface, split by placement. The feed is
+  // empty of Drop items until PREVIEW, so sneak-peek fills "this week's finds"
+  // Monday to Wednesday.
   useEffect(() => {
     let cancelled = false;
     Promise.allSettled([
-      apiRequest<{ items?: ApiItem[] }>("/api/items?limit=100"),
+      apiRequest<{ items?: ApiItem[]; phase?: string }>("/api/items?limit=100"),
       apiRequest<{ items?: ApiItem[] }>("/api/items/sneak-peek"),
     ]).then(([feedResult, peekResult]) => {
       if (cancelled) return;
@@ -115,6 +122,8 @@ export function useHomeData() {
 
       setFeatured(upcoming.slice(0, 4).map(toHomeItem));
       setShelf(feed.filter((i) => i.placement === "SHELF").slice(0, 12).map(toHomeItem));
+      setLiveItems(dropItems.filter((i) => i.status === "LIVE").map(toHomeItem));
+      setFeedPhase(feedResult.value.phase ?? null);
       setDropStats({
         items:   dropItems.length,
         saves:   dropItems.reduce((sum, i) => sum + (i._count?.watchlist ?? 0), 0),
@@ -123,7 +132,7 @@ export function useHomeData() {
       setState("ready");
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [loadCount]);
 
   useEffect(() => {
     if (!user) return;
@@ -131,6 +140,13 @@ export function useHomeData() {
     apiRequest<{ items?: Array<{ id: string }> }>("/api/watchlist")
       .then((data) => { if (!cancelled) setSavedIds(new Set((data.items ?? []).map((i) => i.id))); })
       .catch(() => { /* hearts stay empty; saving still works */ });
+    // A claim leaves the item LIVE for everyone, so the feed can't say which
+    // ones are this buyer's. If this fails the backend still refuses a repeat.
+    apiRequest<{ claims?: Array<{ itemId: string; status: string }> }>("/api/claims/mine")
+      .then((data) => {
+        if (!cancelled) setClaimedIds(new Set((data.claims ?? []).filter((c) => c.status === "PROPOSED").map((c) => c.itemId)));
+      })
+      .catch(() => { /* cards just offer the claim */ });
     return () => { cancelled = true; };
   }, [user]);
 
@@ -152,5 +168,10 @@ export function useHomeData() {
     }
   }, [user, router, savedIds]);
 
-  return { state, featured, shelf, dropStats, neighbourCount, savedIds: user ? savedIds : NO_SAVED_ITEMS, toggleSaved };
+  return {
+    state, featured, shelf, liveItems, feedPhase, reload, dropStats, neighbourCount, toggleSaved,
+    savedIds:   user ? savedIds : NO_SAVED_ITEMS,
+    claimedIds: user ? claimedIds : NO_SAVED_ITEMS,
+    userId:     user?.id ?? null,
+  };
 }
