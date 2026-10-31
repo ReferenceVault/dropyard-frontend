@@ -26,6 +26,10 @@ import type { NextConfig } from "next";
 //     are whitelisted explicitly.
 //   - Item photos live on S3 with a CDN URL pattern. We allow https: for
 //     img-src so any HTTPS image URL works; this is the common SaaS posture.
+//   - The dashboards and How It Works page load their fonts with a Google
+//     Fonts <link>. The stylesheet comes from fonts.googleapis.com and the
+//     font files from fonts.gstatic.com, so each is allowed only in the
+//     directive it needs. Fonts from next/font are self-hosted and need neither.
 // ─────────────────────────────────────────────────────────────────────────
 
 const API_HOST = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -51,7 +55,7 @@ const SCRIPT_SRC: string[] = IS_DEV
 const cspDirectives: Record<string, string[] | true> = {
   "default-src":     ["'self'"],
   "script-src":      SCRIPT_SRC,
-  "style-src":       ["'self'", "'unsafe-inline'"], // styled-jsx requires inline
+  "style-src":       ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], // styled-jsx requires inline
   // S3 photos via any HTTPS host. In dev the backend's local-upload fallback
   // serves item photos from the API origin over plain http://, which neither
   // 'self' (the frontend origin) nor https: covers — so allow API_HOST too.
@@ -59,7 +63,7 @@ const cspDirectives: Record<string, string[] | true> = {
   "img-src":         IS_DEV
     ? ["'self'", "data:", "blob:", "https:", API_HOST]
     : ["'self'", "data:", "blob:", "https:"],
-  "font-src":        ["'self'", "data:"],
+  "font-src":        ["'self'", "data:", "https://fonts.gstatic.com"],
   "connect-src":     ["'self'", API_HOST, "https://accounts.google.com", "https://oauth2.googleapis.com", "wss:", "ws:"], // ws: for Socket.IO + Next.js HMR
   "frame-src":       ["'self'", "https://accounts.google.com"],
   "frame-ancestors": ["'none'"], // prevent clickjacking

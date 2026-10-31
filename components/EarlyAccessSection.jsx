@@ -83,55 +83,49 @@ export default function EarlyAccessSection() {
     // BUG-071 — id="early-access" anchor target for the hero card's
     // "Get Notified" button. scroll-mt-20 leaves room for the sticky
     // header so the headline isn't clipped after the smooth scroll.
-    <section id="early-access" className="relative bg-[#f9fbf9] py-12 px-4 sm:px-6 lg:px-8 overflow-hidden scroll-mt-20">
-
-      {/* BACKGROUND GLOW */}
-      <div className="absolute inset-0">
-        <div className="absolute left-0 top-0 w-96 h-96 bg-[#2f8a22]/10 rounded-full blur-3xl" />
-        <div className="absolute right-0 bottom-0 w-96 h-96 bg-[#ff9412]/10 rounded-full blur-3xl" />
-      </div>
-
-      <div className="relative max-w-4xl mx-auto text-center">
+    <section id="early-access" className="dy-section dy-wrap scroll-mt-20 border-t border-dy-line bg-white">
+      <div className="max-w-4xl mx-auto text-center">
 
         {/* LABEL */}
-        <p className="text-[11px] font-bold tracking-[0.18em] text-[#ff9412] uppercase">
+        <p className="dy-eyebrow">
           Early Access
         </p>
 
         {/* HEADLINE — BUG-071 soft / honest copy. Old copy promised a
             weekly newsletter we don't yet send (CASL risk). */}
-        <h2 className="mt-2 text-[28px] sm:text-[34px] lg:text-[46px] font-semibold tracking-tighter text-[#0b2f20] leading-[1.05]">
+        <h2 className="dy-h2 mt-3">
           Be first in line for{" "}
-          <span className="text-[#ff9412]">Barrhaven drops.</span>
+          <span className="text-dy-orange">Barrhaven drops.</span>
         </h2>
 
         {/* SUBTEXT */}
-        <p className="mt-3 text-[15px] text-slate-600 leading-relaxed max-w-2xl mx-auto">
+        <p className="dy-body mt-4 max-w-2xl mx-auto">
           We&rsquo;ll email you when the next weekend Drop goes live &mdash; and occasionally with featured items. No spam. Unsubscribe anytime.
         </p>
 
         {/* INPUT + CTA */}
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
-          <div className={`relative flex items-center gap-3 w-full sm:w-auto bg-white rounded-full px-6 py-4 shadow-md border transition ${
+          <div className={`relative flex items-center gap-3 w-full sm:w-auto bg-white rounded px-5 min-h-[50px] border transition ${
             error
               ? "border-red-400 animate-shake"
-              : "border-slate-200 focus-within:ring-2 focus-within:ring-[#2f8a22]/20"
+              : "border-dy-line focus-within:outline-3 focus-within:outline-offset-2 focus-within:outline-dy-orange"
           }`}>
-            <MailIcon className="h-5 w-5 text-slate-400" />
+            <MailIcon className="h-5 w-5 text-dy-muted" />
             <input
               type="email"
+              aria-label="Email address"
               placeholder="you@barrhaven.ca"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              className="outline-none bg-transparent text-[13px] w-full sm:w-72"
+              className="outline-none bg-transparent text-[clamp(16px,1.05vw,20px)] text-dy-forest w-full sm:w-72"
             />
           </div>
 
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="group inline-flex items-center justify-center rounded-full bg-[#2f8a22] px-8 py-4 text-[13px] font-bold text-white shadow-[0_15px_35px_rgba(47,138,34,0.3)] transition duration-300 hover:-translate-y-1 hover:bg-[#26751d] disabled:opacity-70"
+            className="dy-btn dy-btn--primary dy-focus w-full sm:w-auto disabled:opacity-70"
           >
             {loading ? "Saving your spot..." : "Save my spot"}
           </button>
@@ -146,7 +140,7 @@ export default function EarlyAccessSection() {
         {submitted && (
           <div className="mt-6 flex flex-col items-center gap-2">
             <div className="text-[23px]">🎉</div>
-            <p className="text-[13px] text-[#2f8a22] font-semibold">
+            <p className="text-[15px] text-dy-green-strong font-semibold">
               You&rsquo;re in. Friday just got better.
             </p>
           </div>
@@ -156,16 +150,16 @@ export default function EarlyAccessSection() {
             Until we have ≥ 100 active subscribers, show a trust line in
             place of a count (the old code faked a 1,482 counter that
             ticked up by random — that's gone). */}
-        <div className="mt-5 text-[12px] tracking-wide text-slate-500">
+        <div className="mt-5 text-[clamp(14px,1vw,19px)] text-dy-muted">
           {showProof ? (
-            <><span className="font-semibold text-[#0b2f20]">{count.toLocaleString()} neighbours</span> already joined &middot; No spam &middot; Unsubscribe anytime</>
+            <><span className="font-semibold text-dy-forest">{count.toLocaleString()} neighbours</span> already joined &middot; No spam &middot; Unsubscribe anytime</>
           ) : (
             <>Your email is only used for drop alerts &middot; Unsubscribe anytime</>
           )}
         </div>
 
         {/* TRUST BADGES */}
-        <div className="mt-3 flex justify-center gap-6 text-[12px] text-slate-400">
+        <div className="mt-3 flex flex-wrap justify-center gap-x-6 gap-y-1 text-[clamp(14px,1vw,19px)] text-dy-muted">
           <span>&#10004; Privacy-first</span>
           <span>&#10004; No spam ever</span>
           <span>&#10004; One-click unsubscribe</span>
