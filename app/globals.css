@@ -10,6 +10,21 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-dy: var(--font-instrument-sans);
+
+  /* DropYard marketing palette. Sampled from the homepage design; `green-strong`
+     and `muted` are a shade darker than the artwork so text on them and in them
+     clears 4.5:1. */
+  --color-dy-forest: #0f360b;
+  --color-dy-mid: #2c6126;
+  --color-dy-green: #3a8e31;
+  --color-dy-green-strong: #33802b;
+  --color-dy-orange: #f99605;
+  --color-dy-orange-strong: #b86a00;
+  --color-dy-gold: #f4b321;
+  --color-dy-pale: #f3f8f3;
+  --color-dy-muted: #5f755c;
+  --color-dy-line: #d4ddd3;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -223,4 +238,90 @@ body {
 @keyframes dropyard-pulse {
   0%, 100% { opacity: 1;    transform: scale(1); }
   50%      { opacity: 0.35; transform: scale(0.75); }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Marketing surfaces (homepage, public header + footer). Sizes are drawn on a
+   1920px artboard and scale with the viewport, floored for phones and capped
+   at the artboard so ultra-wide screens don't keep growing.
+   ──────────────────────────────────────────────────────────────────────── */
+.dy-wrap {
+  width: 100%;
+  max-width: 1920px;
+  margin-inline: auto;
+  padding-inline: clamp(16px, 5.2vw, 100px);
+}
+.dy-section {
+  padding-block: clamp(56px, 6.25vw, 120px);
+}
+.dy-eyebrow {
+  font-size: clamp(13px, 1.25vw, 24px);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--color-dy-forest);
+}
+.dy-h1,
+.dy-h2 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--color-dy-forest);
+}
+.dy-h1 {
+  font-size: clamp(42px, 4.8vw, 92px);
+}
+.dy-h2 {
+  font-size: clamp(34px, 3.75vw, 72px);
+}
+.dy-body {
+  font-size: clamp(16px, 1.35vw, 26px);
+  line-height: 1.32;
+  color: var(--color-dy-muted);
+}
+.dy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  min-height: clamp(50px, 4.7vw, 90px);
+  padding-inline: clamp(20px, 1.9vw, 36px);
+  border-radius: 4px;
+  font-size: clamp(15px, 1.25vw, 24px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.dy-btn--primary {
+  background: var(--color-dy-green-strong);
+  color: #ffffff;
+}
+.dy-btn--primary:hover {
+  background: var(--color-dy-mid);
+}
+.dy-btn--light {
+  background: #ffffff;
+  color: var(--color-dy-forest);
+  box-shadow: 0 16px 32px -20px rgba(15, 54, 11, 0.35);
+}
+.dy-btn--light:hover {
+  background: var(--color-dy-pale);
+}
+.dy-focus:focus-visible {
+  outline: 3px solid var(--color-dy-orange);
+  outline-offset: 2px;
+}
+/* Item-card corner ribbon: a flag with a notch cut from its trailing edge. */
+.dy-ribbon {
+  clip-path: polygon(0 0, 100% 0, calc(100% - 0.75em) 50%, 100% 100%, 0 100%);
+}
+.dy-no-scrollbar {
+  scrollbar-width: none;
+}
+.dy-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
