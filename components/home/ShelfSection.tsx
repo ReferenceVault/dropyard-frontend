@@ -86,7 +86,7 @@ export function ShelfSection({ items, state, savedIds, onToggleSaved }: {
               onScroll={syncArrows}
               tabIndex={0}
               aria-label="Items on the Shelf"
-              className="dy-no-scrollbar dy-focus flex snap-x gap-[30px] overflow-x-auto pr-[clamp(16px,2.6vw,50px)]"
+              className="dy-no-scrollbar dy-focus -mt-2 flex snap-x gap-[30px] overflow-x-auto pr-[clamp(16px,2.6vw,50px)] pt-2"
             >
               {items.map((item) => (
                 <li key={item.id} className="w-[min(78vw,clamp(260px,21.2vw,408px))] shrink-0 snap-start">

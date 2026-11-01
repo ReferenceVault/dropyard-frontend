@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, useId } from "react";
 import Link from "next/link";
 import { apiRequest, uploadItemPhoto } from "@/lib/api";
 import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { ChatEmojiTray } from "@/components/ChatEmojiTray";
+import { ModalA11y } from "@/components/ModalA11y";
 import { useAuth } from "@/context/AuthContext";
 import { useDropCycle } from "@/context/DropCycleContext";
 import { formatPickupDateList, formatPickupDateLong } from "@/lib/pickupDates";
@@ -42,23 +43,23 @@ import {
 } from "lucide-react";
 
 /* ============================================================
-   DESIGN SYSTEM — warm community, Nunito, brand-aligned
+   DESIGN SYSTEM — brand palette, site font
    Matched to buyer dashboard. Brand: green #308424, amber #F09000.
    ============================================================ */
 const C = {
   paper:     "#FFFFFF",
   page:      "#FFFFFF",
-  sand:      "#FFF9F0",
-  fawn:      "#EDE8E0",
-  smoke:     "#D6CFC4",
-  ash:       "#9A948B",
-  mink:      "#5F5B54",
-  ink:       "#1F1D19",
-  green:     "#308424",
-  greenDeep: "#1F5A18",
-  greenMist: "#D8EDD2",
-  amber:     "#F08A00",
-  amberDeep: "#C06800",
+  sand:      "#FBFDFB",
+  fawn:      "#E3EAE2",
+  smoke:     "#D4DDD3",
+  ash:       "#60745D",
+  mink:      "#5F755C",
+  ink:       "#0F360B",
+  green:     "#33802B",
+  greenDeep: "#2C6126",
+  greenMist: "#E2EFE0",
+  amber:     "#F99605",
+  amberDeep: "#A35C00",
   amberSoft: "#FFE4C4",
   amberMist: "#FFF7ED",
   claret:    "#CC3B2A",
@@ -72,12 +73,12 @@ const C = {
   aiMist:    "#F5F3FF",
   wa:        "#25D366",
   // Legacy aliases — kept so pre-existing code keeps working until fully ported
-  gLightBg:  "#D8EDD2",
-  gSoft:     "#D8EDD2",
+  gLightBg:  "#E2EFE0",
+  gSoft:     "#E2EFE0",
   gAccent:   "#308424",
-  gPrimary:  "#308424",
-  gHover:    "#1F5A18",
-  gDark:     "#1F5A18",
+  gPrimary:  "#33802B",
+  gHover:    "#2C6126",
+  gDark:     "#2C6126",
   oLightBg:  "#FFF7ED",
   oSoft:     "#FFE4C4",
   oAccent:   "#F08A00",
@@ -91,11 +92,11 @@ const C = {
   aiBorder:  "#DDD6FE",
 };
 const F = {
-  head: '"Nunito", -apple-system, BlinkMacSystemFont, sans-serif',
-  body: '"Nunito", -apple-system, BlinkMacSystemFont, sans-serif',
+  head: 'var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, sans-serif',
+  body: 'var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, sans-serif',
   // Legacy aliases
-  h:    '"Nunito", -apple-system, BlinkMacSystemFont, sans-serif',
-  b:    '"Nunito", -apple-system, BlinkMacSystemFont, sans-serif',
+  h:    'var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, sans-serif',
+  b:    'var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, sans-serif',
 };
 
 /* ============================================================
@@ -244,7 +245,7 @@ const CATEGORY_EMOJI = {
 
 /* Avatar helpers */
 function avatarBg(name) {
-  const seeds = [C.green, C.amber, C.sky, C.claret, C.purple, C.teal];
+  const seeds = [C.green, C.amberDeep, C.sky, C.claret, C.purple, C.teal];
   let h = 0; for (const ch of (name || "")) h = (h * 31 + ch.charCodeAt(0)) & 0xffff;
   return seeds[h % seeds.length];
 }
@@ -255,25 +256,19 @@ function initialsOf(name) {
   return (parts[0].charAt(0) + parts[parts.length-1].charAt(0)).toUpperCase();
 }
 
-/* Global CSS injection — Nunito font, animations, hover behaviours */
+/* Global CSS injection — animations, hover behaviours */
 function GlobalStyle() {
   return (
     <>
-      <link rel="preconnect" href="https://fonts.googleapis.com"/>
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous"/>
-      <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: "Nunito", -apple-system, BlinkMacSystemFont, sans-serif; background: ${C.paper}; color: ${C.ink}; }
+        body { font-family: var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, sans-serif; background: ${C.paper}; color: ${C.ink}; }
         .fade-in { animation: fadeIn 300ms ease-out both; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulseGreen { 0% { box-shadow: 0 0 0 0 ${C.green}55; } 70% { box-shadow: 0 0 0 14px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
         @keyframes pulseAmber { 0% { box-shadow: 0 0 0 0 ${C.amber}60; } 70% { box-shadow: 0 0 0 10px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
         @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } }
         .chip-hover:hover { border-color: ${C.smoke} !important; }
-        .cta-primary { transition: transform 150ms ease, box-shadow 150ms ease; }
-        .cta-primary:hover { transform: translateY(-1px); }
-        .cta-primary:active { transform: translateY(0); }
       `}</style>
     </>
   );
@@ -375,7 +370,7 @@ function StatusBadge({ status, size = "sm", label }) {
   const meta = STATUS_META[status] || { label: label || status, color: C.mink, bg: C.sand };
   const iconMap = { clock: Clock, check: Check, checkcircle: CheckCircle, clipboardlist: ClipboardList, messagesquare: MessageSquare };
   const Ic = meta.icon ? iconMap[meta.icon] : null;
-  const fs_ = size === "sm" ? 10 : 11;
+  const fs_ = size === "sm" ? 11 : 12;
   const pad = size === "sm" ? "3px 9px" : "4px 11px";
   const isz = size === "sm" ? 10 : 12;
   return (
@@ -1038,7 +1033,7 @@ function SellerUserMenu({ user, onSignout, onOpenSettings }) {
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 49 }}/>
-          <div className="fade-in" style={{
+          <div className="dy-rise" style={{
             position: "absolute", right: 0, top: "calc(100% + 10px)", zIndex: 50,
             minWidth: 240, borderRadius: 14, background: C.paper,
             border: "1px solid " + C.fawn, boxShadow: "0 12px 32px rgba(31, 29, 25, 0.12)",
@@ -2153,6 +2148,7 @@ function ShareSheet({ items, onClose }) {
         backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
       }}
     >
+      <ModalA11y label="Share your listings" onClose={onClose}/>
       <div
         onClick={(e) => e.stopPropagation()}
         className="fade-in"
@@ -3354,9 +3350,29 @@ function useDropOpenCountdownString() {
   return now ? formatCompactCountdown(nextDropMoment(now), now) : "";
 }
 
+/* Shared by the new-listing and edit forms, which must stay identical. */
+const FORM_LABEL = { display: "block", fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 6, fontFamily: F.body };
+// 16px: iOS zooms the page when a smaller input takes focus.
+const FORM_INPUT = { width: "100%", minHeight: 46, padding: "10px 14px", borderRadius: 10, border: "1.5px solid " + C.smoke, fontSize: 16, fontFamily: F.body, color: C.ink, background: C.paper, boxSizing: "border-box" };
+function formCard(isMobile) {
+  return { padding: isMobile ? 16 : 24, borderRadius: 16, border: "1px solid " + C.fawn, background: C.paper, minWidth: 0 };
+}
+function formChip(on) {
+  return { minHeight: 38, padding: "7px 12px", borderRadius: 8, border: "1.5px solid " + (on ? C.green : C.smoke), cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 500, background: on ? C.greenMist : C.paper, color: on ? C.greenDeep : C.mink, fontFamily: F.body, transition: "background-color 150ms, border-color 150ms" };
+}
+function FormHeading({ title, hint }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <h3 style={{ fontFamily: F.head, fontSize: 17, fontWeight: 800, color: C.ink }}>{title}</h3>
+      <p style={{ fontFamily: F.body, fontSize: 13, color: C.mink, marginTop: 3, lineHeight: 1.45 }}>{hint}</p>
+    </div>
+  );
+}
+
 function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, onEnhanceAI, aiSettings = {}, accessToken = null, onItemCreated = null }) {
   const dropOpenCountdown = useDropOpenCountdownString();
   const { isMobile } = useViewport();
+  const fieldId = useId();
   // Drop-cycle awareness for the "When should this go live?" block. During a
   // LIVE Drop the two publish paths change meaning: "queue for next" becomes
   // "list into the Drop that's running right now", and the Shelf path is closed
@@ -3670,11 +3686,11 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
 
   return (
     <div>
-      <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 8, border: "1px solid #e5e7eb", background: C.paper, cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#777", fontFamily: F.body, marginBottom: 20 }}>
+      <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 8, border: "1px solid " + C.smoke, background: C.paper, cursor: "pointer", fontSize: 13, fontWeight: 600, color: C.mink, fontFamily: F.body, marginBottom: 20 }}>
         <ArrowLeft size={14} /> Back
       </button>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, fontFamily: F.head }}>List New Item</h2>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: C.ink, fontFamily: F.head }}>List New Item</h2>
         {/* BUG-097 — "Enhance with AI" removed until the AI feature ships. It
             navigated to the AIPhotoFlow / AISetup wizard, which advertises a
             "5 free/mo" allowance and generates listings that nothing backs.
@@ -3688,7 +3704,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
         <div>
           {/* Main photo dropzone */}
           <div style={{ padding: isMobile ? 16 : 20, borderRadius: 16, border: "1px solid " + C.fawn, background: C.paper, marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 10, fontFamily: F.body }}>Photos *</label>
+            <FormHeading title="Photos" hint="Clear, well-lit photos help your item get claimed."/>
             {/* Hidden real file input - triggered by dropzone and Add tile */}
             <input
               ref={fileInputRef}
@@ -3698,23 +3714,23 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
               onChange={handleFileChange}
               style={{ display: "none" }}
             />
-            <div onClick={openFilePicker}
-              style={{ height: 180, borderRadius: 14, border: "2px dashed #d1d5db", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: submitting ? "not-allowed" : "pointer", background: C.sand, transition: "all 0.2s", opacity: submitting ? 0.6 : 1 }}
+            <button type="button" onClick={openFilePicker} disabled={submitting}
+              style={{ width: "100%", height: 180, borderRadius: 14, border: "2px dashed " + C.smoke, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: submitting ? "not-allowed" : "pointer", background: C.sand, transition: "all 0.2s", opacity: submitting ? 0.6 : 1 }}
               onMouseEnter={e => { if (!submitting) { e.currentTarget.style.borderColor = C.gPrimary; e.currentTarget.style.backgroundColor = C.gLightBg; } }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "#d1d5db"; e.currentTarget.style.backgroundColor = "#fafafa"; }}>
+              onMouseLeave={e => { e.currentTarget.style.borderColor = C.smoke; e.currentTarget.style.backgroundColor = C.sand; }}>
               <div style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Camera size={24} style={{ color: C.gPrimary }} />
               </div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: C.ink, fontFamily: F.body }}>Drop photos here or click to upload</p>
-              <p style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>JPG, PNG up to 10MB each &middot; max {MAX_PHOTOS} photos</p>
-            </div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.body }}>Choose photos to upload</span>
+              <span style={{ fontSize: 12, color: C.ash, fontFamily: F.body }}>JPG, PNG up to 10MB each &middot; max {MAX_PHOTOS} photos</span>
+            </button>
 
             {/* Photo thumbnails */}
             <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
               {photos.map((p, idx) => (
                 <div key={p.id} style={{ width: 88, height: 88, borderRadius: 12, border: "1.5px solid " + (idx === 0 ? C.amber : C.gPrimary + "30"), backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
                   {p.preview ? (
-                    <img src={p.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: p.uploading ? 0.5 : 1 }}/>
+                    <img src={p.preview} alt={"Photo " + (idx + 1)} style={{ width: "100%", height: "100%", objectFit: "cover", opacity: p.uploading ? 0.5 : 1 }}/>
                   ) : (
                     <Camera size={20} style={{ color: C.gPrimary }}/>
                   )}
@@ -3724,30 +3740,30 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                     </span>
                   )}
                   {!p.uploading && idx === 0 && (
-                    <span style={{ position: "absolute", top: 4, left: 4, padding: "2px 6px", borderRadius: 999, background: C.amber, color: "#fff", fontFamily: F.head, fontSize: 9, fontWeight: 900, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                    <span style={{ position: "absolute", top: 4, left: 4, padding: "2px 6px", borderRadius: 999, background: C.amber, color: C.ink, fontFamily: F.head, fontSize: 10, fontWeight: 900, letterSpacing: "0.04em", textTransform: "uppercase" }}>
                       Cover
                     </span>
                   )}
                   {!p.uploading && (
                     <button onClick={() => removePhoto(p.id)} aria-label="Remove photo"
-                      style={{ position: "absolute", top: -4, right: -4, width: 18, height: 18, borderRadius: "50%", backgroundColor: "#EF4444", border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>
-                      <X size={8} style={{ color: "#fff" }} />
+                      style={{ position: "absolute", top: 4, right: 4, width: 24, height: 24, borderRadius: "50%", backgroundColor: C.claret, border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>
+                      <X size={12} style={{ color: "#fff" }} />
                     </button>
                   )}
                   {!p.uploading && photos.length > 1 && (
                     <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "3px 4px", background: "rgba(31,29,25,0.55)" }}>
                       <button onClick={() => movePhoto(idx, -1)} disabled={idx === 0} aria-label="Move left"
-                        style={{ width: 18, height: 18, borderRadius: 4, border: "none", background: idx === 0 ? "transparent" : "rgba(255,255,255,0.18)", color: "#fff", cursor: idx === 0 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, opacity: idx === 0 ? 0.4 : 1 }}>
+                        style={{ width: 24, height: 24, borderRadius: 4, border: "none", background: idx === 0 ? "transparent" : "rgba(255,255,255,0.18)", color: "#fff", cursor: idx === 0 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, opacity: idx === 0 ? 0.4 : 1 }}>
                         <ChevronLeft size={11}/>
                       </button>
                       {idx !== 0 ? (
                         <button onClick={() => setAsCover(idx)} aria-label="Set as cover" title="Set as cover"
-                          style={{ width: 18, height: 18, borderRadius: 4, border: "none", background: "rgba(240,144,0,0.85)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                          style={{ width: 24, height: 24, borderRadius: 4, border: "none", background: "rgba(240,144,0,0.85)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
                           <Star size={10} strokeWidth={2.4}/>
                         </button>
-                      ) : <span style={{ width: 18, height: 18 }}/>}
+                      ) : <span style={{ width: 24, height: 24 }}/>}
                       <button onClick={() => movePhoto(idx, +1)} disabled={idx === photos.length - 1} aria-label="Move right"
-                        style={{ width: 18, height: 18, borderRadius: 4, border: "none", background: idx === photos.length - 1 ? "transparent" : "rgba(255,255,255,0.18)", color: "#fff", cursor: idx === photos.length - 1 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, opacity: idx === photos.length - 1 ? 0.4 : 1 }}>
+                        style={{ width: 24, height: 24, borderRadius: 4, border: "none", background: idx === photos.length - 1 ? "transparent" : "rgba(255,255,255,0.18)", color: "#fff", cursor: idx === photos.length - 1 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, opacity: idx === photos.length - 1 ? 0.4 : 1 }}>
                         <ChevronRight size={11}/>
                       </button>
                     </div>
@@ -3756,13 +3772,13 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
               ))}
               {photos.length < MAX_PHOTOS && (
                 <button onClick={openFilePicker} disabled={submitting}
-                  style={{ width: 88, height: 88, borderRadius: 12, border: "2px dashed #d1d5db", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: submitting ? "not-allowed" : "pointer", background: C.paper, gap: 2 }}>
-                  <Plus size={16} style={{ color: C.smoke }} />
-                  <span style={{ fontSize: 8, color: C.smoke, fontFamily: F.body }}>Add</span>
+                  style={{ width: 88, height: 88, borderRadius: 12, border: "2px dashed " + C.smoke, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: submitting ? "not-allowed" : "pointer", background: C.paper, gap: 2 }}>
+                  <Plus size={16} style={{ color: C.mink }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: C.mink, fontFamily: F.body }}>Add</span>
                 </button>
               )}
             </div>
-            <p style={{ fontSize: 10, color: C.ash, marginTop: 8, fontFamily: F.body }}>The Cover photo is the first one buyers see. Use the arrows to reorder, or the star to promote. Up to {MAX_PHOTOS} photos.</p>
+            <p style={{ fontSize: 12, lineHeight: 1.5, color: C.ash, marginTop: 10, fontFamily: F.body }}>The Cover photo is the first one buyers see. Use the arrows to reorder, or the star to promote. Up to {MAX_PHOTOS} photos.</p>
           </div>
 
           {/* Video upload — Coming soon. Photos are enough for the first
@@ -3789,41 +3805,48 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
         </div>
 
         {/* Right: Item details */}
-        <div style={{ padding: 24, borderRadius: 16, border: "1px solid " + C.fawn, background: C.paper }}>
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Title *</label>
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., IKEA KALLAX Bookshelf - White" style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2e8f0", fontSize: 13, fontFamily: F.body, outline: "none", boxSizing: "border-box" }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20, minWidth: 0 }}>
+        <section style={formCard(isMobile)}>
+          <FormHeading title="Item details" hint="Fields marked * are required."/>
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor={fieldId + "-title"} style={FORM_LABEL}>Title *</label>
+            <input id={fieldId + "-title"} className="dy-field" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., IKEA KALLAX Bookshelf - White" style={FORM_INPUT} />
           </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Description *</label>
-            <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe condition, dimensions, what is included..." style={{ width: "100%", height: 90, padding: 12, borderRadius: 10, border: "1.5px solid #e2e8f0", fontSize: 13, fontFamily: F.body, resize: "none", outline: "none", boxSizing: "border-box" }} />
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor={fieldId + "-desc"} style={FORM_LABEL}>Description *</label>
+            <textarea id={fieldId + "-desc"} className="dy-field" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe condition, dimensions, what is included..." style={{ ...FORM_INPUT, minHeight: 112, resize: "vertical", lineHeight: 1.5 }} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, marginBottom: 16 }}>
             <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Category *</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              <p id={fieldId + "-cat"} style={FORM_LABEL}>Category *</p>
+              <div role="group" aria-labelledby={fieldId + "-cat"} style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {cats.map(c => (
-                  <button key={c} onClick={() => setCat(c)} style={{ padding: "5px 10px", borderRadius: 6, border: "1.5px solid " + (cat === c ? C.gPrimary : "#e2e8f0"), cursor: "pointer", fontSize: 11, fontWeight: cat === c ? 700 : 500, backgroundColor: cat === c ? C.gLightBg : "#fff", color: cat === c ? C.gPrimary : "#64748b", fontFamily: F.body }}>{c}</button>
+                  <button key={c} type="button" aria-pressed={cat === c} onClick={() => setCat(c)} style={formChip(cat === c)}>{c}</button>
                 ))}
               </div>
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Condition *</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              <p id={fieldId + "-cond"} style={FORM_LABEL}>Condition *</p>
+              <div role="group" aria-labelledby={fieldId + "-cond"} style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {conds.map(c => (
-                  <button key={c} onClick={() => setCond(c)} style={{ padding: "6px 10px", borderRadius: 6, border: "1.5px solid " + (cond === c ? C.gPrimary : "#e2e8f0"), cursor: "pointer", fontSize: 10, fontWeight: cond === c ? 700 : 500, backgroundColor: cond === c ? C.gLightBg : "#fff", color: cond === c ? C.gPrimary : "#64748b", fontFamily: F.body }}>{c}</button>
+                  <button key={c} type="button" aria-pressed={cond === c} onClick={() => setCond(c)} style={formChip(cond === c)}>{c}</button>
                 ))}
               </div>
             </div>
           </div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Price ($) *</label>
-            <input value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" type="number" style={{ width: 160, padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2e8f0", fontSize: 16, fontWeight: 700, fontFamily: F.head, outline: "none", boxSizing: "border-box" }} />
+          <div>
+            <label htmlFor={fieldId + "-price"} style={FORM_LABEL}>Price ($) *</label>
+            <input id={fieldId + "-price"} className="dy-field" value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" type="number" inputMode="decimal" style={{ ...FORM_INPUT, width: 160, fontWeight: 700 }} />
+            <p style={{ fontFamily: F.body, fontSize: 12, color: C.ash, marginTop: 6 }}>Enter 0 for a free giveaway.</p>
           </div>
 
+          </section>
+
+        <section style={formCard(isMobile)}>
+          <FormHeading title="Pickup, bundle and payment" hint="Optional. Open only what you need."/>
           {/* Pickup Availability - optional */}
-          <div style={{ marginBottom: 20, borderRadius: 16, border: "1.5px solid " + (showPickup ? C.green + "30" : C.fawn), overflow: "hidden" }}>
-            <button onClick={() => setShowPickup(!showPickup)}
+          <div style={{ marginBottom: 12, borderRadius: 14, border: "1.5px solid " + (showPickup ? C.green + "30" : C.fawn), overflow: "hidden" }}>
+            <button type="button" aria-expanded={showPickup} onClick={() => setShowPickup(!showPickup)}
               style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", border: "none", cursor: "pointer", background: showPickup ? C.greenMist : C.sand, textAlign: "left", transition: "background 150ms" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <MapPin size={16} style={{ color: showPickup ? C.green : C.mink }}/>
@@ -3846,7 +3869,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                   ].map(m => {
                     const on = pickupMode === m.id;
                     return (
-                      <button key={m.id} onClick={() => setPickupMode(m.id)}
+                      <button key={m.id} type="button" aria-pressed={on} onClick={() => setPickupMode(m.id)}
                         style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1.5px solid " + (on ? C.green : C.fawn), cursor: "pointer", fontSize: 12, fontWeight: on ? 800 : 600, background: on ? C.greenMist : C.paper, color: on ? C.greenDeep : C.mink, fontFamily: F.head, textAlign: "center", transition: "all 150ms" }}>
                         {m.l}
                       </button>
@@ -3859,7 +3882,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                     {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => {
                       const sel = pickupDays.includes(day);
                       return (
-                        <button key={day} onClick={() => togDay(day)}
+                        <button key={day} type="button" aria-pressed={sel} onClick={() => togDay(day)}
                           style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid " + (sel ? C.green : C.fawn), cursor: "pointer", fontSize: 12, fontWeight: sel ? 800 : 600, background: sel ? C.greenMist : C.paper, color: sel ? C.greenDeep : C.mink, fontFamily: F.head, transition: "all 150ms" }}>
                           {day}
                         </button>
@@ -3871,8 +3894,8 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                 {pickupMode === "custom" && (
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                      <input type="date" min={todayLocalISO()} value={pickupNewDate} onChange={e => { setPickupNewDate(e.target.value); if (pickupDateError) setPickupDateError(""); }}
-                        style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontSize: 12, fontFamily: F.body, outline: "none", color: C.ink, background: C.paper, boxSizing: "border-box" }}/>
+                      <input type="date" aria-label="Pickup date" className="dy-field" min={todayLocalISO()} value={pickupNewDate} onChange={e => { setPickupNewDate(e.target.value); if (pickupDateError) setPickupDateError(""); }}
+                        style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontSize: 12, fontFamily: F.body, color: C.ink, background: C.paper, boxSizing: "border-box" }}/>
                       <button onClick={addPickupDate}
                         style={{ padding: "9px 16px", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: C.green, color: "#fff", fontFamily: F.head, display: "flex", alignItems: "center", gap: 4, boxShadow: "0 2px 0 " + C.greenDeep }}>
                         <Plus size={12} strokeWidth={2.5}/> Add
@@ -3883,7 +3906,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                         {pickupCustom.map(d => (
                           <div key={d} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, background: C.greenMist, border: "1px solid " + C.green + "25" }}>
                             <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.greenDeep }}>{formatPickupDateLong(d)}</span>
-                            <button onClick={() => setPickupCustom(p => p.filter(x => x !== d))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}>
+                            <button type="button" aria-label={"Remove " + formatPickupDateLong(d)} onClick={() => setPickupCustom(p => p.filter(x => x !== d))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}>
                               <X size={11} style={{ color: C.greenDeep }}/>
                             </button>
                           </div>
@@ -3891,7 +3914,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                       </div>
                     )}
                     {pickupDateError && (
-                      <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 700, color: C.claret }}>{pickupDateError}</p>
+                      <p role="alert" style={{ fontFamily: F.body, fontSize: 11, fontWeight: 700, color: C.claret }}>{pickupDateError}</p>
                     )}
                     {pickupCustom.length === 0 && !pickupDateError && (
                       <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, fontStyle: "italic" }}>Add one or more specific dates when you&apos;ll be available.</p>
@@ -3916,7 +3939,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                   ].map(w => {
                     const sel = pickupWindows.includes(w.id);
                     return (
-                      <button key={w.id} onClick={() => togWin(w.id)}
+                      <button key={w.id} type="button" aria-pressed={sel} onClick={() => togWin(w.id)}
                         style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1.5px solid " + (sel ? C.green : C.fawn), cursor: "pointer", background: sel ? C.greenMist : C.paper, textAlign: "center", transition: "all 150ms" }}>
                         <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: sel ? 800 : 700, color: sel ? C.greenDeep : C.mink }}>{w.l}</p>
                         <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: sel ? C.greenDeep : C.ash, marginTop: 2 }}>{w.t}</p>
@@ -3929,8 +3952,8 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
           </div>
 
           {/* Bundle marking — declare this listing as multiple items sold together. */}
-          <div style={{ marginBottom: 20, borderRadius: 16, border: "1.5px solid " + (showBundle ? (C.teal || C.greenDeep) + "30" : C.fawn), overflow: "hidden" }}>
-            <button type="button" onClick={() => setShowBundle(!showBundle)}
+          <div style={{ marginBottom: 12, borderRadius: 14, border: "1.5px solid " + (showBundle ? (C.teal || C.greenDeep) + "30" : C.fawn), overflow: "hidden" }}>
+            <button type="button" aria-expanded={showBundle} onClick={() => setShowBundle(!showBundle)}
               style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", border: "none", cursor: "pointer", background: showBundle ? (C.tealMist || C.greenMist) : C.sand, textAlign: "left", transition: "background 150ms" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <Package size={16} style={{ color: showBundle ? (C.teal || C.greenDeep) : C.mink }}/>
@@ -3962,13 +3985,15 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                         <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <input
                             type="text"
+                            className="dy-field"
+                            aria-label={"Bundle item " + (idx + 1)}
                             value={line}
                             onChange={e => updateBundleLine(idx, e.target.value)}
                             maxLength={120}
                             placeholder={"Item " + (idx + 1) + " (e.g. \"Queen bed frame\")"}
-                            style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, outline: "none", background: C.paper }}
+                            style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink, background: C.paper, minWidth: 0 }}
                           />
-                          <button type="button" onClick={() => removeBundleLine(idx)} title="Remove" style={{ width: 34, height: 34, borderRadius: 10, border: "1.5px solid " + C.fawn, background: C.paper, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", color: C.mink }}>
+                          <button type="button" onClick={() => removeBundleLine(idx)} title="Remove" aria-label={"Remove bundle item " + (idx + 1)} style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, border: "1.5px solid " + C.fawn, background: C.paper, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", color: C.mink }}>
                             <X size={13}/>
                           </button>
                         </div>
@@ -3984,8 +4009,8 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
           </div>
 
           {/* Payment method */}
-          <div style={{ marginBottom: 20, borderRadius: 16, border: "1.5px solid " + (showPayment ? C.green + "30" : C.fawn), overflow: "hidden" }}>
-            <button type="button" onClick={() => setShowPayment(!showPayment)}
+          <div style={{ marginBottom: 12, borderRadius: 14, border: "1.5px solid " + (showPayment ? C.green + "30" : C.fawn), overflow: "hidden" }}>
+            <button type="button" aria-expanded={showPayment} onClick={() => setShowPayment(!showPayment)}
               style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", border: "none", cursor: "pointer", background: showPayment ? C.greenMist : C.sand, textAlign: "left", transition: "background 150ms" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <DollarSign size={16} style={{ color: showPayment ? C.green : C.mink }}/>
@@ -4014,7 +4039,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                     const on = paymentMethod === p.id;
                     const Ic = p.icon;
                     return (
-                      <button key={p.id} type="button" onClick={() => setPaymentMethod(p.id)}
+                      <button key={p.id} type="button" aria-pressed={on} onClick={() => setPaymentMethod(p.id)}
                         style={{ flex: 1, padding: "11px 8px", borderRadius: 10, border: "1.5px solid " + (on ? C.green : C.fawn), cursor: "pointer", background: on ? C.greenMist : C.paper, color: on ? C.greenDeep : C.mink, fontFamily: F.head, fontSize: 12, fontWeight: on ? 800 : 700, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, transition: "all 150ms" }}>
                         <Ic size={16}/>
                         {p.label}
@@ -4042,10 +4067,13 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
             )}
           </div>
 
-                    {/* When should this go live? */}
-          <div style={{ padding: "18px 20px", borderRadius: 18, background: C.sand, border: "1.5px solid " + C.fawn, marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-              <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink }}>When should this go live?</p>
+          {/* When should this go live? */}
+        </section>
+
+        <section style={formCard(isMobile)}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+              <h3 style={{ fontFamily: F.head, fontSize: 17, fontWeight: 800, color: C.ink }}>When should this go live?</h3>
               {/* During a LIVE Drop the "next Drop ... away" countdown is wrong —
                   the Drop the seller would land in is the one already running. */}
               {dropIsLive ? (
@@ -4064,7 +4092,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {/* Option A: Queue for next Drop */}
-              <button onClick={() => setPublishWhen("drop")} style={{
+              <button type="button" aria-pressed={publishWhen === "drop"} onClick={() => setPublishWhen("drop")} style={{
                 textAlign: "left", padding: 14, borderRadius: 14,
                 border: "2px solid " + (publishWhen === "drop" ? C.green : C.fawn),
                 background: publishWhen === "drop" ? C.greenMist : C.paper,
@@ -4074,7 +4102,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                   {publishWhen === "drop" && <div style={{ width: 10, height: 10, borderRadius: "50%", background: C.green }}/>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
                     <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>
                       {dropIsLive ? "List now in the live drop" : "Queue for the next Drop"}
                     </p>
@@ -4092,6 +4120,8 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                   Everything goes into the running Drop instead, so this path is
                   greyed out and non-interactive until the Drop closes. */}
               <button
+                type="button"
+                aria-pressed={!dropIsLive && publishWhen === "shelf"}
                 onClick={() => { if (!dropIsLive) setPublishWhen("shelf"); }}
                 disabled={dropIsLive}
                 aria-disabled={dropIsLive}
@@ -4126,24 +4156,24 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
 
           {/* Error banner - surfaces validation and API errors */}
           {submitError && (
-            <div style={{ padding: "10px 14px", borderRadius: 12, background: C.claretMist, border: "1px solid " + C.claret + "40", marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <div role="alert" style={{ padding: "10px 14px", borderRadius: 12, background: C.claretMist, border: "1px solid " + C.claret + "40", marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 8 }}>
               <AlertCircle size={16} style={{ color: C.claret, flexShrink: 0, marginTop: 1 }}/>
               <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.claret, lineHeight: 1.5 }}>{submitError}</p>
             </div>
           )}
 
           {/* Action row */}
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-            <button onClick={() => handleSubmit("draft")} disabled={submitting} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "12px 20px", borderRadius: 999, border: "1.5px solid " + C.fawn, cursor: submitting ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, fontFamily: F.head, background: C.paper, color: C.mink, opacity: submitting ? 0.6 : 1 }}>
+          <div style={{ display: "flex", flexDirection: isMobile ? "column-reverse" : "row", gap: 10, justifyContent: "flex-end" }}>
+            <button type="button" onClick={() => handleSubmit("draft")} disabled={submitting} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 48, padding: "12px 20px", borderRadius: 999, border: "1.5px solid " + C.fawn, cursor: submitting ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, fontFamily: F.head, background: C.paper, color: C.mink, opacity: submitting ? 0.6 : 1 }}>
               {submitting ? "Saving…" : "Save as draft"}
             </button>
-            <button onClick={() => handleSubmit(publishWhen)} disabled={submitting} className="cta-primary" style={{
+            <button type="button" onClick={() => handleSubmit(publishWhen)} disabled={submitting} className="cta-primary" style={{
               display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-              padding: "12px 26px", borderRadius: 999, border: "none",
+              minHeight: 48, padding: "12px 26px", borderRadius: 999, border: "none",
               cursor: submitting ? "not-allowed" : "pointer",
               fontSize: 13, fontWeight: 800, fontFamily: F.head,
               background: publishWhen === "drop" ? C.green : C.amber,
-              color: "#fff",
+              color: publishWhen === "drop" ? "#fff" : C.ink,
               boxShadow: "0 2px 0 " + (publishWhen === "drop" ? C.greenDeep : C.amberDeep),
               opacity: submitting ? 0.6 : 1,
             }}>
@@ -4151,6 +4181,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
               {submitting ? "Saving…" : "Publish"}
             </button>
           </div>
+        </section>
         </div>
       </div>
     </div>
@@ -4354,13 +4385,13 @@ function QuestionsView({ onNav, accessToken = null, onQuestionsChanged = null })
 
       <div style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
         {successMsg && (
-          <div style={{ padding: "11px 15px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "40", marginBottom: 14, display: "flex", alignItems: "center", gap: 9 }}>
+          <div role="status" style={{ padding: "11px 15px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "40", marginBottom: 14, display: "flex", alignItems: "center", gap: 9 }}>
             <Check size={15} style={{ color: C.greenDeep, flexShrink: 0 }} strokeWidth={2.6}/>
             <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.greenDeep }}>{successMsg}</p>
           </div>
         )}
         {errorMsg && (
-          <div style={{ padding: "11px 15px", borderRadius: 12, background: C.claretMist, border: "1px solid " + C.claret + "40", marginBottom: 14, display: "flex", alignItems: "flex-start", gap: 9 }}>
+          <div role="alert" style={{ padding: "11px 15px", borderRadius: 12, background: C.claretMist, border: "1px solid " + C.claret + "40", marginBottom: 14, display: "flex", alignItems: "flex-start", gap: 9 }}>
             <AlertCircle size={15} style={{ color: C.claret, flexShrink: 0, marginTop: 1 }}/>
             <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.claret, lineHeight: 1.5 }}>{errorMsg}</p>
           </div>
@@ -4992,7 +5023,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
 
       {/* Success toast */}
       {successMsg && (
-        <div className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 14, background: C.greenMist, border: "1px solid " + C.green + "30", marginBottom: 16 }}>
+        <div role="status" className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 14, background: C.greenMist, border: "1px solid " + C.green + "30", marginBottom: 16 }}>
           <CheckCircle size={16} style={{ color: C.greenDeep }}/>
           <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.greenDeep, flex: 1 }}>{successMsg}</p>
           <button onClick={() => setSuccessMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
@@ -5155,7 +5186,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                     <>
                       <button onClick={() => openPublishChooser(item)} className="cta-primary" style={{ ...actionBtnSolid(C.green, C.greenDeep), flex: 1 }}>Publish</button>
                       <button onClick={() => onEdit && onEdit(item)} style={{ ...actionBtnOutlined, flex: 1 }}>Edit</button>
-                      <button onClick={() => setConfirmDelete(item)} title="Delete draft" style={actionBtnIcon}>
+                      <button onClick={() => setConfirmDelete(item)} title="Delete draft" aria-label="Delete draft" style={actionBtnIcon}>
                         <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
                       </button>
                     </>
@@ -5164,7 +5195,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                     <>
                       <button onClick={() => makeLiveNow(item.id)} className="cta-primary" style={{ ...actionBtnSolid(C.amber, C.amberDeep), flex: 1 }}>Move to Shelf</button>
                       <button onClick={() => onEdit && onEdit(item)} style={{ ...actionBtnOutlined, flex: 1 }}>Edit</button>
-                      <button onClick={() => unpublish(item.id)} title="Unpublish" style={actionBtnIcon}>
+                      <button onClick={() => unpublish(item.id)} title="Unpublish" aria-label="Unpublish" style={actionBtnIcon}>
                         <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
                       </button>
                     </>
@@ -5191,7 +5222,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                         <TrendingDown size={12}/> Lower price
                       </button>
                       <button onClick={() => onEdit && onEdit(item)} style={{ ...actionBtnOutlined, flex: 1 }}>Edit</button>
-                      <button onClick={() => unpublish(item.id)} title="Unpublish" style={actionBtnIcon}>
+                      <button onClick={() => unpublish(item.id)} title="Unpublish" aria-label="Unpublish" style={actionBtnIcon}>
                         <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
                       </button>
                     </>
@@ -5326,7 +5357,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                   <>
                     <button onClick={() => openPublishChooser(item)} className="cta-primary" style={actionBtnSolid(C.green, C.greenDeep)}>Publish</button>
                     <button onClick={() => onEdit && onEdit(item)} style={actionBtnOutlined}>Edit</button>
-                    <button onClick={() => setConfirmDelete(item)} title="Delete draft" style={actionBtnIcon}>
+                    <button onClick={() => setConfirmDelete(item)} title="Delete draft" aria-label="Delete draft" style={actionBtnIcon}>
                       <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
                     </button>
                   </>
@@ -5335,7 +5366,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                   <>
                     <button onClick={() => makeLiveNow(item.id)} className="cta-primary" style={actionBtnSolid(C.amber, C.amberDeep)}>Move to Shelf</button>
                     <button onClick={() => onEdit && onEdit(item)} style={actionBtnOutlined}>Edit</button>
-                    <button onClick={() => unpublish(item.id)} title="Unpublish" style={actionBtnIcon}>
+                    <button onClick={() => unpublish(item.id)} title="Unpublish" aria-label="Unpublish" style={actionBtnIcon}>
                       <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
                     </button>
                   </>
@@ -5362,7 +5393,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                       <TrendingDown size={12}/> Lower price
                     </button>
                     <button onClick={() => onEdit && onEdit(item)} style={actionBtnOutlined}>Edit</button>
-                    <button onClick={() => unpublish(item.id)} title="Unpublish" style={actionBtnIcon}>
+                    <button onClick={() => unpublish(item.id)} title="Unpublish" aria-label="Unpublish" style={actionBtnIcon}>
                       <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
                     </button>
                   </>
@@ -5417,6 +5448,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
             backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
           }}
         >
+          <ModalA11y label="Choose where to publish" onClose={() => setPublishChooserItem(null)}/>
           <div
             onClick={e => e.stopPropagation()}
             className="fade-in"
@@ -5553,6 +5585,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
             backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
           }}
         >
+          <ModalA11y label="Delete this draft" onClose={() => setConfirmDelete(null)}/>
           <div
             onClick={e => e.stopPropagation()}
             className="fade-in"
@@ -5780,6 +5813,7 @@ function ReadTicks({ sentAt, otherLastReadAt }) {
   const seen = Number.isFinite(sent) && read >= sent;
   return (
     <span
+      role="img"
       title={seen ? "Seen" : "Sent"}
       aria-label={seen ? "Seen" : "Sent"}
       style={{ display: "inline-flex", alignItems: "center", marginLeft: 4, verticalAlign: "middle" }}
@@ -5944,7 +5978,7 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
     // Standalone preview short-circuit
     if (!accessToken || (typeof claim.id === "string" && claim.id.startsWith("demo-"))) {
       setClaims(prev => prev.filter(c => c.id !== claim.id));
-      flash("Offer accepted! " + claim.t + " sold to " + claim.buyer + " for $" + claim.offered + ".");
+      flash("Offer accepted! " + claim.t + " is reserved for " + claim.buyer + " at $" + claim.offered + " until pickup.");
       return;
     }
     setBusyId(claim.id);
@@ -5957,7 +5991,7 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
         method: "PATCH",
         token:  accessToken,
       });
-      flash("Offer accepted! " + claim.t + " sold to " + claim.buyer + ".");
+      flash("Offer accepted! " + claim.t + " is reserved for " + claim.buyer + " until pickup.");
       // Item became CLAIMED — let parent refetch the items list so My Items reflects it.
       if (onClaimsChanged) onClaimsChanged();
     } catch (err) {
@@ -6030,7 +6064,7 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
 
       {/* Success toast */}
       {successMsg && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.gLightBg, border: "1px solid " + C.gSoft, marginBottom: 16 }}>
+        <div role="status" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.gLightBg, border: "1px solid " + C.gSoft, marginBottom: 16 }}>
           <CheckCircle size={18} style={{ color: C.gPrimary }} />
           <p style={{ fontSize: 13, fontWeight: 600, color: C.gDark, fontFamily: F.body, flex: 1 }}>{successMsg}</p>
           <button onClick={() => setSuccessMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.ash }} /></button>
@@ -6039,7 +6073,7 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
 
       {/* Error toast */}
       {errorMsg && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
           <AlertCircle size={18} style={{ color: C.claret }} />
           <p style={{ fontSize: 13, fontWeight: 600, color: C.claret, fontFamily: F.body, flex: 1 }}>{errorMsg}</p>
           <button onClick={() => setErrorMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
@@ -6050,10 +6084,10 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
       <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
         <div style={{ flex: 1, padding: 16, borderRadius: 14, border: offers > 0 ? "2px solid " + C.oSoft : "1px solid #f0f0f0", backgroundColor: offers > 0 ? C.oLightBg : "#fff", display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: C.oLightBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <DollarSign size={18} style={{ color: C.oPrimary }} />
+            <DollarSign size={18} style={{ color: C.amberDeep }} />
           </div>
           <div>
-            <p style={{ fontSize: 22, fontWeight: 900, color: C.oPrimary, fontFamily: F.head }}>{offers}</p>
+            <p style={{ fontSize: 22, fontWeight: 900, color: C.amberDeep, fontFamily: F.head }}>{offers}</p>
             <p style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>Pending Claims</p>
           </div>
         </div>
@@ -6069,9 +6103,9 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
       {/* Empty state */}
       {!loading && claims.length === 0 && (
         <div style={{ padding: 60, textAlign: "center" }}>
-          <ClipboardList size={32} style={{ color: "#e2e8f0", marginBottom: 12 }} />
+          <ClipboardList size={32} style={{ color: C.smoke, marginBottom: 12 }} />
           <p style={{ fontSize: 15, fontWeight: 700, color: C.ash, fontFamily: F.body }}>No claims to review</p>
-          <p style={{ fontSize: 12, color: C.smoke, marginTop: 4, fontFamily: F.body }}>When buyers claim your items, they appear here for you to accept or decline.</p>
+          <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>When buyers claim your items, they appear here for you to accept or decline.</p>
         </div>
       )}
 
@@ -6083,7 +6117,9 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
             <div key={claim.id} style={{ padding: isMobile ? "14px 14px" : "16px 18px", borderRadius: 16, border: "2px solid " + C.oSoft, background: C.paper, opacity: isBusy ? 0.6 : 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
                 <StatusBadge status="offer" size="sm"/>
-                <span style={{ fontSize: 11, color: C.mink, fontWeight: 600, fontFamily: F.body }}>Full price claim</span>
+                <span style={{ fontSize: 12, color: C.mink, fontWeight: 600, fontFamily: F.body }}>
+                  {claim.iMadeTheOffer ? "Your counter" : claim.offered === claim.listed ? "Full price claim" : claim.offered < claim.listed ? "Offer below asking" : "Offer above asking"}
+                </span>
                 <span style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>{claim.time}</span>
               </div>
 
@@ -6106,7 +6142,7 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
                 {/* Price — shows current offered amount and the listed price
                     when the buyer's offer differs (offer or seller-counter). */}
                 <div style={{ textAlign: "right", marginRight: isMobile ? 0 : 10, flexShrink: 0 }}>
-                  <p style={{ fontSize: 18, fontWeight: 900, color: C.oPrimary, fontFamily: F.head }}>${claim.offered}</p>
+                  <p style={{ fontSize: 18, fontWeight: 900, color: C.amberDeep, fontFamily: F.head }}>${claim.offered}</p>
                   {claim.offered !== claim.listed && (
                     <p style={{ fontSize: 11, fontWeight: 500, color: C.ash, fontFamily: F.body, textDecoration: "line-through", marginTop: 1 }}>${claim.listed} listed</p>
                   )}
@@ -6131,17 +6167,19 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
                         onChange={e => setCounterAmt(e.target.value)}
                         placeholder={String(Math.max(1, Math.round((claim.offered + claim.listed) / 2)))}
                         autoFocus
+                        aria-label="Counter offer amount"
+                        className="dy-field"
                         disabled={isBusy}
-                        style={{ width: 80, padding: "7px 10px", borderRadius: 8, border: "1.5px solid " + C.fawn, fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.ink, outline: "none", background: C.paper }}
+                        style={{ width: 92, minHeight: 44, padding: "7px 10px", borderRadius: 8, border: "1.5px solid " + C.smoke, fontFamily: F.head, fontSize: 16, fontWeight: 700, color: C.ink, background: C.paper }}
                       />
-                      <button onClick={() => handleCounter(claim)} disabled={isBusy} className="cta-primary" style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: C.gPrimary, color: "#fff", fontFamily: F.body, fontSize: 11, fontWeight: 800, cursor: isBusy ? "not-allowed" : "pointer" }}>Send</button>
-                      <button onClick={() => { setCounterId(null); setCounterAmt(""); }} disabled={isBusy} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.body, fontSize: 11, fontWeight: 700, cursor: isBusy ? "not-allowed" : "pointer" }}>Cancel</button>
+                      <button onClick={() => handleCounter(claim)} disabled={isBusy} className="cta-primary" style={{ minHeight: 44, flex: isMobile ? 1 : undefined, padding: "8px 12px", borderRadius: 8, border: "none", background: C.gPrimary, color: "#fff", fontFamily: F.body, fontSize: 11, fontWeight: 800, cursor: isBusy ? "not-allowed" : "pointer" }}>Send</button>
+                      <button onClick={() => { setCounterId(null); setCounterAmt(""); }} disabled={isBusy} style={{ minHeight: 44, flex: isMobile ? 1 : undefined, padding: "8px 10px", borderRadius: 8, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.body, fontSize: 11, fontWeight: 700, cursor: isBusy ? "not-allowed" : "pointer" }}>Cancel</button>
                     </>
                   ) : (
                     <>
-                      <button onClick={() => handleAccept(claim)} disabled={isBusy} style={{ padding: "8px 14px", borderRadius: 8, border: "none", cursor: isBusy ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 700, backgroundColor: C.gPrimary, color: "#fff", fontFamily: F.body, flex: isMobile ? 1 : "0 0 auto" }}>Accept ${claim.offered}</button>
-                      <button onClick={() => { setCounterId(claim.id); setCounterAmt(String(Math.max(1, Math.round((claim.offered + claim.listed) / 2)))); }} disabled={isBusy} style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px solid " + C.gPrimary + "55", background: C.gLightBg || "#ecfdf5", color: C.gPrimary, fontFamily: F.body, fontSize: 11, fontWeight: 700, cursor: isBusy ? "not-allowed" : "pointer", flex: isMobile ? 1 : "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}><RefreshCw size={11}/> Counter</button>
-                      <button onClick={() => handleDecline(claim)} disabled={isBusy} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #FECACA", cursor: isBusy ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 600, background: C.paper, color: "#DC2626", fontFamily: F.body, flex: isMobile ? 1 : "0 0 auto" }}>Decline</button>
+                      <button onClick={() => handleAccept(claim)} disabled={isBusy} style={{ minHeight: 44, flex: isMobile ? 1 : undefined, padding: "8px 14px", borderRadius: 8, border: "none", cursor: isBusy ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 700, backgroundColor: C.gPrimary, color: "#fff", fontFamily: F.body, flex: isMobile ? 1 : "0 0 auto" }}>Accept ${claim.offered}</button>
+                      <button onClick={() => { setCounterId(claim.id); setCounterAmt(String(Math.max(1, Math.round((claim.offered + claim.listed) / 2)))); }} disabled={isBusy} style={{ minHeight: 44, flex: isMobile ? 1 : undefined, padding: "8px 14px", borderRadius: 8, border: "1.5px solid " + C.gPrimary + "55", background: C.gLightBg || "#ecfdf5", color: C.gPrimary, fontFamily: F.body, fontSize: 11, fontWeight: 700, cursor: isBusy ? "not-allowed" : "pointer", flex: isMobile ? 1 : "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}><RefreshCw size={11}/> Counter</button>
+                      <button onClick={() => handleDecline(claim)} disabled={isBusy} style={{ minHeight: 44, flex: isMobile ? 1 : undefined, padding: "8px 14px", borderRadius: 8, border: "1px solid #FECACA", cursor: isBusy ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 600, background: C.paper, color: "#DC2626", fontFamily: F.body, flex: isMobile ? 1 : "0 0 auto" }}>Decline</button>
                     </>
                   )}
                 </div>
@@ -6247,6 +6285,7 @@ const DEMO_SELLER_CONVERSATIONS = [
 function RateBuyerModal({ title, subtitle, buyerName, stars, setStars, note, setNote, onSubmit, onSkip }) {
   return (
     <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <ModalA11y label="Rate the buyer"/>
       <div style={{ width: 420, maxWidth: "100%", borderRadius: 24, background: C.paper, padding: 28, boxShadow: "0 24px 80px rgba(0,0,0,0.15)" }}>
         <div style={{ textAlign: "center", marginBottom: 20 }}>
           <div style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
@@ -6908,12 +6947,13 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     const meta = statusMeta[threadStatus(c)] || statusMeta.completed;
     const Ic = meta.icon;
     return (
-      <button key={c.id} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative", opacity: muted && !isActive ? 0.62 : 1 }}>
+      <button key={c.id} aria-current={isActive ? "true" : undefined} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative", opacity: muted && !isActive ? 0.62 : 1 }}>
         {/* Active accent bar — desktop only, left edge */}
         {isActive && !isMobile && (
           <span style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 3, borderRadius: 999, background: C.green }}/>
         )}
-        {c.unread && <span style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", width: 7, height: 7, borderRadius: "50%", background: C.green, boxShadow: "0 0 0 3px " + C.greenMist }}/>}
+        {c.unread && <span className="sr-only">Unread. </span>}
+        {c.unread && <span aria-hidden style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", width: 7, height: 7, borderRadius: "50%", background: C.green, boxShadow: "0 0 0 3px " + C.greenMist }}/>}
         <ConversationItemThumb item={c.item} size={48} emojiSize={32}/>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 2 }}>
@@ -6958,11 +6998,11 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 />
               </a>
               {m.text && (
-                <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.45 }}>{m.text}</p>
+                <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink, lineHeight: 1.45, overflowWrap: "anywhere" }}>{m.text}</p>
               )}
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: isYou ? "flex-end" : "flex-start", marginTop: 4 }}>
-              <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash }}>{m.time}</span>
+              <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash }}>{m.time}</span>
               {isYou && <ReadTicks sentAt={m.sentAt} otherLastReadAt={active?.otherLastReadAt}/>}
             </div>
           </div>
@@ -7039,7 +7079,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
               <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.05em" }}>{active.buyer.name.toUpperCase()}</span>
             </div>
           )}
-          <div style={{ padding: "10px 14px", borderRadius: 14, background: bubbleBg, color: bubbleColor, border: borderStyle, fontFamily: F.body, fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>
+          <div style={{ padding: "10px 14px", borderRadius: 16, [isYou ? "borderBottomRightRadius" : "borderBottomLeftRadius"]: 4, background: bubbleBg, color: bubbleColor, border: borderStyle, fontFamily: F.body, fontSize: 14, fontWeight: 500, lineHeight: 1.5, overflowWrap: "anywhere" }}>
             {(m.type === "offer" || m.type === "counter" || m.type === "claim") && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid " + (isBuyer ? C.fawn : (isAI ? C.ai + "20" : "rgba(255,255,255,0.25)")) }}>
                 {m.type === "offer" && <DollarSign size={12}/>}
@@ -7094,7 +7134,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
 
       {/* Success toast — celebration banner when an offer/counter is accepted. */}
       {successMsg && (
-        <div className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "44", margin: isMobile ? "0 16px 12px" : "0 28px 12px", flexShrink: 0, boxShadow: "0 2px 0 " + C.green + "20" }}>
+        <div role="status" className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "44", margin: isMobile ? "0 16px 12px" : "0 28px 12px", flexShrink: 0, boxShadow: "0 2px 0 " + C.green + "20" }}>
           <CheckCircle size={18} style={{ color: C.greenDeep }}/>
           <p style={{ fontSize: 13, fontWeight: 700, color: C.greenDeep, fontFamily: F.body, flex: 1 }}>{successMsg}</p>
           <button onClick={() => setSuccessMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.greenDeep }}/></button>
@@ -7103,7 +7143,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
 
       {/* Error toast */}
       {errorMsg && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", margin: isMobile ? "0 16px 12px" : "0 28px 12px", flexShrink: 0 }}>
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", margin: isMobile ? "0 16px 12px" : "0 28px 12px", flexShrink: 0 }}>
           <AlertCircle size={18} style={{ color: C.claret }} />
           <p style={{ fontSize: 13, fontWeight: 600, color: C.claret, fontFamily: F.body, flex: 1 }}>{errorMsg}</p>
           <button onClick={() => setErrorMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
@@ -7414,7 +7454,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 child defaults to min-height:auto, so without it the message
                 list grows to its content and pushes the composer off the
                 bottom instead of scrolling inside its own box. */}
-            <div style={{ flex: 1, minHeight: 0, padding: isMobile ? "14px 14px" : "18px 20px", overflowY: "auto", background: C.sand + "60" }}>
+            <div role="log" aria-live="polite" aria-label="Conversation" style={{ flex: 1, minHeight: 0, padding: isMobile ? "14px 14px" : "18px 20px", overflowY: "auto", overflowX: "hidden", background: C.sand + "60" }}>
               {usingBackend && activeLoading && (
                 <p style={{ fontSize: 12, color: C.ash, fontFamily: F.body, textAlign: "center", padding: "20px 0" }}>Loading thread…</p>
               )}
@@ -7507,7 +7547,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 disabled={attachBusy || sending}
                 title="Attach a photo"
                 aria-label="Attach a photo"
-                style={{ width: isMobile ? 34 : 38, height: isMobile ? 34 : 38, borderRadius: "50%", border: "none", background: "transparent", color: (attachBusy || sending) ? C.smoke : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: (attachBusy || sending) ? "not-allowed" : "pointer", flexShrink: 0 }}
+                style={{ width: 40, height: 40, flexShrink: 0, borderRadius: "50%", border: "none", background: "transparent", color: (attachBusy || sending) ? C.smoke : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: (attachBusy || sending) ? "not-allowed" : "pointer", flexShrink: 0 }}
               >
                 {attachBusy
                   ? <Loader2 size={17} className="animate-spin"/>
@@ -7517,9 +7557,11 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                aria-label="Message"
+                className="dy-field"
                 placeholder={"Reply to " + active.buyer.name.split(" ")[0] + "..."}
                 disabled={sending}
-                style={{ flex: 1, minWidth: 0, padding: isMobile ? "9px 12px" : "10px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, outline: "none", background: C.paper }}
+                style={{ flex: 1, minWidth: 0, minHeight: 44, padding: isMobile ? "9px 12px" : "10px 14px", borderRadius: 999, border: "1.5px solid " + C.smoke, fontFamily: F.body, fontSize: isMobile ? 16 : 14, fontWeight: 500, color: C.ink, background: C.paper }}
               />
               <button
                 type="button"
@@ -7527,7 +7569,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 title="Insert an emoji"
                 aria-label="Insert an emoji"
                 aria-expanded={emojiOpen}
-                style={{ width: isMobile ? 34 : 38, height: isMobile ? 34 : 38, borderRadius: "50%", border: "none", background: emojiOpen ? C.sand : "transparent", color: emojiOpen ? C.amberDeep : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                style={{ width: 40, height: 40, flexShrink: 0, borderRadius: "50%", border: "none", background: emojiOpen ? C.sand : "transparent", color: emojiOpen ? C.amberDeep : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
               >
                 <Smile size={isMobile ? 17 : 19}/>
               </button>
@@ -7544,7 +7586,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                   <Sparkles size={isMobile ? 14 : 16} style={{ color: C.ai }}/>
                 </button>
               )}
-              <button onClick={handleSend} disabled={sending || attachBusy || (!draft.trim() && !pendingAttachment)} aria-label="Send message" style={{ width: isMobile ? 38 : 42, height: isMobile ? 38 : 42, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 0 " + C.greenDeep, flexShrink: 0, opacity: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? 0.5 : 1 }}>
+              <button onClick={handleSend} disabled={sending || attachBusy || (!draft.trim() && !pendingAttachment)} aria-label="Send message" style={{ width: 44, height: 44, flexShrink: 0, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 0 " + C.greenDeep, flexShrink: 0, opacity: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? 0.5 : 1 }}>
                 {sending || attachBusy
                   ? <Loader2 size={isMobile ? 14 : 16} className="animate-spin"/>
                   : <Send size={isMobile ? 14 : 16}/>}
@@ -7571,7 +7613,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             <div style={{ textAlign: "center" }}>
               <MessageSquare size={32} style={{ color: "#e2e8f0", marginBottom: 12 }} />
               <p style={{ fontSize: 15, fontWeight: 700, color: C.ash, fontFamily: F.body }}>No conversations yet</p>
-              <p style={{ fontSize: 12, color: C.smoke, marginTop: 4, fontFamily: F.body }}>When buyers message you about your items, threads will appear here.</p>
+              <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>When buyers message you about your items, threads will appear here.</p>
             </div>
           </div>
         )}
@@ -7828,7 +7870,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
 
       {/* Success toast */}
       {successMsg && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.gLightBg, border: "1px solid " + C.gSoft, marginBottom: 16 }}>
+        <div role="status" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.gLightBg, border: "1px solid " + C.gSoft, marginBottom: 16 }}>
           <CheckCircle size={18} style={{ color: C.gPrimary }} />
           <p style={{ fontSize: 13, fontWeight: 600, color: C.gDark, fontFamily: F.body, flex: 1 }}>{successMsg}</p>
           <button onClick={() => setSuccessMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.ash }} /></button>
@@ -7837,7 +7879,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
 
       {/* Error toast */}
       {errorMsg && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
           <AlertCircle size={18} style={{ color: C.claret }} />
           <p style={{ fontSize: 13, fontWeight: 600, color: C.claret, fontFamily: F.body, flex: 1 }}>{errorMsg}</p>
           <button onClick={() => setErrorMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
@@ -7866,10 +7908,10 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
         </div>
         <div style={{ padding: isMobile ? 14 : 16, borderRadius: 14, border: "1px solid " + C.fawn, background: C.paper, display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: C.oLightBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Package size={18} style={{ color: C.oPrimary }} />
+            <Package size={18} style={{ color: C.amberDeep }} />
           </div>
           <div>
-            <p style={{ fontSize: 22, fontWeight: 900, color: C.oPrimary, fontFamily: F.head }}>{pickups.length}</p>
+            <p style={{ fontSize: 22, fontWeight: 900, color: C.amberDeep, fontFamily: F.head }}>{pickups.length}</p>
             <p style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>Total Pending</p>
           </div>
         </div>
@@ -7887,7 +7929,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
         <div style={{ padding: 60, textAlign: "center" }}>
           <MapPin size={32} style={{ color: "#e2e8f0", marginBottom: 12 }} />
           <p style={{ fontSize: 15, fontWeight: 700, color: C.ash, fontFamily: F.body }}>No pickups scheduled</p>
-          <p style={{ fontSize: 12, color: C.smoke, marginTop: 4, fontFamily: F.body }}>When buyers claim items and schedule pickup, they will appear here.</p>
+          <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>When buyers claim items and schedule pickup, they will appear here.</p>
           {/* This list only holds ACCEPTED claims, so a seller who has just
               completed a sale sees nothing here and has no idea the record
               exists. Point them at History rather than ending the page. */}
@@ -7943,15 +7985,15 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0, width: isMobile ? "100%" : "auto", marginTop: isMobile ? 8 : 0 }}>
-                <button onClick={() => handlePickedUp(p)} disabled={isBusy} className="cta-primary" style={{ padding: "8px 14px", borderRadius: 10, border: "none", cursor: isBusy ? "not-allowed" : "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 800, background: C.green, color: "#fff", boxShadow: "0 2px 0 " + C.greenDeep, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flex: isMobile ? 1 : "0 0 auto" }}>
+                <button onClick={() => handlePickedUp(p)} disabled={isBusy} className="cta-primary" style={{ minHeight: 44, padding: "8px 14px", borderRadius: 10, border: "none", cursor: isBusy ? "not-allowed" : "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 800, background: C.green, color: "#fff", boxShadow: "0 2px 0 " + C.greenDeep, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flex: isMobile ? 1 : "0 0 auto" }}>
                   <Check size={12} strokeWidth={2.8}/> Picked up
                 </button>
                 {showLegacyActions && (
                   <>
-                    <button onClick={() => handleRelease(p)} title="Buyer came, inspected, declined — release immediately" style={{ padding: "8px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, cursor: "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 700, background: C.paper, color: C.mink, flex: isMobile ? 1 : "0 0 auto" }}>
+                    <button onClick={() => handleRelease(p)} title="Buyer came, inspected, declined — release immediately" style={{ minHeight: 44, padding: "8px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, cursor: "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 700, background: C.paper, color: C.mink, flex: isMobile ? 1 : "0 0 auto" }}>
                       Release
                     </button>
-                    <button onClick={() => handleNoShow(p)} title="Mark no-show (2h grace before auto-relist)" style={{ padding: "8px 12px", borderRadius: 10, border: "1.5px solid " + C.claret + "25", cursor: "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 700, background: C.paper, color: C.claret, flex: isMobile ? 1 : "0 0 auto" }}>
+                    <button onClick={() => handleNoShow(p)} title="Mark no-show (2h grace before auto-relist)" style={{ minHeight: 44, padding: "8px 12px", borderRadius: 10, border: "1.5px solid " + C.claret + "25", cursor: "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 700, background: C.paper, color: C.claret, flex: isMobile ? 1 : "0 0 auto" }}>
                       No-show
                     </button>
                   </>
@@ -7966,6 +8008,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
       {/* Rating modal */}
       {ratingItem && (
         <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+          <ModalA11y label="Rate the buyer"/>
           <div style={{ width: 420, maxWidth: "calc(100% - 32px)", borderRadius: 24, background: C.paper, padding: 28, boxShadow: "0 24px 80px rgba(0,0,0,0.15)" }}>
             <div style={{ textAlign: "center", marginBottom: 20 }}>
               <div style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
@@ -8007,6 +8050,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
       {/* No-show confirmation modal */}
       {noShowItem && (
         <div onClick={() => setNoShowItem(null)} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 24, backdropFilter: "blur(4px)" }}>
+          <ModalA11y label="Mark as no-show" onClose={() => setNoShowItem(null)}/>
           <div onClick={e => e.stopPropagation()} className="fade-in" style={{ width: 460, maxWidth: "100%", borderRadius: 24, background: C.paper, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)", overflow: "hidden" }}>
             <div style={{ padding: "18px 24px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
@@ -8018,7 +8062,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
                   <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, marginTop: 2 }}>{noShowItem.buyer} didn\'t pick up {noShowItem.t}.</p>
                 </div>
               </div>
-              <button onClick={() => setNoShowItem(null)} style={{ background: C.sand, border: "none", width: 30, height: 30, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <button aria-label="Close" onClick={() => setNoShowItem(null)} style={{ background: C.sand, border: "none", width: 40, height: 40, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <X size={14} style={{ color: C.mink }}/>
               </button>
             </div>
@@ -8323,7 +8367,7 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
 
       {/* Error toast */}
       {errorMsg && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
           <AlertCircle size={18} style={{ color: C.claret }} />
           <p style={{ fontSize: 13, fontWeight: 600, color: C.claret, fontFamily: F.body, flex: 1 }}>{errorMsg}</p>
           <button onClick={() => setErrorMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
@@ -8360,7 +8404,7 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
         <div style={{ padding: 60, textAlign: "center" }}>
           <Award size={32} style={{ color: "#e2e8f0", marginBottom: 12 }} />
           <p style={{ fontSize: 15, fontWeight: 700, color: C.ash, fontFamily: F.body }}>No sales yet</p>
-          <p style={{ fontSize: 12, color: C.smoke, marginTop: 4, fontFamily: F.body }}>Once a buyer picks up an item from you, it'll show up here.</p>
+          <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>Once a buyer picks up an item from you, it'll show up here.</p>
         </div>
       )}
 
@@ -8438,6 +8482,7 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
           /api/claims/:id/review. Backend writes to sellerReviewX fields. */}
       {rateTx && (
         <div onClick={cancelRate} style={{ position: "fixed", inset: 0, background: "rgba(11,47,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+          <ModalA11y label="Rate this transaction" onClose={cancelRate}/>
           <div onClick={e => e.stopPropagation()} style={{ background: C.paper, borderRadius: 20, padding: 24, width: "100%", maxWidth: 420, boxShadow: "0 20px 60px rgba(11,47,32,0.25)" }}>
             <h3 style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.ink, marginBottom: 6 }}>Rate {rateTx.buyer}</h3>
             <p style={{ fontFamily: F.body, fontSize: 13, color: C.mink, marginBottom: 16 }}>How was the transaction? Your rating helps other sellers and shows on {rateTx.buyer.split(" ")[0]}&rsquo;s buyer profile.</p>
@@ -8715,6 +8760,7 @@ function DetailRow({ label, value }) {
 }
 
 function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null, onItemsChange = null }) {
+  const fieldId = useId();
   const { isMobile } = useViewport();
   const item = editingItem || {
     t: "LG 55 inch Smart TV",
@@ -9044,11 +9090,11 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
   // fields right) → footer action row with Delete + Cancel + Save changes.
   return (
     <div>
-      <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 8, border: "1px solid #e5e7eb", background: C.paper, cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#777", fontFamily: F.body, marginBottom: 20 }}>
+      <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, padding: "6px 12px", borderRadius: 8, border: "1px solid " + C.smoke, background: C.paper, cursor: "pointer", fontSize: 13, fontWeight: 600, color: C.mink, fontFamily: F.body, marginBottom: 20 }}>
         <ArrowLeft size={14} /> Back
       </button>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: C.ink, fontFamily: F.head }}>Edit Item</h2>
+        <h2 style={{ fontSize: 24, fontWeight: 800, color: C.ink, fontFamily: F.head }}>Edit Item</h2>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: F.head, fontSize: 10, fontWeight: 900, padding: "5px 12px", borderRadius: 999, background: meta.bg, color: meta.color, letterSpacing: "0.06em", border: "1px solid " + meta.border }}>
           {meta.label}
         </span>
@@ -9065,7 +9111,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
         {/* Left: Photos (S3 upload) */}
         <div>
           <div style={{ padding: isMobile ? 16 : 20, borderRadius: 16, border: "1px solid " + C.fawn, background: C.paper, marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 10, fontFamily: F.body }}>Photos *</label>
+            <FormHeading title="Photos" hint="Clear, well-lit photos help your item get claimed."/>
             <input
               ref={fileInputRef}
               type="file"
@@ -9074,23 +9120,23 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
               onChange={handleFileChange}
               style={{ display: "none" }}
             />
-            <div onClick={openFilePicker}
-              style={{ height: 180, borderRadius: 14, border: "2px dashed #d1d5db", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: submitting ? "not-allowed" : "pointer", background: C.sand, transition: "all 0.2s", opacity: submitting ? 0.6 : 1 }}
+            <button type="button" onClick={openFilePicker} disabled={submitting}
+              style={{ width: "100%", height: 180, borderRadius: 14, border: "2px dashed " + C.smoke, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, cursor: submitting ? "not-allowed" : "pointer", background: C.sand, transition: "all 0.2s", opacity: submitting ? 0.6 : 1 }}
               onMouseEnter={e => { if (!submitting) { e.currentTarget.style.borderColor = C.gPrimary; e.currentTarget.style.backgroundColor = C.gLightBg; } }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "#d1d5db"; e.currentTarget.style.backgroundColor = "#fafafa"; }}>
+              onMouseLeave={e => { e.currentTarget.style.borderColor = C.smoke; e.currentTarget.style.backgroundColor = C.sand; }}>
               <div style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Camera size={24} style={{ color: C.gPrimary }} />
               </div>
-              <p style={{ fontSize: 13, fontWeight: 700, color: C.ink, fontFamily: F.body }}>Drop photos here or click to upload</p>
-              <p style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>JPG, PNG up to 10MB each &middot; max {MAX_PHOTOS} photos</p>
-            </div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.body }}>Choose photos to upload</span>
+              <span style={{ fontSize: 12, color: C.ash, fontFamily: F.body }}>JPG, PNG up to 10MB each &middot; max {MAX_PHOTOS} photos</span>
+            </button>
 
             {/* Photo thumbnails */}
             <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
               {photos.map((p, idx) => (
                 <div key={p.id} style={{ width: 88, height: 88, borderRadius: 12, border: "1.5px solid " + (idx === 0 ? C.amber : C.gPrimary + "30"), backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
                   {p.preview ? (
-                    <img src={p.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: p.uploading ? 0.5 : 1 }}/>
+                    <img src={p.preview} alt={"Photo " + (idx + 1)} style={{ width: "100%", height: "100%", objectFit: "cover", opacity: p.uploading ? 0.5 : 1 }}/>
                   ) : (
                     <Camera size={20} style={{ color: C.gPrimary }}/>
                   )}
@@ -9100,30 +9146,30 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                     </span>
                   )}
                   {!p.uploading && idx === 0 && (
-                    <span style={{ position: "absolute", top: 4, left: 4, padding: "2px 6px", borderRadius: 999, background: C.amber, color: "#fff", fontFamily: F.head, fontSize: 9, fontWeight: 900, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                    <span style={{ position: "absolute", top: 4, left: 4, padding: "2px 6px", borderRadius: 999, background: C.amber, color: C.ink, fontFamily: F.head, fontSize: 10, fontWeight: 900, letterSpacing: "0.04em", textTransform: "uppercase" }}>
                       Cover
                     </span>
                   )}
                   {!p.uploading && (
                     <button onClick={() => removePhoto(p.id)} aria-label="Remove photo"
-                      style={{ position: "absolute", top: -4, right: -4, width: 18, height: 18, borderRadius: "50%", backgroundColor: "#EF4444", border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>
-                      <X size={8} style={{ color: "#fff" }} />
+                      style={{ position: "absolute", top: 4, right: 4, width: 24, height: 24, borderRadius: "50%", backgroundColor: C.claret, border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>
+                      <X size={12} style={{ color: "#fff" }} />
                     </button>
                   )}
                   {!p.uploading && photos.length > 1 && (
                     <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "3px 4px", background: "rgba(31,29,25,0.55)" }}>
                       <button onClick={() => movePhoto(idx, -1)} disabled={idx === 0} aria-label="Move left"
-                        style={{ width: 18, height: 18, borderRadius: 4, border: "none", background: idx === 0 ? "transparent" : "rgba(255,255,255,0.18)", color: "#fff", cursor: idx === 0 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, opacity: idx === 0 ? 0.4 : 1 }}>
+                        style={{ width: 24, height: 24, borderRadius: 4, border: "none", background: idx === 0 ? "transparent" : "rgba(255,255,255,0.18)", color: "#fff", cursor: idx === 0 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, opacity: idx === 0 ? 0.4 : 1 }}>
                         <ChevronLeft size={11}/>
                       </button>
                       {idx !== 0 ? (
                         <button onClick={() => setAsCover(idx)} aria-label="Set as cover" title="Set as cover"
-                          style={{ width: 18, height: 18, borderRadius: 4, border: "none", background: "rgba(240,144,0,0.85)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
+                          style={{ width: 24, height: 24, borderRadius: 4, border: "none", background: "rgba(240,144,0,0.85)", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
                           <Star size={10} strokeWidth={2.4}/>
                         </button>
-                      ) : <span style={{ width: 18, height: 18 }}/>}
+                      ) : <span style={{ width: 24, height: 24 }}/>}
                       <button onClick={() => movePhoto(idx, +1)} disabled={idx === photos.length - 1} aria-label="Move right"
-                        style={{ width: 18, height: 18, borderRadius: 4, border: "none", background: idx === photos.length - 1 ? "transparent" : "rgba(255,255,255,0.18)", color: "#fff", cursor: idx === photos.length - 1 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, opacity: idx === photos.length - 1 ? 0.4 : 1 }}>
+                        style={{ width: 24, height: 24, borderRadius: 4, border: "none", background: idx === photos.length - 1 ? "transparent" : "rgba(255,255,255,0.18)", color: "#fff", cursor: idx === photos.length - 1 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0, opacity: idx === photos.length - 1 ? 0.4 : 1 }}>
                         <ChevronRight size={11}/>
                       </button>
                     </div>
@@ -9132,52 +9178,59 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
               ))}
               {photos.length < MAX_PHOTOS && (
                 <button onClick={openFilePicker} disabled={submitting}
-                  style={{ width: 88, height: 88, borderRadius: 12, border: "2px dashed #d1d5db", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: submitting ? "not-allowed" : "pointer", background: C.paper, gap: 2 }}>
-                  <Plus size={16} style={{ color: C.smoke }} />
-                  <span style={{ fontSize: 8, color: C.smoke, fontFamily: F.body }}>Add</span>
+                  style={{ width: 88, height: 88, borderRadius: 12, border: "2px dashed " + C.smoke, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: submitting ? "not-allowed" : "pointer", background: C.paper, gap: 2 }}>
+                  <Plus size={16} style={{ color: C.mink }} />
+                  <span style={{ fontSize: 11, fontWeight: 600, color: C.mink, fontFamily: F.body }}>Add</span>
                 </button>
               )}
             </div>
-            <p style={{ fontSize: 10, color: C.ash, marginTop: 8, fontFamily: F.body }}>The Cover photo is the first one buyers see. Use the arrows to reorder, or the star to promote. Up to {MAX_PHOTOS} photos.</p>
+            <p style={{ fontSize: 12, lineHeight: 1.5, color: C.ash, marginTop: 10, fontFamily: F.body }}>The Cover photo is the first one buyers see. Use the arrows to reorder, or the star to promote. Up to {MAX_PHOTOS} photos.</p>
           </div>
         </div>
 
         {/* Right: Item details */}
-        <div style={{ padding: 24, borderRadius: 16, border: "1px solid " + C.fawn, background: C.paper }}>
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Title *</label>
-            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., IKEA KALLAX Bookshelf - White" style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2e8f0", fontSize: 13, fontFamily: F.body, outline: "none", boxSizing: "border-box" }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20, minWidth: 0 }}>
+        <section style={formCard(isMobile)}>
+          <FormHeading title="Item details" hint="Fields marked * are required."/>
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor={fieldId + "-title"} style={FORM_LABEL}>Title *</label>
+            <input id={fieldId + "-title"} className="dy-field" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g., IKEA KALLAX Bookshelf - White" style={FORM_INPUT} />
           </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Description *</label>
-            <textarea value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe condition, dimensions, what is included..." style={{ width: "100%", height: 90, padding: 12, borderRadius: 10, border: "1.5px solid #e2e8f0", fontSize: 13, fontFamily: F.body, resize: "none", outline: "none", boxSizing: "border-box" }} />
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor={fieldId + "-desc"} style={FORM_LABEL}>Description *</label>
+            <textarea id={fieldId + "-desc"} className="dy-field" value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe condition, dimensions, what is included..." style={{ ...FORM_INPUT, minHeight: 112, resize: "vertical", lineHeight: 1.5 }} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, marginBottom: 16 }}>
             <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Category *</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              <p id={fieldId + "-cat"} style={FORM_LABEL}>Category *</p>
+              <div role="group" aria-labelledby={fieldId + "-cat"} style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {cats.map(c => (
-                  <button key={c} onClick={() => setCat(c)} style={{ padding: "5px 10px", borderRadius: 6, border: "1.5px solid " + (cat === c ? C.gPrimary : "#e2e8f0"), cursor: "pointer", fontSize: 11, fontWeight: cat === c ? 700 : 500, backgroundColor: cat === c ? C.gLightBg : "#fff", color: cat === c ? C.gPrimary : "#64748b", fontFamily: F.body }}>{c}</button>
+                  <button key={c} type="button" aria-pressed={cat === c} onClick={() => setCat(c)} style={formChip(cat === c)}>{c}</button>
                 ))}
               </div>
             </div>
             <div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Condition *</label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              <p id={fieldId + "-cond"} style={FORM_LABEL}>Condition *</p>
+              <div role="group" aria-labelledby={fieldId + "-cond"} style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {conds.map(c => (
-                  <button key={c} onClick={() => setCond(c)} style={{ padding: "6px 10px", borderRadius: 6, border: "1.5px solid " + (cond === c ? C.gPrimary : "#e2e8f0"), cursor: "pointer", fontSize: 10, fontWeight: cond === c ? 700 : 500, backgroundColor: cond === c ? C.gLightBg : "#fff", color: cond === c ? C.gPrimary : "#64748b", fontFamily: F.body }}>{c}</button>
+                  <button key={c} type="button" aria-pressed={cond === c} onClick={() => setCond(c)} style={formChip(cond === c)}>{c}</button>
                 ))}
               </div>
             </div>
           </div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Price ($) *</label>
-            <input value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" type="number" style={{ width: 160, padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2e8f0", fontSize: 16, fontWeight: 700, fontFamily: F.head, outline: "none", boxSizing: "border-box" }} />
+          <div>
+            <label htmlFor={fieldId + "-price"} style={FORM_LABEL}>Price ($) *</label>
+            <input id={fieldId + "-price"} className="dy-field" value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" type="number" inputMode="decimal" style={{ ...FORM_INPUT, width: 160, fontWeight: 700 }} />
+            <p style={{ fontFamily: F.body, fontSize: 12, color: C.ash, marginTop: 6 }}>Enter 0 for a free giveaway.</p>
           </div>
 
+          </section>
+
+        <section style={formCard(isMobile)}>
+          <FormHeading title="Pickup, bundle and payment" hint="Optional. Open only what you need."/>
           {/* Pickup Availability - optional, collapsible (same as ManualItemForm) */}
-          <div style={{ marginBottom: 20, borderRadius: 16, border: "1.5px solid " + (showPickup ? C.green + "30" : C.fawn), overflow: "hidden" }}>
-            <button onClick={() => setShowPickup(!showPickup)}
+          <div style={{ marginBottom: 12, borderRadius: 14, border: "1.5px solid " + (showPickup ? C.green + "30" : C.fawn), overflow: "hidden" }}>
+            <button type="button" aria-expanded={showPickup} onClick={() => setShowPickup(!showPickup)}
               style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", border: "none", cursor: "pointer", background: showPickup ? C.greenMist : C.sand, textAlign: "left", transition: "background 150ms" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <MapPin size={16} style={{ color: showPickup ? C.green : C.mink }}/>
@@ -9199,7 +9252,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                   ].map(m => {
                     const on = pickupMode === m.id;
                     return (
-                      <button key={m.id} onClick={() => setPickupMode(m.id)}
+                      <button key={m.id} type="button" aria-pressed={on} onClick={() => setPickupMode(m.id)}
                         style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1.5px solid " + (on ? C.green : C.fawn), cursor: "pointer", fontSize: 12, fontWeight: on ? 800 : 600, background: on ? C.greenMist : C.paper, color: on ? C.greenDeep : C.mink, fontFamily: F.head, textAlign: "center", transition: "all 150ms" }}>
                         {m.l}
                       </button>
@@ -9212,7 +9265,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                     {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => {
                       const sel = pickupDays.includes(day);
                       return (
-                        <button key={day} onClick={() => togDay(day)}
+                        <button key={day} type="button" aria-pressed={sel} onClick={() => togDay(day)}
                           style={{ padding: "8px 14px", borderRadius: 10, border: "1.5px solid " + (sel ? C.green : C.fawn), cursor: "pointer", fontSize: 12, fontWeight: sel ? 800 : 600, background: sel ? C.greenMist : C.paper, color: sel ? C.greenDeep : C.mink, fontFamily: F.head, transition: "all 150ms" }}>
                           {day}
                         </button>
@@ -9224,8 +9277,8 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                 {pickupMode === "custom" && (
                   <div style={{ marginBottom: 14 }}>
                     <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-                      <input type="date" min={todayLocalISO()} value={pickupNewDate} onChange={e => { setPickupNewDate(e.target.value); if (pickupDateError) setPickupDateError(""); }}
-                        style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontSize: 12, fontFamily: F.body, outline: "none", color: C.ink, background: C.paper, boxSizing: "border-box" }}/>
+                      <input type="date" aria-label="Pickup date" className="dy-field" min={todayLocalISO()} value={pickupNewDate} onChange={e => { setPickupNewDate(e.target.value); if (pickupDateError) setPickupDateError(""); }}
+                        style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontSize: 12, fontFamily: F.body, color: C.ink, background: C.paper, boxSizing: "border-box" }}/>
                       <button onClick={addPickupDate}
                         style={{ padding: "9px 16px", borderRadius: 10, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: C.green, color: "#fff", fontFamily: F.head, display: "flex", alignItems: "center", gap: 4, boxShadow: "0 2px 0 " + C.greenDeep }}>
                         <Plus size={12} strokeWidth={2.5}/> Add
@@ -9236,7 +9289,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                         {pickupCustom.map(d => (
                           <div key={d} style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, background: C.greenMist, border: "1px solid " + C.green + "25" }}>
                             <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 700, color: C.greenDeep }}>{formatPickupDateLong(d)}</span>
-                            <button onClick={() => setPickupCustom(p => p.filter(x => x !== d))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}>
+                            <button type="button" aria-label={"Remove " + formatPickupDateLong(d)} onClick={() => setPickupCustom(p => p.filter(x => x !== d))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}>
                               <X size={11} style={{ color: C.greenDeep }}/>
                             </button>
                           </div>
@@ -9244,7 +9297,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                       </div>
                     )}
                     {pickupDateError && (
-                      <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 700, color: C.claret }}>{pickupDateError}</p>
+                      <p role="alert" style={{ fontFamily: F.body, fontSize: 11, fontWeight: 700, color: C.claret }}>{pickupDateError}</p>
                     )}
                     {pickupCustom.length === 0 && !pickupDateError && (
                       <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, fontStyle: "italic" }}>Add one or more specific dates when you&apos;ll be available.</p>
@@ -9268,7 +9321,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                   ].map(w => {
                     const sel = pickupWindows.includes(w.id);
                     return (
-                      <button key={w.id} onClick={() => togWin(w.id)}
+                      <button key={w.id} type="button" aria-pressed={sel} onClick={() => togWin(w.id)}
                         style={{ flex: 1, padding: "10px 0", borderRadius: 10, border: "1.5px solid " + (sel ? C.green : C.fawn), cursor: "pointer", background: sel ? C.greenMist : C.paper, textAlign: "center", transition: "all 150ms" }}>
                         <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: sel ? 800 : 700, color: sel ? C.greenDeep : C.mink }}>{w.l}</p>
                         <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: sel ? C.greenDeep : C.ash, marginTop: 2 }}>{w.t}</p>
@@ -9281,8 +9334,8 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
           </div>
 
           {/* Bundle marking — same UI as ManualItemForm. */}
-          <div style={{ marginBottom: 20, borderRadius: 16, border: "1.5px solid " + (showBundle ? (C.teal || C.greenDeep) + "30" : C.fawn), overflow: "hidden" }}>
-            <button type="button" onClick={() => setShowBundle(!showBundle)}
+          <div style={{ marginBottom: 12, borderRadius: 14, border: "1.5px solid " + (showBundle ? (C.teal || C.greenDeep) + "30" : C.fawn), overflow: "hidden" }}>
+            <button type="button" aria-expanded={showBundle} onClick={() => setShowBundle(!showBundle)}
               style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", border: "none", cursor: "pointer", background: showBundle ? (C.tealMist || C.greenMist) : C.sand, textAlign: "left", transition: "background 150ms" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <Package size={16} style={{ color: showBundle ? (C.teal || C.greenDeep) : C.mink }}/>
@@ -9314,13 +9367,15 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                         <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <input
                             type="text"
+                            className="dy-field"
+                            aria-label={"Bundle item " + (idx + 1)}
                             value={line}
                             onChange={e => updateBundleLine(idx, e.target.value)}
                             maxLength={120}
                             placeholder={"Item " + (idx + 1) + " (e.g. \"Queen bed frame\")"}
-                            style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, outline: "none", background: C.paper }}
+                            style={{ flex: 1, padding: "9px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink, background: C.paper, minWidth: 0 }}
                           />
-                          <button type="button" onClick={() => removeBundleLine(idx)} title="Remove" style={{ width: 34, height: 34, borderRadius: 10, border: "1.5px solid " + C.fawn, background: C.paper, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", color: C.mink }}>
+                          <button type="button" onClick={() => removeBundleLine(idx)} title="Remove" aria-label={"Remove bundle item " + (idx + 1)} style={{ width: 40, height: 40, flexShrink: 0, borderRadius: 10, border: "1.5px solid " + C.fawn, background: C.paper, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", color: C.mink }}>
                             <X size={13}/>
                           </button>
                         </div>
@@ -9336,8 +9391,8 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
           </div>
 
           {/* Payment method - collapsible (same as ManualItemForm) */}
-          <div style={{ marginBottom: 20, borderRadius: 16, border: "1.5px solid " + (showPayment ? C.green + "30" : C.fawn), overflow: "hidden" }}>
-            <button type="button" onClick={() => setShowPayment(!showPayment)}
+          <div style={{ marginBottom: 12, borderRadius: 14, border: "1.5px solid " + (showPayment ? C.green + "30" : C.fawn), overflow: "hidden" }}>
+            <button type="button" aria-expanded={showPayment} onClick={() => setShowPayment(!showPayment)}
               style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", border: "none", cursor: "pointer", background: showPayment ? C.greenMist : C.sand, textAlign: "left", transition: "background 150ms" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <DollarSign size={16} style={{ color: showPayment ? C.green : C.mink }}/>
@@ -9366,7 +9421,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                     const on = paymentMethod === p.id;
                     const Ic = p.icon;
                     return (
-                      <button key={p.id} type="button" onClick={() => setPaymentMethod(p.id)}
+                      <button key={p.id} type="button" aria-pressed={on} onClick={() => setPaymentMethod(p.id)}
                         style={{ flex: 1, padding: "11px 8px", borderRadius: 10, border: "1.5px solid " + (on ? C.green : C.fawn), cursor: "pointer", background: on ? C.greenMist : C.paper, color: on ? C.greenDeep : C.mink, fontFamily: F.head, fontSize: 12, fontWeight: on ? 800 : 700, display: "flex", flexDirection: "column", alignItems: "center", gap: 5, transition: "all 150ms" }}>
                         <Ic size={16}/>
                         {p.label}
@@ -9379,20 +9434,23 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
           </div>
 
           {/* Error banner */}
+          </section>
+
+          <section style={formCard(isMobile)}>
           {submitError && (
-            <div style={{ padding: "10px 14px", borderRadius: 12, background: C.claretMist, border: "1px solid " + C.claret + "40", marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <div role="alert" style={{ padding: "10px 14px", borderRadius: 12, background: C.claretMist, border: "1px solid " + C.claret + "40", marginBottom: 12, display: "flex", alignItems: "flex-start", gap: 8 }}>
               <AlertCircle size={16} style={{ color: C.claret, flexShrink: 0, marginTop: 1 }}/>
               <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.claret, lineHeight: 1.5 }}>{submitError}</p>
             </div>
           )}
 
           {/* Action row — Delete (left) · Cancel + Save changes (right) */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <button onClick={() => setShowDelete(true)} disabled={submitting} style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 18px", borderRadius: 999, border: "1.5px solid " + C.claret + "30", cursor: submitting ? "not-allowed" : "pointer", fontFamily: F.head, fontSize: 12, fontWeight: 700, background: C.paper, color: C.claret, opacity: submitting ? 0.6 : 1 }}>
+          <div style={{ display: "flex", flexDirection: isMobile ? "column-reverse" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: 10 }}>
+            <button type="button" onClick={() => setShowDelete(true)} disabled={submitting} style={{ display: "flex", alignItems: "center", gap: 6, padding: "12px 18px", borderRadius: 999, border: "1.5px solid " + C.claret + "30", cursor: submitting ? "not-allowed" : "pointer", fontFamily: F.head, fontSize: 12, fontWeight: 700, background: C.paper, color: C.claret, opacity: submitting ? 0.6 : 1 }}>
               <X size={13}/> Delete item
             </button>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={onBack} disabled={submitting} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "12px 20px", borderRadius: 999, border: "1.5px solid " + C.fawn, cursor: submitting ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, fontFamily: F.head, background: C.paper, color: C.mink, opacity: submitting ? 0.6 : 1 }}>
+            <div style={{ display: "flex", flexDirection: isMobile ? "column-reverse" : "row", gap: 10 }}>
+              <button type="button" onClick={onBack} disabled={submitting} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "12px 20px", borderRadius: 999, border: "1.5px solid " + C.fawn, cursor: submitting ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, fontFamily: F.head, background: C.paper, color: C.mink, opacity: submitting ? 0.6 : 1 }}>
                 Cancel
               </button>
               <button onClick={handleSave} disabled={submitting} className="cta-primary" style={{
@@ -9409,12 +9467,14 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
               </button>
             </div>
           </div>
+          </section>
         </div>
       </div>
 
       {/* Delete confirmation modal — preserved from old EditItemView */}
       {showDelete && (
         <div onClick={() => setShowDelete(false)} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 24, backdropFilter: "blur(4px)" }}>
+          <ModalA11y label="Delete this item" onClose={() => setShowDelete(false)}/>
           <div onClick={e => e.stopPropagation()} className="fade-in" style={{ width: 440, maxWidth: "100%", borderRadius: 24, background: C.paper, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)", overflow: "hidden" }}>
             <div style={{ padding: "22px 24px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
@@ -11693,6 +11753,7 @@ export default function DropYardSellerDashboard({
           and any future call site that wires to onSignoutRequest. */}
       {signoutOpen && (
         <div onClick={() => setSignoutOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(11,47,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
+          <ModalA11y label="Sign out" onClose={() => setSignoutOpen(false)}/>
           <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="seller-signout-title" style={{ background: C.paper, borderRadius: 20, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 20px 60px rgba(11,47,32,0.25)" }}>
             <h3 id="seller-signout-title" style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.ink, marginBottom: 6 }}>Sign out?</h3>
             <p style={{ fontFamily: F.body, fontSize: 13, color: C.mink, lineHeight: 1.5, marginBottom: 18 }}>You&rsquo;ll need to sign back in to see your inventory, claims, and messages.</p>

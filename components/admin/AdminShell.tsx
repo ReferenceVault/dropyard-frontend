@@ -53,7 +53,7 @@ export function AdminShell({
   }, [mobileOpen]);
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f7faf8] flex">
+    <div className="h-screen overflow-hidden bg-dy-pale flex">
       <AdminSidebar
         collapsed={collapsed}
         mobileOpen={mobileOpen}

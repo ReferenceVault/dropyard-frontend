@@ -40,14 +40,14 @@ function PinIcon({ className = "" }) {
 // Static accent-class lookups — kept as full literal class strings so Tailwind's
 // JIT picks them up at build time. Don't refactor into template strings.
 const ACCENT_BORDER = {
-  green:  "from-[#2f8a22]/35 via-[#22c55e]/70 to-[#2f8a22]",
-  orange: "from-[#ff9412]/35 via-[#f97316]/70 to-[#ff9412]",
+  green:  "from-dy-green-strong/35 via-[#3A8E31]/70 to-dy-green-strong",
+  orange: "from-dy-orange/35 via-[#f97316]/70 to-dy-orange",
   teal:   "from-teal-400/35 via-teal-400/70 to-teal-500",
   purple: "from-violet-400/35 via-violet-400/70 to-violet-500",
 };
 const ACCENT_HOVER_ICON = {
-  green:  "group-hover:text-[#2f8a22]",
-  orange: "group-hover:text-[#ff9412]",
+  green:  "group-hover:text-dy-green-strong",
+  orange: "group-hover:text-dy-orange",
   teal:   "group-hover:text-teal-600",
   purple: "group-hover:text-violet-600",
 };
@@ -61,7 +61,7 @@ const steps = [
 
 export default function BuyingStepsSection() {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-b from-[#f7faf8] to-white px-4 py-12 sm:px-6 lg:px-8">
+    <section className="relative overflow-hidden bg-gradient-to-b from-dy-pale to-white px-4 py-12 sm:px-6 lg:px-8">
       <style>{`
         @keyframes dropyardBorderFlow {
           0% { background-position: 0% 50%; }
@@ -80,16 +80,16 @@ export default function BuyingStepsSection() {
       `}</style>
 
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/4 top-0 h-[400px] w-[400px] rounded-full bg-[#2f8a22]/5 blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 h-[400px] w-[400px] rounded-full bg-[#ff9412]/5 blur-3xl" />
+        <div className="absolute left-1/4 top-0 h-[400px] w-[400px] rounded-full bg-dy-green-strong/5 blur-3xl" />
+        <div className="absolute bottom-0 right-1/4 h-[400px] w-[400px] rounded-full bg-dy-orange/5 blur-3xl" />
       </div>
 
       <div className="relative mx-auto max-w-6xl text-center">
-        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f8a22]">
+        <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-dy-green-strong">
           Simple steps
         </p>
 
-        <h2 className="mt-2 text-[29px] font-semibold tracking-tighter leading-[1.05] text-[#0b2f20] sm:text-[35px]">
+        <h2 className="mt-2 text-[29px] font-semibold tracking-tighter leading-[1.05] text-dy-forest sm:text-[35px]">
           How buying works
         </h2>
 
@@ -118,15 +118,15 @@ export default function BuyingStepsSection() {
                   <div className="relative overflow-visible rounded-3xl bg-white/95 pt-10 p-8 backdrop-blur transition duration-500 group-hover:-translate-y-3 group-hover:shadow-[0_30px_80px_rgba(0,0,0,0.12)]">
                     <div className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/70 to-transparent opacity-0 transition duration-700 group-hover:translate-x-full group-hover:opacity-100" />
 
-                    <div className="absolute -top-5 left-6 rounded-full bg-[#0b2f20] px-3 py-1.5 text-[11px] font-bold text-white shadow-md">
+                    <div className="absolute -top-5 left-6 rounded-full bg-dy-forest px-3 py-1.5 text-[11px] font-bold text-white shadow-md">
                       {step.number}
                     </div>
 
                     <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 transition duration-500 group-hover:scale-110 group-hover:bg-white group-hover:shadow-sm">
-                      <Icon className={`h-5 w-5 text-[#0b2f20] transition duration-500 ${ACCENT_HOVER_ICON[step.accent]}`} />
+                      <Icon className={`h-5 w-5 text-dy-forest transition duration-500 ${ACCENT_HOVER_ICON[step.accent]}`} />
                     </div>
 
-                    <h3 className="text-[17px] font-semibold tracking-tight text-[#0b2f20]">
+                    <h3 className="text-[17px] font-semibold tracking-tight text-dy-forest">
                       {step.title}
                     </h3>
 

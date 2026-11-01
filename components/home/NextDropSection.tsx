@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, MapPin } from "lucide-react";
 import { dropOpenDay, dropOpenHourLong, dropZoneLabel } from "@/lib/dropCycle";
@@ -15,27 +15,31 @@ const pad = (n: number) => String(n).padStart(2, "0");
 type LiveFace = "live" | "countdown" | "items";
 
 const PREVIEW_LABEL = "Preview What Your Neighbours Are Listing";
+export const FEATURED_SECTION_ID = "worth-a-closer-look";
 const CTA_CLASS = "dy-btn dy-btn--primary dy-focus mt-[clamp(20px,2.2vw,42px)] w-full text-center";
-const FACE_CLASS = "dy-flip__face rounded-xl bg-white shadow-[0_24px_60px_-30px_rgba(15,54,11,0.3)]";
+const FACE_CLASS = "dy-flip__face rounded-xl bg-white shadow-[var(--shadow-panel)]";
 const FACE_PADDING = "p-[clamp(20px,2.6vw,50px)]";
 
 function Figures({ cells, separator }: { cells: Array<{ value: string; label: string }>; separator: ":" | "|" }) {
   return (
-    <dl className="mt-[clamp(20px,2.4vw,46px)] flex items-start justify-between">
+    <ul className="mt-[clamp(20px,2.4vw,46px)] flex items-start justify-between">
       {cells.map((cell, i) => (
-        <div key={cell.label} className="contents">
+        <Fragment key={cell.label}>
           {i > 0 && (
-            <span aria-hidden className={`mt-[0.1em] text-[clamp(36px,3.75vw,72px)] font-light leading-none ${separator === "|" ? "text-dy-line" : "text-dy-forest"}`}>
+            <li aria-hidden className={`mt-[0.1em] text-[clamp(36px,3.75vw,72px)] font-light leading-none ${separator === "|" ? "text-dy-line" : "text-dy-forest"}`}>
               {separator}
-            </span>
+            </li>
           )}
-          <div className="flex flex-col-reverse items-center">
-            <dt className="mt-2 text-[clamp(13px,1.3vw,25px)] text-dy-muted">{cell.label}</dt>
-            <dd className="text-[clamp(38px,3.75vw,72px)] font-medium leading-none tracking-[0.06em] text-dy-forest tabular-nums">{cell.value}</dd>
-          </div>
-        </div>
+          <li className="flex flex-col-reverse items-center">
+            <span className="mt-2 text-[clamp(13px,1.3vw,25px)] text-dy-muted">{cell.label}</span>
+            <span data-figure className="text-[clamp(38px,3.75vw,72px)] font-medium leading-none tracking-[0.06em] text-dy-forest tabular-nums">
+              {/* Keyed by value, so it replays only when the number changes. */}
+              <span key={cell.value} className="dy-tick">{cell.value}</span>
+            </span>
+          </li>
+        </Fragment>
       ))}
-    </dl>
+    </ul>
   );
 }
 
@@ -102,6 +106,17 @@ export function NextDropSection({ stats, neighbourCount, upcomingOnly = false, l
     setView({ drop: dropKey, face: next, itemsOpened: itemsOpened || next === "items" });
   };
 
+  const scrollToFeatured = () => {
+    const section = document.getElementById(FEATURED_SECTION_ID);
+    if (!section) return;
+    // A reveal in progress offsets the section, which would skew the landing.
+    section.getAnimations().forEach((animation) => animation.finish());
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    section.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+    // Keyboard users carry on from the section, not from the button above it.
+    section.focus({ preventScroll: true });
+  };
+
   // A page left open across Saturday 8 AM still holds Thursday's feed. Once
   // per opening, so a real disagreement can't turn into a request loop.
   const reloadedForOpening = useRef(false);
@@ -139,8 +154,9 @@ export function NextDropSection({ stats, neighbourCount, upcomingOnly = false, l
           { value: ready ? count(minutes % 60) : "--", label: "minutes" },
         ]}
       />
-      {isLive ? (
-        <button ref={previewRef} type="button" onClick={() => showFace("items")} className={CTA_CLASS}>{PREVIEW_LABEL}</button>
+      {/* The homepage has the section to scroll to; /live-drop doesn't. */}
+      {live ? (
+        <button ref={previewRef} type="button" onClick={scrollToFeatured} className={CTA_CLASS}>{PREVIEW_LABEL}</button>
       ) : (
         <Link href="/buyer" className={CTA_CLASS}>{PREVIEW_LABEL}</Link>
       )}

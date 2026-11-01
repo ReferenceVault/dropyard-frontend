@@ -56,11 +56,11 @@ function categoryLabel(cat?: string): string {
 }
 
 const C = {
-  gLightBg: "#ECFDF5", gSoft: "#D1FAE5", gAccent: "#6EE7B7",
-  gPrimary: "#059669", gHover: "#047857", gDark: "#064e3b",
+  gLightBg: "#F3F8F3", gSoft: "#E2EFE0", gAccent: "#9CC896",
+  gPrimary: "#33802B", gHover: "#2C6126", gDark: "#0F360B",
   oLightBg: "#FFF7ED", oSoft: "#FED7AA", oAccent: "#FDBA74",
   oPrimary: "#f59e0b", oHover: "#d97706", oDark: "#92400e",
-  tPrimary: "#0F766E", tLight: "#CCFBF1", tSoft: "#99F6E4",
+  tPrimary: "#2C6126", tLight: "#CCFBF1", tSoft: "#99F6E4",
   ai: "#7C3AED", aiLight: "#F5F3FF",
   wa: "#25D366",
 };
@@ -201,8 +201,8 @@ export default function ForBuyersPage() {
           {/* Pulsing live badge */}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "6px 16px", borderRadius: 50, backgroundColor: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.18)", marginBottom: 22, backdropFilter: "blur(8px)" }}>
             <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8 }}>
-              <span style={{ position: "absolute", inset: 0, borderRadius: "50%", backgroundColor: "#22C55E", animation: "dy-pulse-ring 2s ease-out infinite" }} />
-              <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8, borderRadius: "50%", backgroundColor: "#22C55E" }} />
+              <span style={{ position: "absolute", inset: 0, borderRadius: "50%", backgroundColor: "#3A8E31", animation: "dy-pulse-ring 2s ease-out infinite" }} />
+              <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8, borderRadius: "50%", backgroundColor: "#3A8E31" }} />
             </span>
             <span style={{ fontSize: 9, fontWeight: 800, color: "rgba(255,255,255,0.92)", letterSpacing: "0.14em", textTransform: "uppercase" }}>
               This week&apos;s Drop is live · 40+ items
@@ -263,7 +263,7 @@ export default function ForBuyersPage() {
           </div>
 
           <div style={{ display: "flex", gap: 12, justifyContent: "center", marginBottom: 26, flexWrap: "wrap" }}>
-            <button onClick={go} style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 28px", borderRadius: 14, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 700, backgroundColor: C.oPrimary, color: "#fff", boxShadow: "0 8px 28px rgba(245,158,11,0.35)" }}>
+            <button onClick={go} style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 28px", borderRadius: 14, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 700, backgroundColor: C.oPrimary, color: "#0F360B", boxShadow: "0 8px 28px rgba(245,158,11,0.35)" }}>
               Join This Week&apos;s Drop <ChevronRight size={18} />
             </button>
             <button onClick={() => router.push("/join?mode=signin")} style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 28px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.2)", cursor: "pointer", fontSize: 14, fontWeight: 700, backgroundColor: "rgba(255,255,255,0.06)", color: "#fff" }}>
@@ -318,7 +318,7 @@ export default function ForBuyersPage() {
                     )}
                     {d > 0 && <span style={{ position: "absolute", top: 10, right: 10, fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 8, backgroundColor: "#DC2626", color: "#fff" }}>-{d}%</span>}
                     <div style={{ position: "absolute", top: 10, left: 10, display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 6, backgroundColor: C.gDark, color: "#fff" }}>
-                      <div style={{ width: 4, height: 4, borderRadius: "50%", backgroundColor: "#22C55E" }} />
+                      <div style={{ width: 4, height: 4, borderRadius: "50%", backgroundColor: "#3A8E31" }} />
                       <span style={{ fontSize: 7, fontWeight: 800, letterSpacing: 0.7 }}>LIVE</span>
                     </div>
                   </div>
@@ -373,7 +373,7 @@ export default function ForBuyersPage() {
                   ) : (
                     <span style={{ fontSize: 38 }}>{item.img}</span>
                   )}
-                  <div style={{ position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", borderRadius: 6, backgroundColor: C.oPrimary, color: "#fff" }}>
+                  <div style={{ position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", borderRadius: 6, backgroundColor: C.oPrimary, color: "#0F360B" }}>
                     <Package size={8} /><span style={{ fontSize: 7, fontWeight: 800 }}>SHELF</span>
                   </div>
                   {item.pd && <div style={{ position: "absolute", top: 8, right: 8, display: "flex", alignItems: "center", gap: 3, padding: "3px 7px", borderRadius: 6, backgroundColor: "#DC2626", color: "#fff" }}>
@@ -415,7 +415,7 @@ export default function ForBuyersPage() {
             Join your neighbourhood&apos;s next Drop and discover amazing local finds. Or browse the Shelf right now — no waiting required.
           </p>
           <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-            <button onClick={go} style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 28px", borderRadius: 14, border: "none", cursor: "pointer", fontSize: 15, fontWeight: 700, backgroundColor: C.oPrimary, color: "#fff", boxShadow: "0 8px 28px rgba(245,158,11,0.35)" }}>
+            <button onClick={go} style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 28px", borderRadius: 14, border: "none", cursor: "pointer", fontSize: 15, fontWeight: 700, backgroundColor: C.oPrimary, color: "#0F360B", boxShadow: "0 8px 28px rgba(245,158,11,0.35)" }}>
               Join This Week&apos;s Drop <ChevronRight size={18} />
             </button>
             <button onClick={goShelf} style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 28px", borderRadius: 14, border: "1px solid rgba(255,255,255,0.2)", cursor: "pointer", fontSize: 15, fontWeight: 700, backgroundColor: "rgba(255,255,255,0.06)", color: "#fff" }}>

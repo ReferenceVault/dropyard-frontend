@@ -30,23 +30,23 @@ const shelfFeatures = [
 
 export default function ShopWaysSection() {
   return (
-    <section className="relative bg-gradient-to-b from-white to-[#f7faf8] px-4 py-12 sm:px-6 lg:px-8 overflow-hidden">
+    <section className="relative bg-gradient-to-b from-white to-dy-pale px-4 py-12 sm:px-6 lg:px-8 overflow-hidden">
 
       {/* background glow */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[400px] h-[400px] bg-[#2f8a22]/5 blur-3xl rounded-full" />
-        <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-[#ff9412]/5 blur-3xl rounded-full" />
+        <div className="absolute top-0 left-1/4 w-[400px] h-[400px] bg-dy-green-strong/5 blur-3xl rounded-full" />
+        <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-dy-orange/5 blur-3xl rounded-full" />
       </div>
 
       <div className="relative mx-auto max-w-6xl">
 
         {/* HEADER */}
         <div className="text-center">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#ff9412]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-dy-orange">
             Two ways to shop
           </p>
 
-          <h2 className="mt-2 text-[35px] font-semibold tracking-tighter leading-[1.05] text-[#0b2f20] sm:text-[47px]">
+          <h2 className="mt-2 text-[35px] font-semibold tracking-tighter leading-[1.05] text-dy-forest sm:text-[47px]">
             There&rsquo;s always something for you
           </h2>
 
@@ -62,27 +62,27 @@ export default function ShopWaysSection() {
           <div className="group relative rounded-3xl bg-white p-[1.5px] shadow-[0_20px_70px_rgba(0,0,0,0.08)] transition duration-500 hover:-translate-y-3">
 
             {/* gradient border */}
-            <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-[#2f8a22]/30 via-[#22c55e]/40 to-transparent opacity-60 group-hover:opacity-100 transition" />
+            <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-dy-green-strong/30 via-[#3A8E31]/40 to-transparent opacity-60 group-hover:opacity-100 transition" />
 
             <div className="relative rounded-3xl bg-white/95 backdrop-blur p-8">
 
               {/* TOP */}
               <div className="flex items-center justify-between">
-                <span className="text-[11px] tracking-[0.3em] uppercase text-[#0b2f20]/60">Every Saturday</span>
-                <span className="text-[11px] bg-[#2f8a22]/10 text-[#2f8a22] px-3 py-1 rounded-full">Live weekly</span>
+                <span className="text-[11px] tracking-[0.3em] uppercase text-dy-forest/60">Every Saturday</span>
+                <span className="text-[11px] bg-dy-green-strong/10 text-dy-green-strong px-3 py-1 rounded-full">Live weekly</span>
               </div>
 
-              <h3 className="mt-6 text-[23px] font-bold text-[#0b2f20]">The Drop</h3>
+              <h3 className="mt-6 text-[23px] font-bold text-dy-forest">The Drop</h3>
 
-              <p className="mt-3 text-[#0b2f20]/70 text-[13px] max-w-md">
+              <p className="mt-3 text-dy-forest/70 text-[13px] max-w-md">
                 Fresh items go live {dropOpenDay()} {dropOpenHourCompact()}. Browse, claim, and pick up — all within 48 hours.
               </p>
 
               {/* FEATURES */}
               <ul className="mt-8 space-y-4">
                 {dropFeatures.map((f, i) => (
-                  <li key={i} className="flex items-center gap-3 text-[13px] text-[#0b2f20]/80">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#2f8a22]/10 text-[#2f8a22]">
+                  <li key={i} className="flex items-center gap-3 text-[13px] text-dy-forest/80">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-dy-green-strong/10 text-dy-green-strong">
                       <CheckIcon className="h-3 w-3" />
                     </div>
                     {f}
@@ -91,7 +91,7 @@ export default function ShopWaysSection() {
               </ul>
 
               {/* CTA */}
-              <button className="mt-10 w-full rounded-xl bg-[#0f6a44] text-white py-3 text-[13px] font-semibold transition hover:bg-[#0b5638] hover:shadow-lg">
+              <button className="mt-10 w-full rounded-xl bg-dy-mid text-white py-3 text-[13px] font-semibold transition hover:bg-dy-mid hover:shadow-lg">
                 Browse Drops &rarr;
               </button>
 
@@ -102,27 +102,27 @@ export default function ShopWaysSection() {
           <div className="group relative rounded-3xl bg-white p-[1.5px] shadow-[0_20px_70px_rgba(0,0,0,0.08)] transition duration-500 hover:-translate-y-3">
 
             {/* gradient border */}
-            <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-[#ff9412]/30 via-[#ff7a00]/40 to-transparent opacity-60 group-hover:opacity-100 transition" />
+            <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-dy-orange/30 via-[#ff7a00]/40 to-transparent opacity-60 group-hover:opacity-100 transition" />
 
             <div className="relative rounded-3xl bg-white/95 backdrop-blur p-8">
 
               {/* TOP */}
               <div className="flex items-center justify-between">
-                <span className="text-[11px] tracking-[0.3em] uppercase text-[#0b2f20]/60">Always open</span>
-                <span className="text-[11px] bg-[#ff9412]/10 text-[#ff9412] px-3 py-1 rounded-full">Open now</span>
+                <span className="text-[11px] tracking-[0.3em] uppercase text-dy-forest/60">Always open</span>
+                <span className="text-[11px] bg-dy-orange/10 text-dy-orange px-3 py-1 rounded-full">Open now</span>
               </div>
 
-              <h3 className="mt-6 text-[23px] font-bold text-[#0b2f20]">The Shelf</h3>
+              <h3 className="mt-6 text-[23px] font-bold text-dy-forest">The Shelf</h3>
 
-              <p className="mt-3 text-[#0b2f20]/70 text-[13px] max-w-md">
+              <p className="mt-3 text-dy-forest/70 text-[13px] max-w-md">
                 Items available right now, anytime. No countdown, no rush — browse and claim when you&apos;re ready.
               </p>
 
               {/* FEATURES */}
               <ul className="mt-8 space-y-4">
                 {shelfFeatures.map((f, i) => (
-                  <li key={i} className="flex items-center gap-3 text-[13px] text-[#ff9412]/80">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ff9412]/10 text-[#ff9412]">
+                  <li key={i} className="flex items-center gap-3 text-[13px] text-dy-orange/80">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-dy-orange/10 text-dy-orange">
                       <CheckIcon className="h-3 w-3" />
                     </div>
                     {f}

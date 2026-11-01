@@ -19,7 +19,7 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
   const showPhoto = item.photo && !photoFailed;
 
   return (
-    <article className="relative">
+    <article className="dy-item relative">
       <Link href={`/item/${encodeURIComponent(item.id)}`} className="dy-focus group block rounded-2xl">
         <div className="relative aspect-square overflow-hidden rounded-2xl bg-dy-pale">
           {showPhoto ? (

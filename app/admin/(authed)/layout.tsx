@@ -29,7 +29,7 @@ export default function AdminAuthedLayout({ children }: { children: React.ReactN
 
   if (!mounted || loading || !user || user.role !== "ADMIN") {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#f7faf8]">
+      <div className="h-screen flex items-center justify-center bg-dy-pale">
         <div className="flex items-center gap-3 text-slate-500">
           <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           <p className="text-sm font-medium">Checking access…</p>

@@ -80,8 +80,8 @@ const perks = [
 
 function AccentBar(accent) {
   const map = {
-    green: "bg-[#2f8a22]",
-    orange: "bg-[#ff9412]",
+    green: "bg-dy-green-strong",
+    orange: "bg-dy-orange",
     teal: "bg-teal-500",
     purple: "bg-violet-500",
   };
@@ -90,8 +90,8 @@ function AccentBar(accent) {
 
 function AccentText(accent) {
   const map = {
-    green: "text-[#2f8a22]",
-    orange: "text-[#ff9412]",
+    green: "text-dy-green-strong",
+    orange: "text-dy-orange",
     teal: "text-teal-600",
     purple: "text-violet-600",
   };
@@ -100,8 +100,8 @@ function AccentText(accent) {
 
 function AccentTint(accent) {
   const map = {
-    green: "hover:bg-[#2f8a22]/5",
-    orange: "hover:bg-[#ff9412]/5",
+    green: "hover:bg-dy-green-strong/5",
+    orange: "hover:bg-dy-orange/5",
     teal: "hover:bg-teal-500/5",
     purple: "hover:bg-violet-500/5",
   };
@@ -115,11 +115,11 @@ export default function BuyerPerksSection() {
     <section className="bg-white px-4 py-12 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
         <div className="text-center">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f8a22]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-dy-green-strong">
             The perks
           </p>
 
-          <h2 className="mt-2 text-[29px] font-semibold tracking-tighter leading-[1.05] text-[#0b2f20] sm:text-[35px]">
+          <h2 className="mt-2 text-[29px] font-semibold tracking-tighter leading-[1.05] text-dy-forest sm:text-[35px]">
             Why buy on DropYard?
           </h2>
 
@@ -152,7 +152,7 @@ export default function BuyerPerksSection() {
                 </div>
 
                 <div className="flex-1">
-                  <h3 className="text-[17px] font-semibold text-[#0b2f20]">
+                  <h3 className="text-[17px] font-semibold text-dy-forest">
                     {perk.title}
                   </h3>
                   <p className="mt-2 max-w-md text-[13px] text-slate-600">

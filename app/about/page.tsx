@@ -51,17 +51,17 @@ export default function AboutPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#f7faf8]">
+    <main className="min-h-screen bg-dy-pale">
       {/* progress */}
       <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-transparent">
         <div
-          className="h-full bg-gradient-to-r from-[#2f8a22] via-[#22c55e] to-[#ff9412] transition-[width] duration-150"
+          className="h-full bg-gradient-to-r from-dy-green-strong via-[#3A8E31] to-dy-orange transition-[width] duration-150"
           style={{ width: `${progress}%` }}
         />
       </div>
 
       {/* HERO */}
-      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
         <div className="absolute inset-0 pointer-events-none opacity-20">
           <div
             className="absolute inset-0"
@@ -111,7 +111,7 @@ export default function AboutPage() {
         </div>
 
         <svg
-          className="absolute bottom-0 left-0 right-0 w-full text-[#f7faf8]"
+          className="absolute bottom-0 left-0 right-0 w-full text-dy-pale"
           viewBox="0 0 1440 60"
           fill="currentColor"
           preserveAspectRatio="none"
@@ -126,7 +126,7 @@ export default function AboutPage() {
           <Eyebrow accent="green" icon={<Icon.Quote className="h-4 w-4" />}>
             How DropYard started
           </Eyebrow>
-          <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-[#0b2f20] sm:text-[35px]">
+          <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-dy-forest sm:text-[35px]">
             A familiar Saturday-morning problem.
           </h2>
 
@@ -153,7 +153,7 @@ export default function AboutPage() {
                 mass listings, or the awkwardness of handing your phone number to
                 a stranger on the internet.
               </p>
-              <p className="text-[19px] font-bold text-[#0f6a44]">So we built one.</p>
+              <p className="text-[19px] font-bold text-dy-mid">So we built one.</p>
               <p>
                 DropYard is the result: a hyperlocal reuse community designed
                 around the way Saturday-morning yard sales actually work —
@@ -186,7 +186,7 @@ export default function AboutPage() {
       </section>
 
       {/* ===== WHAT WE BELIEVE ===== */}
-      <section className="relative px-4 py-10 sm:px-6 sm:py-12 lg:px-8 bg-gradient-to-b from-white to-[#f3fbf4] overflow-hidden">
+      <section className="relative px-4 py-10 sm:px-6 sm:py-12 lg:px-8 bg-gradient-to-b from-white to-dy-pale overflow-hidden">
         <div className="absolute top-1/2 -left-32 h-96 w-96 rounded-full bg-emerald-200/30 blur-3xl pointer-events-none -translate-y-1/2" />
         <div className="absolute top-1/4 -right-32 h-96 w-96 rounded-full bg-amber-200/30 blur-3xl pointer-events-none" />
 
@@ -195,7 +195,7 @@ export default function AboutPage() {
             <Eyebrow accent="amber" icon={<Icon.Heart className="h-4 w-4" />}>
               What we believe
             </Eyebrow>
-            <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-[#0b2f20] sm:text-[35px]">
+            <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-dy-forest sm:text-[35px]">
               Four principles, one yard sale at a time.
             </h2>
           </div>
@@ -236,7 +236,7 @@ export default function AboutPage() {
       {/* ===== BUILT IN BARRHAVEN ===== */}
       <section className="px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
         <div className="mx-auto max-w-5xl">
-          <div className="relative overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] px-7 py-12 sm:p-14 text-white shadow-xl">
+          <div className="relative overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong px-7 py-12 sm:p-14 text-white shadow-xl">
             <div className="absolute inset-0 pointer-events-none opacity-15">
               <div
                 className="absolute inset-0"
@@ -279,7 +279,7 @@ export default function AboutPage() {
                 <div className="relative flex h-48 w-48 items-center justify-center rounded-full bg-white/10 backdrop-blur ring-2 ring-white/20">
                   <div className="absolute inset-0 rounded-full border-2 border-amber-300/40 animate-ping opacity-50" />
                   <Icon.Pin className="h-20 w-20 text-amber-200" />
-                  <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-amber-300 px-4 py-1 text-[11px] font-black uppercase tracking-wider text-[#0b2f20] shadow-lg">
+                  <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-amber-300 px-4 py-1 text-[11px] font-black uppercase tracking-wider text-dy-forest shadow-lg">
                     Barrhaven
                   </span>
                 </div>
@@ -296,7 +296,7 @@ export default function AboutPage() {
             <Eyebrow accent="violet" icon={<Icon.Heart className="h-4 w-4" />}>
               The founders
             </Eyebrow>
-            <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-[#0b2f20] sm:text-[35px]">
+            <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-dy-forest sm:text-[35px]">
               Two neighbours. One garage too full.
             </h2>
             <p className="mx-auto mt-5 max-w-2xl text-[15px] text-slate-600 sm:text-[17px]">
@@ -331,7 +331,7 @@ export default function AboutPage() {
       </section>
 
       {/* ===== WHAT'S NEXT ===== */}
-      <section className="relative px-4 py-10 sm:px-6 sm:py-12 lg:px-8 bg-gradient-to-b from-[#f3fbf4] to-white overflow-hidden">
+      <section className="relative px-4 py-10 sm:px-6 sm:py-12 lg:px-8 bg-gradient-to-b from-dy-pale to-white overflow-hidden">
         <div className="absolute -top-20 right-1/4 h-80 w-80 rounded-full bg-amber-200/30 blur-3xl pointer-events-none" />
 
         <div className="relative mx-auto max-w-5xl">
@@ -339,7 +339,7 @@ export default function AboutPage() {
             <Eyebrow accent="amber" icon={<Icon.Spark className="h-4 w-4" />}>
               What&apos;s next
             </Eyebrow>
-            <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-[#0b2f20] sm:text-[35px]">
+            <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-dy-forest sm:text-[35px]">
               A roadmap that&apos;s small and specific.
             </h2>
           </div>
@@ -387,7 +387,7 @@ export default function AboutPage() {
       {/* ===== SAY HI ===== */}
       <section className="px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
         <div className="mx-auto max-w-3xl">
-          <div className="relative overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] p-6 sm:p-10 text-center text-white shadow-2xl">
+          <div className="relative overflow-hidden rounded-[2.5rem] bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong p-6 sm:p-10 text-center text-white shadow-2xl">
             <div className="absolute -top-16 -right-16 h-48 w-48 rounded-full bg-amber-300/20 blur-3xl" />
             <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-emerald-300/20 blur-3xl" />
 
@@ -406,7 +406,7 @@ export default function AboutPage() {
               </p>
               <a
                 href="mailto:info@dropyard.app"
-                className="mt-7 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3.5 text-[13px] font-bold text-[#0b2f20] transition hover:bg-amber-100 hover:shadow-lg hover:-translate-y-0.5"
+                className="mt-7 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3.5 text-[13px] font-bold text-dy-forest transition hover:bg-amber-100 hover:shadow-lg hover:-translate-y-0.5"
               >
                 <Icon.Mail className="h-4 w-4" />
                 info@dropyard.app
@@ -482,7 +482,7 @@ function PullQuote({
   return (
     <div className={`relative rounded-2xl border-l-4 ${c.border.replace("border-", "border-l-")} ${c.bg} p-5 shadow-sm`}>
       <Icon.Quote className={`absolute top-3 right-3 h-6 w-6 opacity-30 ${c.text}`} />
-      <p className="text-[15px] font-bold text-[#0b2f20] leading-snug">{quote}</p>
+      <p className="text-[15px] font-bold text-dy-forest leading-snug">{quote}</p>
       <p className={`mt-2 text-[11px] font-black uppercase tracking-wider ${c.text}`}>
         {source}
       </p>
@@ -512,7 +512,7 @@ function BeliefCard({
       <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${c.bg} ${c.text} ring-4 ${c.ring} transition-transform group-hover:scale-110`}>
         {icon}
       </div>
-      <h3 className="mt-5 text-[19px] font-bold text-[#0b2f20]">{title}</h3>
+      <h3 className="mt-5 text-[19px] font-bold text-dy-forest">{title}</h3>
       <p className="mt-3 text-[13px] leading-relaxed text-slate-600">{desc}</p>
     </div>
   );
@@ -539,11 +539,11 @@ function FounderCard({
       <div className={`absolute -top-10 -right-10 h-32 w-32 rounded-full ${c.bg} blur-2xl opacity-60 transition group-hover:scale-150`} />
 
       <div className="relative flex items-center gap-4">
-        <div className={`flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${accent === "green" ? "from-emerald-500 to-emerald-700" : "from-amber-400 to-amber-600"} text-[19px] font-black text-white shadow-md ring-4 ${c.ring}`}>
+        <div className={`flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br ${accent === "green" ? "from-emerald-500 to-emerald-700" : "from-amber-400 to-amber-600"} text-[19px] font-black text-dy-forest shadow-md ring-4 ${c.ring}`}>
           {initials}
         </div>
         <div>
-          <h3 className="text-[19px] font-bold text-[#0b2f20]">{name}</h3>
+          <h3 className="text-[19px] font-bold text-dy-forest">{name}</h3>
           <p className={`text-[11px] font-black uppercase tracking-wider ${c.text}`}>
             {role}
           </p>
@@ -593,7 +593,7 @@ function RoadmapItem({
             {n}
           </span>
           <span className="text-slate-300">·</span>
-          <h3 className="text-[17px] font-bold text-[#0b2f20]">{title}</h3>
+          <h3 className="text-[17px] font-bold text-dy-forest">{title}</h3>
           <span className={`ml-auto rounded-full ${c.bg} px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${c.text} ring-1 ${c.ring}`}>
             {tag}
           </span>
