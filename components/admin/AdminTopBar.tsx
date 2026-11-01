@@ -89,7 +89,7 @@ export function AdminTopBar({
           title="Open inbox"
         >
           <Bell size={15} />
-          <span className="absolute top-2.5 right-2.5 lg:top-1.5 lg:right-1.5 w-2 h-2 rounded-full bg-[#ff9412] ring-2 ring-white" />
+          <span className="absolute top-2.5 right-2.5 lg:top-1.5 lg:right-1.5 w-2 h-2 rounded-full bg-dy-orange ring-2 ring-white" />
         </button>
 
         <div ref={menuRef} className="relative">

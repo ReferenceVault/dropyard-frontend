@@ -66,27 +66,27 @@ function YardSaleCartIcon({ className = "" }) {
       <g>
         <g>
           <animateTransform attributeName="transform" type="rotate" from="0 20 32" to="360 20 32" dur="0.8s" repeatCount="indefinite" />
-          <circle cx="20" cy="32" r="5" fill="#2f8a22" />
+          <circle cx="20" cy="32" r="5" fill="#33802B" />
           <path d="M20 27v10M15 32h10" stroke="#facc15" strokeWidth="1.5" strokeLinecap="round" />
         </g>
 
         <g>
           <animateTransform attributeName="transform" type="rotate" from="0 46 32" to="360 46 32" dur="0.8s" repeatCount="indefinite" />
-          <circle cx="46" cy="32" r="5" fill="#2f8a22" />
+          <circle cx="46" cy="32" r="5" fill="#33802B" />
           <path d="M46 27v10M41 32h10" stroke="#facc15" strokeWidth="1.5" strokeLinecap="round" />
         </g>
       </g>
 
       <g>
         <animateTransform attributeName="transform" type="rotate" values="0 32 20; -4 32 20; 0 32 20; 3 32 20; 0 32 20" dur="1.1s" repeatCount="indefinite" />
-        <rect x="14" y="18" width="36" height="10" rx="3" fill="#2f8a22" />
-        <path d="M14 18L10 10" stroke="#2f8a22" strokeWidth="3" strokeLinecap="round" />
+        <rect x="14" y="18" width="36" height="10" rx="3" fill="#33802B" />
+        <path d="M14 18L10 10" stroke="#33802B" strokeWidth="3" strokeLinecap="round" />
         <rect x="18" y="10" width="10" height="8" rx="2" fill="#facc15" />
         <rect x="30" y="8" width="10" height="10" rx="2" fill="#facc15" opacity="0.95" />
         <rect x="42" y="12" width="8" height="6" rx="1.5" fill="#facc15" opacity="0.9" />
       </g>
 
-      <path d="M2 14h8M0 22h10M4 30h7" stroke="#2f8a22" strokeWidth="2" strokeLinecap="round" opacity="0.35" />
+      <path d="M2 14h8M0 22h10M4 30h7" stroke="#33802B" strokeWidth="2" strokeLinecap="round" opacity="0.35" />
     </svg>
   );
 }
@@ -120,8 +120,8 @@ const steps = [
 
 function Accent(accent) {
   const map = {
-    orange: "text-[#ff9412] bg-[#ff9412]/10",
-    green: "text-[#2f8a22] bg-[#2f8a22]/10",
+    orange: "text-dy-orange bg-dy-orange/10",
+    green: "text-dy-green-strong bg-dy-green-strong/10",
     purple: "text-violet-600 bg-violet-100",
     teal: "text-teal-600 bg-teal-100",
   };
@@ -131,15 +131,15 @@ function Accent(accent) {
 function ActiveAccent(accent) {
   const map = {
     orange: {
-      border: "border-[#ff9412]",
-      badge: "bg-[#ff9412] text-white",
-      auraBorder: "border-[#ff9412]/40",
+      border: "border-dy-orange",
+      badge: "bg-dy-orange text-dy-forest",
+      auraBorder: "border-dy-orange/40",
       glow: "shadow-[0_0_42px_rgba(255,148,18,0.18)]",
     },
     green: {
-      border: "border-[#2f8a22]",
-      badge: "bg-[#2f8a22] text-white",
-      auraBorder: "border-[#2f8a22]/40",
+      border: "border-dy-green-strong",
+      badge: "bg-dy-green-strong text-white",
+      auraBorder: "border-dy-green-strong/40",
       glow: "shadow-[0_0_42px_rgba(47,138,34,0.18)]",
     },
     purple: {
@@ -166,17 +166,17 @@ export default function SellingStepsSection() {
   return (
     <section className="relative overflow-hidden bg-gradient-to-b from-white to-[#f8faf9] px-4 py-12 sm:px-6 lg:px-8">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/3 top-0 h-[300px] w-[300px] rounded-full bg-[#2f8a22]/5 blur-3xl" />
-        <div className="absolute bottom-0 right-1/3 h-[300px] w-[300px] rounded-full bg-[#ff9412]/5 blur-3xl" />
+        <div className="absolute left-1/3 top-0 h-[300px] w-[300px] rounded-full bg-dy-green-strong/5 blur-3xl" />
+        <div className="absolute bottom-0 right-1/3 h-[300px] w-[300px] rounded-full bg-dy-orange/5 blur-3xl" />
       </div>
 
       <div className="relative mx-auto max-w-6xl">
         <div className="text-center">
-          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#ff9412]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-dy-orange">
             Simple steps
           </p>
 
-          <h2 className="mt-2 text-[35px] font-semibold tracking-tighter leading-[1.05] text-[#0b2f20] sm:text-[47px]">
+          <h2 className="mt-2 text-[35px] font-semibold tracking-tighter leading-[1.05] text-dy-forest sm:text-[47px]">
             How selling works
           </h2>
 
@@ -188,7 +188,7 @@ export default function SellingStepsSection() {
         <div className="relative mt-10 hidden lg:block">
           <div className="relative h-[4px] overflow-visible rounded-full bg-slate-200">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-[#ff9412] via-[#2f8a22] to-[#14b8a6] transition-all duration-700 ease-out"
+              className="h-full rounded-full bg-gradient-to-r from-dy-orange via-dy-green-strong to-[#14b8a6] transition-all duration-700 ease-out"
               style={{ width: progressWidth }}
             />
 
@@ -198,7 +198,7 @@ export default function SellingStepsSection() {
             >
               <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-[0_12px_30px_rgba(15,92,59,0.18)] ring-4 ring-white">
                 <YardSaleCartIcon className="h-8 w-12 animate-[bounce_0.8s_ease-in-out_infinite]" />
-                <span className="absolute -bottom-1 h-2 w-8 rounded-full bg-[#0b2f20]/10 blur-sm" />
+                <span className="absolute -bottom-1 h-2 w-8 rounded-full bg-dy-forest/10 blur-sm" />
               </div>
             </div>
           </div>
@@ -216,7 +216,7 @@ export default function SellingStepsSection() {
                 onMouseEnter={() => setActive(index)}
                 onFocus={() => setActive(index)}
                 tabIndex={0}
-                className={`group relative cursor-pointer rounded-2xl border bg-white p-6 transition duration-500 outline-none focus-visible:ring-4 focus-visible:ring-[#2f8a22]/15 ${
+                className={`group relative cursor-pointer rounded-2xl border bg-white p-6 transition duration-500 outline-none focus-visible:ring-4 focus-visible:ring-dy-green-strong/15 ${
                   isActive
                     ? `${activeAccent.border} shadow-xl scale-[1.04]`
                     : "border-slate-200 shadow-sm hover:-translate-y-2 hover:shadow-lg"
@@ -238,7 +238,7 @@ export default function SellingStepsSection() {
                   <Icon className="h-5 w-5" />
                 </div>
 
-                <h3 className="mt-6 text-[17px] font-semibold text-[#0b2f20]">{step.title}</h3>
+                <h3 className="mt-6 text-[17px] font-semibold text-dy-forest">{step.title}</h3>
 
                 <p className="mt-2 text-[13px] leading-relaxed text-slate-600">{step.description}</p>
 
@@ -254,7 +254,7 @@ export default function SellingStepsSection() {
         </div>
 
         <div className="mt-8 flex items-center gap-4 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#22c55e] text-[17px] font-bold text-white shadow">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#3A8E31] text-[17px] font-bold text-white shadow">
             ✓
           </div>
           <p className="text-[13px] text-slate-700">

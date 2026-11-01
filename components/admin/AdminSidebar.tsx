@@ -94,7 +94,7 @@ export function AdminSidebar({ collapsed, mobileOpen, onCloseMobile }: Props) {
                         title={collapsed ? item.label : undefined}
                       >
                         {active && (
-                          <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r bg-[#ff9412] shadow-[0_0_10px_rgba(255,148,18,0.4)]" />
+                          <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r bg-dy-orange shadow-[0_0_10px_rgba(255,148,18,0.4)]" />
                         )}
 
                         {/* Icon tile */}

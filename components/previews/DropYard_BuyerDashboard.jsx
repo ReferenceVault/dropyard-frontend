@@ -12,6 +12,7 @@ import { useDropCycle } from "@/context/DropCycleContext";
 import { formatPickupDateList, formatPickupWeekday } from "@/lib/pickupDates";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { ChatEmojiTray } from "@/components/ChatEmojiTray";
+import { ModalA11y } from "@/components/ModalA11y";
 import { useAuth } from "@/context/AuthContext";
 import {
   dropOpenHour, dropOpenHourCompact, dropOpenHourBadge,
@@ -134,6 +135,7 @@ function ReadTicks({ sentAt, otherLastReadAt }) {
   const seen = Number.isFinite(sent) && read >= sent;
   return (
     <span
+      role="img"
       title={seen ? "Seen" : "Sent"}
       aria-label={seen ? "Seen" : "Sent"}
       style={{ display: "inline-flex", alignItems: "center", marginLeft: 4, verticalAlign: "middle" }}
@@ -385,7 +387,7 @@ function adaptBuyerItem(api) {
 }
 
 /* ============================================================
-   DESIGN SYSTEM — warm community, Nunito, brand-aligned
+   DESIGN SYSTEM — brand palette, site font
    Brand: green #308424, amber #F09000 (from DropYard logo)
    ============================================================ */
 const C = {
@@ -396,18 +398,18 @@ const C = {
   // to. Warm rather than grey to sit with the amber/sand side of the palette,
   // and lighter than C.sand so sand-filled surfaces (inputs, empty states)
   // still read as a distinct layer on top of it.
-  page:      "#FAF7F2",
-  sand:      "#FFF9F0",
-  fawn:      "#EDE8E0",
-  smoke:     "#D6CFC4",
-  ash:       "#9A948B",
-  mink:      "#5F5B54",
-  ink:       "#1F1D19",
-  green:     "#308424",
-  greenDeep: "#1F5A18",
-  greenMist: "#D8EDD2",
-  amber:     "#F08A00",
-  amberDeep: "#C06800",
+  page:      "#F3F8F3",
+  sand:      "#FBFDFB",
+  fawn:      "#E3EAE2",
+  smoke:     "#D4DDD3",
+  ash:       "#60745D",
+  mink:      "#5F755C",
+  ink:       "#0F360B",
+  green:     "#33802B",
+  greenDeep: "#2C6126",
+  greenMist: "#E2EFE0",
+  amber:     "#F99605",
+  amberDeep: "#A35C00",
   amberSoft: "#FFE4C4",
   amberMist: "#FFF7ED",
   claret:    "#CC3B2A",
@@ -423,8 +425,8 @@ const C = {
 };
 
 const F = {
-  head: '"Nunito", -apple-system, BlinkMacSystemFont, sans-serif',
-  body: '"Nunito", -apple-system, BlinkMacSystemFont, sans-serif',
+  head: 'var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, sans-serif',
+  body: 'var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, sans-serif',
 };
 
 /* ============================================================
@@ -453,7 +455,7 @@ function priceColor(p, normal) {
 /* ============================================================
    ITEM DETAIL TOKENS
    A quieter, more product-first treatment for the item page:
-   a neutral grotesque instead of the rounded Nunito, 1px
+   a neutral grotesque, 1px
    borders, radii capped at 16, and shadows light enough to
    read as separation rather than decoration.
 
@@ -467,7 +469,7 @@ function priceColor(p, normal) {
    #27852F / #F39200 where they differ.
    ============================================================ */
 const D = {
-  font: 'var(--font-geist-sans), "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  font: 'var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   border: "1px solid " + C.fawn,
   // One restrained elevation, used sparingly — the purchase panel and
   // nothing else. Everything else separates with a border alone.
@@ -542,7 +544,7 @@ const sneakPeekItems = [
 ];
 
 function avatarBg(name) {
-  const seeds = [C.green, C.amber, C.sky, C.claret, C.purple, C.teal];
+  const seeds = [C.green, C.amberDeep, C.sky, C.claret, C.purple, C.teal];
   let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) & 0xffff;
   return seeds[h % seeds.length];
 }
@@ -607,7 +609,7 @@ function ItemImage({ src, emojiSize, imgStyle, spanStyle }) {
 }
 
 function GlobalStyle() {
-  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #FAF7F2; color: #1F1D19; font-family: 'Nunito', sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #D8EDD2; color: #1F5A18; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; } .cta-primary { transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1); } .cta-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(48, 132, 36, 0.3); } .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #9A948B !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } @keyframes spin { to { transform: rotate(360deg); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border-radius: 22px; overflow: hidden; border: 1px solid #E7E3DD; box-shadow: 0 1px 2px rgba(31, 29, 25, 0.03); } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 767px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
+  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #F3F8F3; color: #0F360B; font-family: var(--font-instrument-sans), sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #E2EFE0; color: #2C6126; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; }   .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #60745D !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } @keyframes spin { to { transform: rotate(360deg); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border-radius: 22px; overflow: hidden; border: 1px solid #E7E3DD; box-shadow: 0 1px 2px rgba(31, 29, 25, 0.03); } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 767px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
   // 100vw counts the vertical scrollbar, so the bleed overhangs the viewport
   // by its width. The clip goes on body, not on the dashboard wrapper: an
   // overflow value there would make that div a scroll container and break the
@@ -615,7 +617,6 @@ function GlobalStyle() {
   // propagates to the viewport instead, leaving sticky positioning alone.
   return (
     <>
-      <link href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,500;1,600&display=swap" rel="stylesheet"/>
       <style>{css}</style>
     </>
   );
@@ -669,7 +670,7 @@ function UserMenu({ user, onSignout, onOpenSettings }) {
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 49 }}/>
-          <div className="fade-in" style={{
+          <div className="dy-rise" style={{
             position: "absolute", right: 0, top: "calc(100% + 10px)", zIndex: 50,
             minWidth: 240, borderRadius: 14, background: C.paper,
             border: "1px solid " + C.fawn, boxShadow: "0 12px 32px rgba(31, 29, 25, 0.12)",
@@ -1761,6 +1762,9 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
   // Segment style helpers — state-aware
   const segStyleBase = {
     flex: 1,
+    // Lets a segment shrink below its text, which then truncates, rather than
+    // pushing the capsule past the page edge at tablet widths.
+    minWidth: 0,
     // Tighter than it was: five segments share the capsule now, and the old
     // 28px gutters pushed the Sort value under the search button.
     padding: "14px 18px",
@@ -1941,6 +1945,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
             it disappeared. zIndex: 3 puts the circle reliably above any
             segment state. */}
         <button
+          aria-label="Search"
           onClick={() => setActiveSegment(null)}
           style={{
             position: "absolute",
@@ -2254,7 +2259,7 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
     : (item.sellerHood ? "In " + item.sellerHood : (item.dist || null));
 
   return (
-    <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in" style={{ background: C.paper, borderRadius: 22, overflow: "hidden", border: "1px solid " + CARD.border, cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-2px)" : "translateY(0)", boxShadow: cardShadow, animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
+    <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in dy-card-lift" style={{ background: C.paper, borderRadius: 22, overflow: "hidden", border: "1px solid " + CARD.border, cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-2px)" : "translateY(0)", boxShadow: cardShadow, animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
       {/* Photo on plain white, contained rather than cropped. The tinted
           gradient that used to sit back here coloured every product shot and
           fought the white card; `contain` keeps the seller's framing intact
@@ -2768,7 +2773,7 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
           {items.map((item, i) => {
             const isSaved = savedPreview.has(item.id);
             return (
-              <article key={item.id} onClick={() => onPreviewItem(item)} className="fade-in" style={{
+              <article key={item.id} onClick={() => onPreviewItem(item)} className="fade-in dy-card-lift" style={{
                 borderRadius: 18, background: C.paper,
                 border: "1px solid " + (isSaved ? C.amber : C.fawn + "80"),
                 boxShadow: isSaved ? "0 2px 0 " + C.amberMist : "0 1px 0 " + C.fawn + "60",
@@ -2855,7 +2860,7 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
         {source.map((item, i) => {
           const isSaved = savedPreview.has(item.id);
           return (
-            <article key={item.id} onClick={() => onPreviewItem && onPreviewItem(item)} className="fade-in" style={{
+            <article key={item.id} onClick={() => onPreviewItem && onPreviewItem(item)} className="fade-in dy-card-lift" style={{
               flexShrink: 0,
               width: "min(220px, calc(85vw - 24px))",
               scrollSnapAlign: "start",
@@ -3140,7 +3145,7 @@ function EmptySellerIllustration() {
       <line x1="28" y1="98" x2="104" y2="98" stroke={C.mink} strokeWidth="1.2" opacity="0.6"/>
       <g transform="rotate(-4 66 36)">
         <rect x="38" y="22" width="56" height="28" rx="3" fill={C.paper} stroke={C.amber} strokeWidth="1.6"/>
-        <text x="66" y="40" fontFamily="Nunito, sans-serif" fontSize="9" fontWeight="900" fill={C.amberDeep} textAnchor="middle" letterSpacing="0.5">BACK SOON</text>
+        <text x="66" y="40" fontFamily="var(--font-instrument-sans), sans-serif" fontSize="9" fontWeight="900" fill={C.amberDeep} textAnchor="middle" letterSpacing="0.5">BACK SOON</text>
         <rect x="36" y="20" width="10" height="4" fill={C.amberSoft} opacity="0.7" transform="rotate(-15 41 22)"/>
         <rect x="86" y="20" width="10" height="4" fill={C.amberSoft} opacity="0.7" transform="rotate(15 91 22)"/>
       </g>
@@ -3308,6 +3313,7 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: isMobile ? 12 : 24, backdropFilter: "blur(4px)" }}>
+      <ModalA11y label="Claim this item" onClose={onClose}/>
       <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: C.paper, borderRadius: 24, width: "100%", maxWidth: 520, maxHeight: "92vh", overflow: "auto", boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
         {/* Header */}
         <div style={{ padding: isMobile ? "20px 18px 0 18px" : "24px 28px 0 28px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
@@ -3487,7 +3493,7 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
 
             {/* Inline error from the API (only shown when sending an offer fails). */}
             {errorMsg && (
-              <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 10, background: C.claretMist, border: "1px solid " + C.claret + "33", display: "flex", alignItems: "center", gap: 8 }}>
+              <div role="alert" style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 10, background: C.claretMist, border: "1px solid " + C.claret + "33", display: "flex", alignItems: "center", gap: 8 }}>
                 <AlertCircle size={14} style={{ color: C.claret, flexShrink: 0 }}/>
                 <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.claret, flex: 1 }}>{errorMsg}</p>
               </div>
@@ -3618,6 +3624,7 @@ function AskModal({ item, onClose, onSend }) {
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: isMobile ? 12 : 24, backdropFilter: "blur(4px)" }}>
+      <ModalA11y label="Ask a question" onClose={onClose}/>
       <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: C.paper, borderRadius: 24, width: "100%", maxWidth: 480, maxHeight: "92vh", overflow: "auto", padding: isMobile ? 18 : 26, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <h2 style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em" }}>
@@ -4568,7 +4575,7 @@ function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggle
    CLAIMS PAGE
    ============================================================ */
 function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpenThread = null, highlightId = null, onClearHighlight = null, accessToken = null }) {
-  const { isMobile: __isMobile } = useViewport();
+  const { isMobile } = useViewport();
   // Clear the highlight after a brief flash so the row settles.
   useEffect(() => {
     if (!highlightId || !onClearHighlight) return;
@@ -4786,7 +4793,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
 
       {/* Success toast */}
       {toast && (
-        <div className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 14, background: C.greenMist, border: "1px solid " + C.green + "30", marginBottom: 18 }}>
+        <div role="status" className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 14, background: C.greenMist, border: "1px solid " + C.green + "30", marginBottom: 18 }}>
           <CheckCircle size={17} style={{ color: C.greenDeep, flexShrink: 0 }}/>
           <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.greenDeep, flex: 1 }}>{toast}</p>
           <button onClick={() => setToast(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: C.mink, display: "flex" }}><X size={14}/></button>
@@ -4795,11 +4802,11 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
 
       {/* Stats grid — four across, 2×2 on mobile. Same template as History's
           row so the two pages' stat strips line up instead of drifting. */}
-      <div style={{ display: "grid", gridTemplateColumns: __isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: __isMobile ? 10 : 14, marginBottom: __isMobile ? 16 : 22 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14, marginBottom: isMobile ? 16 : 22 }}>
         {stats.map((s, i) => {
           const Ic = s.icon;
           return (
-            <div key={i} className="fade-in" style={{ padding: "20px 22px", borderRadius: 18, background: s.urgent ? s.bg : C.paper, border: "1px solid " + (s.urgent ? s.color + "40" : C.fawn), animationDelay: (i * 40) + "ms", display: "flex", alignItems: "center", gap: 16 }}>
+            <div key={i} className="fade-in" style={{ padding: isMobile ? "14px 12px" : "20px 22px", minWidth: 0, borderRadius: 18, background: s.urgent ? s.bg : C.paper, border: "1px solid " + (s.urgent ? s.color + "40" : C.fawn), animationDelay: (i * 40) + "ms", display: "flex", alignItems: "center", gap: 16 }}>
               <div style={{ width: 52, height: 52, borderRadius: 16, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <Ic size={23} strokeWidth={2.1} style={{ color: s.color }}/>
               </div>
@@ -4846,12 +4853,12 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                   </div>
                 )}
 
-                <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-                  <div style={{ width: 104, height: 104, borderRadius: 18, background: "linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 12 : 20, flexWrap: isMobile ? "wrap" : "nowrap" }}>
+                  <div style={{ width: isMobile ? 72 : 104, height: isMobile ? 72 : 104, flexShrink: 0, borderRadius: 18, background: "linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
                     <ItemImage src={c.img || c.e} emojiSize={52}/>
                   </div>
 
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ flex: isMobile ? "1 1 calc(100% - 84px)" : 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6, flexWrap: "wrap" }}>
                       <h3 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em" }}>{c.t}</h3>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 13, fontWeight: 800, padding: "5px 13px", borderRadius: 999, background: stage.bg, color: stage.color, letterSpacing: "0.02em" }}>
@@ -4879,7 +4886,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                   </div>
 
                   {/* Actions — right side */}
-                  <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <div style={{ display: "flex", gap: 8, flexShrink: isMobile ? 1 : 0, flexWrap: "wrap", justifyContent: isMobile ? "flex-start" : "flex-end", width: isMobile ? "100%" : undefined }}>
                     {(c.status === "pickup-today" || c.status === "pickup-scheduled") && !isRating && (
                       <>
                         {/* BUG-055 — buyer's button is "Confirm receipt", not
@@ -4891,16 +4898,16 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                             <CheckCircle size={13}/> Receipt confirmed — waiting for seller
                           </span>
                         ) : (
-                          <button onClick={() => confirmReceipt(c)} className="cta-primary" style={{ padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
+                          <button onClick={() => confirmReceipt(c)} className="cta-primary" style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
                             <CheckCircle size={13}/> Confirm receipt
                           </button>
                         )}
-                        <button onClick={() => { if (onOpenThread) onOpenThread(c.t); else if (onGoToMessages) onGoToMessages(); }} title="Open the message thread with the seller" style={{ padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                        <button onClick={() => { if (onOpenThread) onOpenThread(c.t); else if (onGoToMessages) onGoToMessages(); }} title="Open the message thread with the seller" style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                           <MessageCircle size={13}/> Message
                         </button>
                         {c.status === "pickup-scheduled" && (
                           <>
-                            <button onClick={() => setCancelTarget(c)} style={{ padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+                            <button onClick={() => setCancelTarget(c)} style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
                           </>
                         )}
                       </>
@@ -4912,14 +4919,14 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                             <CheckCircle size={13}/> Receipt confirmed — waiting for seller
                           </span>
                         ) : (
-                          <button onClick={() => confirmReceipt(c)} className="cta-primary" style={{ padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
+                          <button onClick={() => confirmReceipt(c)} className="cta-primary" style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
                             <CheckCircle size={13}/> Confirm receipt
                           </button>
                         )}
-                        <button onClick={() => requestReschedule(c)} style={{ padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                        <button onClick={() => requestReschedule(c)} style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                           <RefreshCw size={13}/> Request reschedule
                         </button>
-                        <button onClick={() => releaseClaim(c)} style={{ padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        <button onClick={() => releaseClaim(c)} style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                           Release
                         </button>
                       </>
@@ -4962,18 +4969,18 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                             autoFocus
                             style={{ width: 80, padding: "7px 10px", borderRadius: 8, border: "1.5px solid " + C.fawn, fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.ink, outline: "none", background: C.paper }}
                           />
-                          <button onClick={() => submitCounterFromClaim(c)} className="cta-primary" style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>Send</button>
+                          <button onClick={() => submitCounterFromClaim(c)} className="cta-primary" style={{ minHeight: 44, padding: "8px 12px", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>Send</button>
                           <button onClick={() => { setCounterClaimId(null); setCounterDraftAmt(""); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
                         </>
                       ) : (
                         <>
-                          <button onClick={() => acceptCounter(c)} className="cta-primary" style={{ padding: "9px 14px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 0 " + C.greenDeep, display: "flex", alignItems: "center", gap: 5 }}>
+                          <button onClick={() => acceptCounter(c)} className="cta-primary" style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 0 " + C.greenDeep, display: "flex", alignItems: "center", gap: 5 }}>
                             <CheckCircle size={12}/> Accept ${c.price}
                           </button>
-                          <button onClick={() => { setCounterClaimId(c.id); setCounterDraftAmt(String(c.price || 1)); }} style={{ padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.green + "55", background: C.greenMist, color: C.greenDeep, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                          <button onClick={() => { setCounterClaimId(c.id); setCounterDraftAmt(String(c.price || 1)); }} style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.green + "55", background: C.greenMist, color: C.greenDeep, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                             <RefreshCw size={12}/> Counter
                           </button>
-                          <button onClick={() => declineCounter(c)} style={{ padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          <button onClick={() => declineCounter(c)} style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                             Decline
                           </button>
                         </>
@@ -5021,6 +5028,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
       {/* Cancel confirmation modal */}
       {cancelTarget && (
         <div onClick={() => setCancelTarget(null)} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 24, backdropFilter: "blur(4px)" }}>
+          <ModalA11y label="Cancel this claim" onClose={() => setCancelTarget(null)}/>
           <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: C.paper, borderRadius: 24, width: "100%", maxWidth: 420, padding: 28, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
             <div style={{ width: 52, height: 52, borderRadius: 16, background: C.claretMist, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
               <X size={26} style={{ color: C.claret }}/>
@@ -5865,12 +5873,13 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
     const meta = statusMeta[threadStatus(c)] || statusMeta.completed;
     const Ic = meta.icon;
     return (
-      <button key={c.id} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative", opacity: muted && !isActive ? 0.62 : 1 }}>
+      <button key={c.id} aria-current={isActive ? "true" : undefined} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative", opacity: muted && !isActive ? 0.62 : 1 }}>
         {/* Active accent bar — desktop only, left edge */}
         {isActive && !isMobile && (
           <span style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 3, borderRadius: 999, background: C.green }}/>
         )}
-        {c.unread && <span style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", width: 6, height: 6, borderRadius: "50%", background: C.green }}/>}
+        {c.unread && <span className="sr-only">Unread. </span>}
+        {c.unread && <span aria-hidden style={{ position: "absolute", left: 6, top: "50%", transform: "translateY(-50%)", width: 6, height: 6, borderRadius: "50%", background: C.green }}/>}
         <div style={{ width: 48, height: 48, borderRadius: 12, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
           <ItemImage src={c.item.img} emojiSize={32}/>
         </div>
@@ -5977,11 +5986,11 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                 />
               </a>
               {m.text && (
-                <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.45 }}>{m.text}</p>
+                <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink, lineHeight: 1.45, overflowWrap: "anywhere" }}>{m.text}</p>
               )}
             </div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: isYou ? "flex-end" : "flex-start", marginTop: 4 }}>
-              <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash }}>{m.time}</span>
+              <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash }}>{m.time}</span>
               {isYou && <ReadTicks sentAt={m.sentAt} otherLastReadAt={active?.otherLastReadAt}/>}
             </div>
           </div>
@@ -6009,7 +6018,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
               <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.05em" }}>SELLER</span>
             </div>
           )}
-          <div style={{ padding: "10px 14px", borderRadius: 14, background: bubbleBg, color: bubbleColor, border: borderStyle, fontFamily: F.body, fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>
+          <div style={{ padding: "10px 14px", borderRadius: 16, [isYou ? "borderBottomRightRadius" : "borderBottomLeftRadius"]: 4, background: bubbleBg, color: bubbleColor, border: borderStyle, fontFamily: F.body, fontSize: 14, fontWeight: 500, lineHeight: 1.5, overflowWrap: "anywhere" }}>
             {(m.type === "offer" || m.type === "counter" || m.type === "claim") && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid " + (isYou ? "rgba(255,255,255,0.25)" : C.fawn) }}>
                 {m.type === "offer" && <DollarSign size={12}/>}
@@ -6040,7 +6049,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
 
       {/* Success toast — celebration banner when an offer/counter is accepted. */}
       {successMsg && (
-        <div className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "44", marginBottom: 16, boxShadow: "0 2px 0 " + C.green + "20" }}>
+        <div role="status" className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "44", marginBottom: 16, boxShadow: "0 2px 0 " + C.green + "20" }}>
           <CheckCircle size={18} style={{ color: C.greenDeep }}/>
           <p style={{ fontSize: 13, fontWeight: 700, color: C.greenDeep, fontFamily: F.body, flex: 1 }}>{successMsg}</p>
           <button onClick={() => setSuccessMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.greenDeep }}/></button>
@@ -6049,7 +6058,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
 
       {/* Error toast */}
       {errorMsg && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
           <AlertCircle size={18} style={{ color: C.claret }} />
           <p style={{ fontSize: 13, fontWeight: 600, color: C.claret, fontFamily: F.body, flex: 1 }}>{errorMsg}</p>
           <button onClick={() => setErrorMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
@@ -6244,11 +6253,13 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
               </button>
             )}
             {/* Thread header */}
-            <div style={{ padding: isMobile ? "14px 16px" : "18px 22px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ padding: isMobile ? "14px 16px" : "18px 22px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, flexWrap: isMobile ? "wrap" : "nowrap" }}>
               <div style={{ width: isMobile ? 48 : 60, height: isMobile ? 48 : 60, borderRadius: 14, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid " + C.fawn, overflow: "hidden" }}>
                 <ItemImage src={active.item.img} emojiSize={34}/>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
+              {/* On a phone the title takes the row, so the status and Archive
+                  wrap beneath it instead of squeezing it into a thin column. */}
+              <div style={{ flex: isMobile ? "1 1 calc(100% - 58px)" : 1, minWidth: 0 }}>
                 <p style={{ fontFamily: F.head, fontSize: isMobile ? 16 : 19, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em" }}>{active.item.title}</p>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 3, flexWrap: "wrap" }}>
                   <span style={{ fontFamily: F.head, fontSize: isMobile ? 18 : 22, fontWeight: 900, color: priceColor(active.item.price, C.green), letterSpacing: "-0.02em" }}>{priceText(active.item.price)}</span>
@@ -6378,7 +6389,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
             })()}
 
             {/* Messages */}
-            <div style={{ flex: 1, padding: "18px 20px", overflowY: "auto", background: C.sand + "60" }}>
+            <div role="log" aria-live="polite" aria-label="Conversation" style={{ flex: 1, padding: "18px 20px", overflowY: "auto", overflowX: "hidden", background: C.sand + "60" }}>
               {usingBackend && activeLoading && (
                 <p style={{ fontSize: 12, color: C.ash, fontFamily: F.body, textAlign: "center", padding: "20px 0" }}>Loading thread…</p>
               )}
@@ -6512,7 +6523,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                       </div>
                     </div>
                   )}
-                  <div style={{ padding: "12px 16px", display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ padding: isMobile ? "10px 12px" : "12px 16px", display: "flex", gap: 8, alignItems: "center" }}>
                     {/* BUG-055 — only show "$ Offer" when there's no active
                         claim on this conversation. If a PROPOSED/ACCEPTED
                         claim already exists, the action banner above already
@@ -6522,9 +6533,11 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                         onClick={() => { setOfferComposerOpen(true); setOfferComposerAmt(active.item?.price ? String(Math.max(1, Math.round(active.item.price * 0.9))) : ""); }}
                         disabled={sending}
                         title="Make an offer"
-                        style={{ display: "flex", alignItems: "center", gap: 4, padding: "8px 12px", borderRadius: 999, border: "1.5px solid " + C.ai + "40", background: C.aiMist + "80", color: C.ai, fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: sending ? "not-allowed" : "pointer", opacity: sending ? 0.5 : 1, flexShrink: 0, whiteSpace: "nowrap" }}
+                        aria-label="Make an offer"
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, minWidth: 44, minHeight: 44, padding: isMobile ? 0 : "8px 12px", borderRadius: 999, border: "1.5px solid " + C.ai + "40", background: C.aiMist + "80", color: C.ai, fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: sending ? "not-allowed" : "pointer", opacity: sending ? 0.5 : 1, flexShrink: 0, whiteSpace: "nowrap" }}
                       >
-                        <DollarSign size={13} strokeWidth={2.4}/> Offer
+                        {/* Icon only on a phone, so the message field keeps its width. */}
+                        <DollarSign size={isMobile ? 17 : 13} strokeWidth={2.4}/> {!isMobile && "Offer"}
                       </button>
                     )}
                     {/* One pill holding attach, the field, emoji and send —
@@ -6550,7 +6563,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                         disabled={attachBusy || sending}
                         title="Attach a photo"
                         aria-label="Attach a photo"
-                        style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: "transparent", color: attachBusy ? C.smoke : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: (attachBusy || sending) ? "not-allowed" : "pointer", flexShrink: 0 }}
+                        style={{ width: 40, height: 40, flexShrink: 0, borderRadius: "50%", border: "none", background: "transparent", color: attachBusy ? C.smoke : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: (attachBusy || sending) ? "not-allowed" : "pointer", flexShrink: 0 }}
                       >
                         {attachBusy
                           ? <Loader2 size={18} style={{ animation: "spin 900ms linear infinite" }}/>
@@ -6560,9 +6573,11 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
                         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                        aria-label="Message"
+                        className="dy-field"
                         placeholder="Type a message..."
                         disabled={sending}
-                        style={{ flex: 1, minWidth: 0, padding: "8px 4px", border: "none", fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink, outline: "none", background: "transparent" }}
+                        style={{ flex: 1, minWidth: 0, minHeight: 40, padding: "8px", border: "none", borderRadius: 10, fontFamily: F.body, fontSize: isMobile ? 16 : 14, fontWeight: 500, color: C.ink, background: "transparent" }}
                       />
                       <button
                         type="button"
@@ -6570,13 +6585,13 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                         title="Insert an emoji"
                         aria-label="Insert an emoji"
                         aria-expanded={emojiOpen}
-                        style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: emojiOpen ? C.sand : "transparent", color: emojiOpen ? C.amberDeep : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
+                        style={{ width: 40, height: 40, flexShrink: 0, borderRadius: "50%", border: "none", background: emojiOpen ? C.sand : "transparent", color: emojiOpen ? C.amberDeep : C.mink, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}
                       >
                         <Smile size={19}/>
                       </button>
                       {/* A staged photo makes send available on its own — the
                           caption is optional, so an empty box isn't empty. */}
-                      <button onClick={handleSend} disabled={sending || attachBusy || (!draft.trim() && !pendingAttachment)} aria-label="Send message" style={{ width: 40, height: 40, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? 0.45 : 1 }}>
+                      <button onClick={handleSend} disabled={sending || attachBusy || (!draft.trim() && !pendingAttachment)} aria-label="Send message" style={{ width: 44, height: 44, flexShrink: 0, borderRadius: "50%", border: "none", background: C.green, color: "#fff", cursor: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, opacity: (sending || attachBusy || (!draft.trim() && !pendingAttachment)) ? 0.45 : 1 }}>
                         {sending || attachBusy
                           ? <Loader2 size={17} style={{ animation: "spin 900ms linear infinite" }}/>
                           : <Send size={17}/>}
@@ -8362,6 +8377,7 @@ export default function DropYardBuyerDashboard({
           root so it covers every entry point (UserMenu, item detail, etc.). */}
       {signoutOpen && (
         <div onClick={() => setSignoutOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(11,47,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
+          <ModalA11y label="Sign out" onClose={() => setSignoutOpen(false)}/>
           <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="signout-title" style={{ background: C.paper, borderRadius: 20, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 20px 60px rgba(11,47,32,0.25)" }}>
             <h3 id="signout-title" style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.ink, marginBottom: 6 }}>Sign out?</h3>
             <p style={{ fontFamily: F.body, fontSize: 13, color: C.mink, lineHeight: 1.5, marginBottom: 18 }}>You&rsquo;ll need to sign back in to see your claims, messages, and saved items.</p>

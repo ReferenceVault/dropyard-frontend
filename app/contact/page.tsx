@@ -150,9 +150,9 @@ export default function ContactPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[#f7faf8]">
+    <main className="min-h-screen bg-dy-pale">
       {/* HERO */}
-      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
         <div className="absolute inset-0 pointer-events-none opacity-20">
           <div
             className="absolute inset-0"
@@ -195,7 +195,7 @@ export default function ContactPage() {
         </div>
 
         <svg
-          className="absolute bottom-0 left-0 right-0 w-full text-[#f7faf8]"
+          className="absolute bottom-0 left-0 right-0 w-full text-dy-pale"
           viewBox="0 0 1440 60"
           fill="currentColor"
           preserveAspectRatio="none"
@@ -214,7 +214,7 @@ export default function ContactPage() {
                 <Icon.Mail className="h-5 w-5" />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-[#0b2f20]">Email us</h3>
+                <h3 className="font-bold text-dy-forest">Email us</h3>
                 <p className="text-[11px] text-slate-500">A real person reads every message</p>
               </div>
             </div>
@@ -246,7 +246,7 @@ export default function ContactPage() {
                 <Icon.Flag className="h-5 w-5" />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-[#0b2f20]">Report</h3>
+                <h3 className="font-bold text-dy-forest">Report</h3>
                 <p className="text-[11px] text-slate-500">Anonymous in-app reporting</p>
               </div>
             </div>
@@ -267,7 +267,7 @@ export default function ContactPage() {
                 <Icon.Phone className="h-5 w-5" />
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-bold text-[#0b2f20]">Emergency</h3>
+                <h3 className="font-bold text-dy-forest">Emergency</h3>
                 <p className="text-[11px] text-slate-500">Always call 9-1-1 first</p>
               </div>
             </div>
@@ -286,7 +286,7 @@ export default function ContactPage() {
               <Icon.Mail className="h-4 w-4" />
               Start a message
             </div>
-            <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-[#0b2f20] sm:text-[35px]">
+            <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-dy-forest sm:text-[35px]">
               Pick a topic, write a note.
             </h2>
             <p className="mx-auto mt-4 max-w-2xl text-[15px] text-slate-600 sm:text-[17px]">
@@ -298,7 +298,7 @@ export default function ContactPage() {
           <div className="mt-12 grid gap-8 lg:grid-cols-[1fr_460px]">
             {/* TOPIC GRID */}
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#2f8a22] mb-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-dy-green-strong mb-4">
                 What&apos;s this about?
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -325,7 +325,7 @@ export default function ContactPage() {
                         {t.icon}
                       </span>
                       <span className="flex-1 min-w-0">
-                        <span className="block text-[13px] font-bold text-[#0b2f20]">
+                        <span className="block text-[13px] font-bold text-dy-forest">
                           {t.label}
                         </span>
                         <span className="mt-0.5 block text-[11px] text-slate-500">
@@ -345,7 +345,7 @@ export default function ContactPage() {
 
             {/* FORM */}
             <div className="rounded-3xl bg-white p-7 shadow-[0_20px_60px_rgba(0,0,0,0.06)] border border-slate-100">
-              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-[#2f8a22]">
+              <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-dy-green-strong">
                 <Icon.Send className="h-4 w-4" />
                 Your message
               </div>
@@ -361,7 +361,7 @@ export default function ContactPage() {
                   <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-4 ring-emerald-200">
                     <Icon.Check className="h-6 w-6" />
                   </div>
-                  <p className="mt-3 text-[15px] font-bold text-[#0b2f20]">
+                  <p className="mt-3 text-[15px] font-bold text-dy-forest">
                     Message received.
                   </p>
                   <p className="mt-1.5 text-[13px] text-slate-600">
@@ -424,7 +424,7 @@ export default function ContactPage() {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-[#0f6a44] px-6 py-3.5 text-[13px] font-bold text-white transition hover:bg-[#0b5638] hover:shadow-lg hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:bg-[#0f6a44]"
+                    className="mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-dy-mid px-6 py-3.5 text-[13px] font-bold text-white transition hover:bg-dy-mid hover:shadow-lg hover:-translate-y-0.5 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:bg-dy-mid"
                   >
                     <Icon.Send className="h-4 w-4" />
                     {submitting ? "Sending..." : "Send message"}
@@ -441,7 +441,7 @@ export default function ContactPage() {
       </section>
 
       {/* INFO STRIP — response time, location, team */}
-      <section className="relative px-4 py-10 sm:px-6 sm:py-12 lg:px-8 bg-gradient-to-b from-white to-[#f3fbf4] overflow-hidden">
+      <section className="relative px-4 py-10 sm:px-6 sm:py-12 lg:px-8 bg-gradient-to-b from-white to-dy-pale overflow-hidden">
         <div className="absolute -top-20 -left-20 h-80 w-80 rounded-full bg-emerald-200/20 blur-3xl pointer-events-none" />
         <div className="absolute -bottom-20 -right-20 h-80 w-80 rounded-full bg-amber-200/20 blur-3xl pointer-events-none" />
 
@@ -452,7 +452,7 @@ export default function ContactPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 ring-4 ring-emerald-200">
                 <Icon.Clock className="h-5 w-5" />
               </div>
-              <h3 className="font-bold text-[#0b2f20]">Response times</h3>
+              <h3 className="font-bold text-dy-forest">Response times</h3>
             </div>
             <div className="mt-4 space-y-2.5 text-[13px]">
               <div className="flex items-center gap-2">
@@ -471,7 +471,7 @@ export default function ContactPage() {
           </div>
 
           {/* Where we are */}
-          <div className="relative overflow-hidden rounded-3xl p-7 bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] text-white shadow-lg">
+          <div className="relative overflow-hidden rounded-3xl p-7 bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong text-white shadow-lg">
             <div className="absolute -top-10 -right-10 h-40 w-40 rounded-full bg-amber-300/20 blur-2xl" />
             <div className="relative">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 backdrop-blur ring-1 ring-white/20">
@@ -497,13 +497,13 @@ export default function ContactPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-700 ring-4 ring-violet-200">
                 <Icon.Heart className="h-5 w-5" />
               </div>
-              <h3 className="font-bold text-[#0b2f20]">Two-person team</h3>
+              <h3 className="font-bold text-dy-forest">Two-person team</h3>
             </div>
             <div className="mt-4 flex items-center gap-3">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-[11px] font-black text-white ring-2 ring-emerald-200">
                 AA
               </span>
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-[11px] font-black text-white ring-2 ring-amber-200">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-[11px] font-black text-dy-forest ring-2 ring-amber-200">
                 NS
               </span>
               <p className="text-[13px] text-slate-600">
@@ -524,10 +524,10 @@ export default function ContactPage() {
       {/* SELF-SERVE LINKS */}
       <section className="px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
         <div className="mx-auto max-w-4xl text-center">
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#2f8a22]">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-dy-green-strong">
             Before you write
           </p>
-          <h3 className="mt-3 text-[19px] font-semibold tracking-tight text-[#0b2f20] sm:text-[23px]">
+          <h3 className="mt-3 text-[19px] font-semibold tracking-tight text-dy-forest sm:text-[23px]">
             A lot of common questions are already answered.
           </h3>
 
@@ -556,7 +556,7 @@ export default function ContactPage() {
         <div className="mx-auto max-w-3xl text-center">
           <div className="mx-auto h-px w-24 bg-gradient-to-r from-transparent via-emerald-300 to-transparent" />
           <p className="mt-6 text-[13px] text-slate-600">
-            <strong className="text-[#0b2f20]">DropYard Inc.</strong> · Barrhaven,
+            <strong className="text-dy-forest">DropYard Inc.</strong> · Barrhaven,
             Ottawa · Ontario, Canada
           </p>
           <p className="mt-2 text-[11px] text-slate-500">
@@ -572,7 +572,7 @@ export default function ContactPage() {
 
           <Link
             href="/"
-            className="mt-8 inline-flex items-center gap-2 text-[13px] font-semibold text-[#0f6a44] hover:text-[#0b5638]"
+            className="mt-8 inline-flex items-center gap-2 text-[13px] font-semibold text-dy-mid hover:text-dy-mid"
           >
             <span>&larr;</span> Back to DropYard
           </Link>
@@ -614,7 +614,7 @@ function QuickLink({
       className="group flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-left transition-all hover:border-emerald-300 hover:bg-emerald-50/40 hover:-translate-y-0.5"
     >
       <div>
-        <p className="text-[13px] font-bold text-[#0b2f20]">{label}</p>
+        <p className="text-[13px] font-bold text-dy-forest">{label}</p>
         <p className="mt-0.5 text-[11px] text-slate-500">{desc}</p>
       </div>
       <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 transition-transform group-hover:translate-x-1">

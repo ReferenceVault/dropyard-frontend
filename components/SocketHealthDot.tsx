@@ -19,7 +19,7 @@ export function SocketHealthDot({ className = "" }: { className?: string }) {
 
   const color = status === "live" ? "#10b981" /* emerald-500 */
               : status === "reconnecting" ? "#f59e0b" /* amber-500 */
-              : "#94a3b8" /* slate-400 */;
+              : "#7F927C" /* slate-400 */;
 
   // Carry the handshake failure into the tooltip. Without it the dot says
   // "reconnecting…" forever and gives no clue whether the cause is auth,

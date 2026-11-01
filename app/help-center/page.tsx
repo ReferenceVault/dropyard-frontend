@@ -60,17 +60,17 @@ export default function HelpCenterPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#f7faf8]">
+    <main className="min-h-screen bg-dy-pale">
       {/* progress */}
       <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-transparent">
         <div
-          className="h-full bg-gradient-to-r from-[#2f8a22] via-[#22c55e] to-[#ff9412] transition-[width] duration-150"
+          className="h-full bg-gradient-to-r from-dy-green-strong via-[#3A8E31] to-dy-orange transition-[width] duration-150"
           style={{ width: `${progress}%` }}
         />
       </div>
 
       {/* HERO */}
-      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
         <div className="absolute inset-0 pointer-events-none opacity-20">
           <div
             className="absolute inset-0"
@@ -112,7 +112,7 @@ export default function HelpCenterPage() {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <a
               href="#get-help"
-              className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-[13px] font-semibold text-[#0b2f20] transition hover:bg-amber-100 hover:shadow-lg hover:-translate-y-0.5"
+              className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-3 text-[13px] font-semibold text-dy-forest transition hover:bg-amber-100 hover:shadow-lg hover:-translate-y-0.5"
             >
               <Icon.Hand className="h-4 w-4" />
               I need help today
@@ -128,7 +128,7 @@ export default function HelpCenterPage() {
         </div>
 
         <svg
-          className="absolute bottom-0 left-0 right-0 w-full text-[#f7faf8]"
+          className="absolute bottom-0 left-0 right-0 w-full text-dy-pale"
           viewBox="0 0 1440 60"
           fill="currentColor"
           preserveAspectRatio="none"
@@ -160,7 +160,7 @@ export default function HelpCenterPage() {
                 href: "mailto:info@dropyard.app",
               }}
             >
-              <p className="text-[13px] font-bold text-[#0b2f20]">
+              <p className="text-[13px] font-bold text-dy-forest">
                 It helps to include:
               </p>
               <ul className="mt-2 space-y-1.5 text-[13px] text-slate-600">
@@ -212,7 +212,7 @@ export default function HelpCenterPage() {
                 <p className="text-[11px] font-black uppercase tracking-wider text-rose-700">
                   Call now
                 </p>
-                <p className="mt-1 text-[29px] font-black tracking-tight text-[#0b2f20]">
+                <p className="mt-1 text-[29px] font-black tracking-tight text-dy-forest">
                   9-1-1
                 </p>
               </div>
@@ -233,7 +233,7 @@ export default function HelpCenterPage() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-700 ring-4 ring-violet-200">
                   <Icon.Book className="h-5 w-5" />
                 </div>
-                <h3 className="text-[17px] font-bold text-[#0b2f20]">
+                <h3 className="text-[17px] font-bold text-dy-forest">
                   Quick answers before you write
                 </h3>
               </div>
@@ -266,7 +266,7 @@ export default function HelpCenterPage() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-emerald-700 ring-4 ring-emerald-200">
                   <Icon.Clock className="h-5 w-5" />
                 </div>
-                <h3 className="text-[17px] font-bold text-[#0b2f20]">
+                <h3 className="text-[17px] font-bold text-dy-forest">
                   Response times
                 </h3>
               </div>
@@ -300,7 +300,7 @@ export default function HelpCenterPage() {
         <div className="mx-auto max-w-6xl">
           <div className="flex items-center gap-4">
             <div className="flex-1 h-px bg-gradient-to-r from-transparent via-emerald-200 to-transparent" />
-            <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f8a22] shadow-sm">
+            <div className="flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-dy-green-strong shadow-sm">
               <Icon.Heart className="h-3 w-3" />
               And now, your turn
             </div>
@@ -397,7 +397,7 @@ export default function HelpCenterPage() {
               ctaTopicId="other"
             />
 
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] p-7 text-white shadow-lg flex flex-col">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong p-7 text-white shadow-lg flex flex-col">
               <div className="absolute -top-12 -right-12 h-32 w-32 rounded-full bg-amber-300/20 blur-2xl" />
               <div className="relative">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 backdrop-blur ring-1 ring-white/20">
@@ -421,7 +421,7 @@ export default function HelpCenterPage() {
 
           {/* CLOSING */}
           <div className="mt-16 rounded-3xl border border-emerald-100 bg-white p-8 sm:p-10 text-center shadow-[0_20px_60px_rgba(0,0,0,0.05)]">
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#2f8a22]">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-dy-green-strong">
               A note on the small print
             </p>
             <p className="mx-auto mt-4 max-w-2xl text-[13px] text-slate-600 leading-relaxed">
@@ -445,7 +445,7 @@ export default function HelpCenterPage() {
 
             <div className="my-8 mx-auto h-px w-24 bg-gradient-to-r from-transparent via-emerald-300 to-transparent" />
 
-            <p className="mx-auto max-w-2xl text-[15px] leading-relaxed text-[#0b2f20]">
+            <p className="mx-auto max-w-2xl text-[15px] leading-relaxed text-dy-forest">
               Thanks for being part of this.{" "}
               <strong>Real neighbours, real stuff, real trust</strong> — none of
               it happens without you.
@@ -453,7 +453,7 @@ export default function HelpCenterPage() {
             <p className="mt-3 text-[13px] italic text-slate-500">— The DropYard team</p>
             <a
               href="mailto:info@dropyard.app"
-              className="mt-6 inline-flex items-center gap-2 rounded-full bg-[#0f6a44] px-6 py-3 text-[13px] font-semibold text-white transition hover:bg-[#0b5638] hover:shadow-lg hover:-translate-y-0.5"
+              className="mt-6 inline-flex items-center gap-2 rounded-full bg-dy-mid px-6 py-3 text-[13px] font-semibold text-white transition hover:bg-dy-mid hover:shadow-lg hover:-translate-y-0.5"
             >
               <Icon.Mail className="h-4 w-4" />
               info@dropyard.app
@@ -498,7 +498,7 @@ function SectionHeader({
         {icon}
         {eyebrow}
       </div>
-      <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-[#0b2f20] sm:text-[35px]">
+      <h2 className="mt-5 text-[29px] font-semibold tracking-tight text-dy-forest sm:text-[35px]">
         {title}
       </h2>
       <p className="mx-auto mt-4 max-w-2xl text-[15px] text-slate-600 sm:text-[17px]">
@@ -529,7 +529,7 @@ function HelpPathCard({
       <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${c.bg} ${c.text} ring-4 ${c.ring} transition-transform group-hover:scale-110`}>
         {icon}
       </div>
-      <h3 className="mt-5 text-[17px] font-bold text-[#0b2f20]">{title}</h3>
+      <h3 className="mt-5 text-[17px] font-bold text-dy-forest">{title}</h3>
       <p className="mt-2 text-[13px] text-slate-600">{desc}</p>
       <div className="mt-5 flex-1">{children}</div>
       {cta && (
@@ -560,7 +560,7 @@ function QuickLink({
       className="group flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-3.5 transition-all hover:border-violet-300 hover:bg-violet-50/40"
     >
       <div>
-        <p className="text-[13px] font-bold text-[#0b2f20]">{label}</p>
+        <p className="text-[13px] font-bold text-dy-forest">{label}</p>
         <p className="text-[11px] text-slate-500">{desc}</p>
       </div>
       <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700 transition-transform group-hover:translate-x-1">
@@ -584,7 +584,7 @@ function ResponseRow({
     <div className="flex items-center gap-3 rounded-xl bg-white p-3.5 border border-slate-100">
       <span className={`h-2.5 w-2.5 flex-shrink-0 rounded-full ${c.dot}`} />
       <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-semibold text-[#0b2f20]">{label}</p>
+        <p className="text-[13px] font-semibold text-dy-forest">{label}</p>
       </div>
       <span className={`text-[11px] font-black uppercase tracking-wider ${c.text}`}>
         {time}
@@ -635,7 +635,7 @@ function ContributionCard({
       <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${c.bg} ${c.text} ring-4 ${c.ring} transition-transform group-hover:scale-110`}>
         {icon}
       </div>
-      <h3 className="mt-5 text-[17px] font-bold text-[#0b2f20]">{title}</h3>
+      <h3 className="mt-5 text-[17px] font-bold text-dy-forest">{title}</h3>
       <p className="mt-2 text-[13px] text-slate-600 leading-relaxed">{lead}</p>
 
       <ul className="mt-5 space-y-2 flex-1">

@@ -143,17 +143,17 @@ export default function CommunityGuidelinesPage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#f7faf8]">
+    <main className="min-h-screen bg-dy-pale">
       {/* progress */}
       <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-transparent">
         <div
-          className="h-full bg-gradient-to-r from-[#2f8a22] via-[#22c55e] to-[#ff9412] transition-[width] duration-150"
+          className="h-full bg-gradient-to-r from-dy-green-strong via-[#3A8E31] to-dy-orange transition-[width] duration-150"
           style={{ width: `${progress}%` }}
         />
       </div>
 
       {/* HERO */}
-      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
         <div className="absolute inset-0 pointer-events-none opacity-20">
           <div
             className="absolute inset-0"
@@ -205,7 +205,7 @@ export default function CommunityGuidelinesPage() {
         </div>
 
         <svg
-          className="absolute bottom-0 left-0 right-0 w-full text-[#f7faf8]"
+          className="absolute bottom-0 left-0 right-0 w-full text-dy-pale"
           viewBox="0 0 1440 60"
           fill="currentColor"
           preserveAspectRatio="none"
@@ -230,7 +230,7 @@ export default function CommunityGuidelinesPage() {
           {/* TOC */}
           <aside className="hidden lg:block">
             <div className="sticky top-24">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f8a22] mb-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-dy-green-strong mb-4">
                 On this page
               </p>
               <nav className="flex flex-col gap-1 border-l border-slate-200 pl-4">
@@ -242,13 +242,13 @@ export default function CommunityGuidelinesPage() {
                       href={`#section-${s.num}`}
                       className={`group relative -ml-[17px] flex items-center gap-3 rounded-r-lg py-1.5 pl-4 pr-2 text-[13px] transition-all ${
                         active
-                          ? "border-l-2 border-[#2f8a22] bg-emerald-50/60 font-semibold text-[#0b2f20]"
-                          : "border-l-2 border-transparent text-slate-500 hover:text-[#0b2f20] hover:bg-slate-50"
+                          ? "border-l-2 border-dy-green-strong bg-emerald-50/60 font-semibold text-dy-forest"
+                          : "border-l-2 border-transparent text-slate-500 hover:text-dy-forest hover:bg-slate-50"
                       }`}
                     >
                       <span
                         className={`text-[9px] font-black ${
-                          active ? "text-[#2f8a22]" : "text-slate-400"
+                          active ? "text-dy-green-strong" : "text-slate-400"
                         }`}
                       >
                         {s.num.padStart(2, "0")}
@@ -331,7 +331,7 @@ export default function CommunityGuidelinesPage() {
                 If your grandmother would be happy to see it picked up by a
                 neighbour and used again, it probably belongs on DropYard.
               </Callout>
-              <h4 className="mt-6 text-[15px] font-bold text-[#0b2f20]">
+              <h4 className="mt-6 text-[15px] font-bold text-dy-forest">
                 Listings must be:
               </h4>
               <CheckList
@@ -557,7 +557,7 @@ export default function CommunityGuidelinesPage() {
                 </StepItem>
               </ol>
 
-              <h4 className="mt-8 text-[15px] font-bold text-[#0b2f20]">
+              <h4 className="mt-8 text-[15px] font-bold text-dy-forest">
                 Things we&apos;ll always take seriously
               </h4>
               <CheckList
@@ -628,7 +628,7 @@ export default function CommunityGuidelinesPage() {
                 />
               </div>
 
-              <h4 className="mt-8 text-[15px] font-bold text-[#0b2f20]">
+              <h4 className="mt-8 text-[15px] font-bold text-dy-forest">
                 Permanent ban includes:
               </h4>
               <ul className="mt-3 space-y-2">
@@ -690,7 +690,7 @@ export default function CommunityGuidelinesPage() {
                   small acts feel safe enough to keep happening, in this community
                   and the ones we&apos;ll grow into next.
                 </p>
-                <p className="mt-4 text-[15px] font-semibold text-[#0b2f20]">
+                <p className="mt-4 text-[15px] font-semibold text-dy-forest">
                   Thanks for being part of it.
                 </p>
                 <p className="mt-1 text-[13px] italic text-slate-500">
@@ -750,7 +750,7 @@ function Section({
           <p className={`text-[10px] font-black uppercase tracking-[0.18em] ${accent.text}`}>
             Section {num.padStart(2, "0")}
           </p>
-          <h3 className="text-[19px] font-semibold tracking-tight text-[#0b2f20] sm:text-[23px]">
+          <h3 className="text-[19px] font-semibold tracking-tight text-dy-forest sm:text-[23px]">
             {title}
           </h3>
         </div>
@@ -764,7 +764,7 @@ function Section({
 
 function DropCap({ children }: { children: React.ReactNode }) {
   return (
-    <span className="float-left mr-2 mt-1 text-[47px] font-black leading-none text-[#2f8a22]">
+    <span className="float-left mr-2 mt-1 text-[47px] font-black leading-none text-dy-green-strong">
       {children}
     </span>
   );
@@ -773,10 +773,10 @@ function DropCap({ children }: { children: React.ReactNode }) {
 function PromiseChip({ n, label }: { n: string; label: string }) {
   return (
     <div className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-[0_10px_40px_rgba(0,0,0,0.06)] border border-slate-100 transition hover:-translate-y-1 hover:shadow-[0_15px_50px_rgba(0,0,0,0.08)]">
-      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-[#2f8a22] text-[13px] font-black text-white shadow-sm">
+      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl bg-dy-green-strong text-[13px] font-black text-white shadow-sm">
         {n}
       </span>
-      <span className="text-[13px] font-bold text-[#0b2f20]">{label}</span>
+      <span className="text-[13px] font-bold text-dy-forest">{label}</span>
     </div>
   );
 }
@@ -794,11 +794,11 @@ function PromiseCard({
     <div className="group relative overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5 transition-all hover:-translate-y-1 hover:shadow-md">
       <div className="absolute -top-6 -right-6 h-20 w-20 rounded-full bg-emerald-100/60 blur-2xl transition group-hover:scale-150" />
       <div className="relative flex items-start gap-3">
-        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[#0f6a44] text-[15px] font-black text-white shadow-md">
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-dy-mid text-[15px] font-black text-white shadow-md">
           {n}
         </div>
         <div>
-          <h4 className="text-[13px] font-bold text-[#0b2f20]">{title}</h4>
+          <h4 className="text-[13px] font-bold text-dy-forest">{title}</h4>
           <p className="mt-1.5 text-[13px] text-slate-600">{desc}</p>
         </div>
       </div>
@@ -837,7 +837,7 @@ function Callout({
   const dot =
     tone === "green" ? "bg-emerald-500" : tone === "rose" ? "bg-rose-500" : "bg-amber-500";
   return (
-    <div className={`mt-5 flex gap-3 rounded-xl border p-4 text-[#0b2f20] ${styles}`}>
+    <div className={`mt-5 flex gap-3 rounded-xl border p-4 text-dy-forest ${styles}`}>
       <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${dot}`} />
       <p className="text-[13px] leading-relaxed">{children}</p>
     </div>
@@ -891,7 +891,7 @@ function TipCard({
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
           {icon}
         </span>
-        <h4 className="text-[13px] font-bold text-[#0b2f20]">{title}</h4>
+        <h4 className="text-[13px] font-bold text-dy-forest">{title}</h4>
       </div>
       <p className="mt-3 text-[13px] text-slate-600">{desc}</p>
     </div>
@@ -909,11 +909,11 @@ function StepItem({
 }) {
   return (
     <li className="flex items-start gap-4 rounded-xl border border-slate-200 bg-white p-4">
-      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#0f6a44] text-[13px] font-black text-white shadow-sm">
+      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-dy-mid text-[13px] font-black text-white shadow-sm">
         {n}
       </span>
       <div>
-        <h5 className="text-[13px] font-bold text-[#0b2f20]">{title}</h5>
+        <h5 className="text-[13px] font-bold text-dy-forest">{title}</h5>
         <div className="mt-1 text-[13px] text-slate-600">{children}</div>
       </div>
     </li>

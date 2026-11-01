@@ -103,10 +103,10 @@ function toneClasses(tone) {
       badge: "border-[#ffb020]/35 bg-[#ffb020]/12 text-[#b76a00]",
     },
     green: {
-      card: "from-[#ecf8f1] to-white border-[#2f8a22]/18 hover:border-[#2f8a22]/40",
-      icon: "text-[#0d7c4e] bg-[#2f8a22]/10 ring-[#2f8a22]/12",
-      glow: "bg-[#2f8a22]/14",
-      badge: "border-[#2f8a22]/30 bg-[#2f8a22]/10 text-[#0d7c4e]",
+      card: "from-[#ecf8f1] to-white border-dy-green-strong/18 hover:border-dy-green-strong/40",
+      icon: "text-dy-green-strong bg-dy-green-strong/10 ring-dy-green-strong/12",
+      glow: "bg-dy-green-strong/14",
+      badge: "border-dy-green-strong/30 bg-dy-green-strong/10 text-dy-green-strong",
     },
     purple: {
       card: "from-[#f2edff] to-white border-violet-400/18 hover:border-violet-400/40",
@@ -146,7 +146,7 @@ function StatCard({ stat }) {
         <Icon className="h-7 w-7" />
       </div>
 
-      <div className="relative mt-7 bg-gradient-to-br from-[#0b2f20] to-slate-500 bg-clip-text text-[33px] font-semibold tracking-tighter text-transparent sm:text-[45px]">
+      <div className="relative mt-7 bg-gradient-to-br from-dy-forest to-slate-500 bg-clip-text text-[33px] font-semibold tracking-tighter text-transparent sm:text-[45px]">
         {stat.value}
       </div>
 
@@ -173,17 +173,17 @@ export default function SellerStatsSection() {
     <section className="relative overflow-hidden bg-[#fffdf8] px-4 py-8 sm:px-6 lg:px-8">
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute left-[-8rem] top-[-8rem] h-96 w-96 rounded-full bg-[#ffb020]/10 blur-3xl" />
-        <div className="absolute right-[-8rem] top-[-8rem] h-96 w-96 rounded-full bg-[#2f8a22]/8 blur-3xl" />
+        <div className="absolute right-[-8rem] top-[-8rem] h-96 w-96 rounded-full bg-dy-green-strong/8 blur-3xl" />
         <div className="absolute bottom-[-10rem] left-1/2 h-80 w-[44rem] -translate-x-1/2 rounded-full bg-teal-400/8 blur-3xl" />
       </div>
 
       <div className="relative mx-auto max-w-6xl px-0 py-4 sm:px-0 lg:px-0">
-        <div className="pointer-events-none absolute inset-x-[-100vw] inset-y-0 bg-gradient-to-br from-[#ffb020]/8 via-transparent to-[#2f8a22]/8" />
+        <div className="pointer-events-none absolute inset-x-[-100vw] inset-y-0 bg-gradient-to-br from-[#ffb020]/8 via-transparent to-dy-green-strong/8" />
 
         <div className="relative text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#0d7c4e]">Built for neighbourhood commerce</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-dy-green-strong">Built for neighbourhood commerce</p>
 
-          <h2 className="mx-auto mt-2 max-w-4xl text-[23px] font-semibold tracking-tighter leading-[1.05] text-[#0b2f20] sm:text-[47px]">
+          <h2 className="mx-auto mt-2 max-w-4xl text-[23px] font-semibold tracking-tighter leading-[1.05] text-dy-forest sm:text-[47px]">
             Sellers are thriving
           </h2>
 

@@ -46,7 +46,7 @@ const LEGAL_LINKS = [
   { href: "/faq", label: "FAQs" },
 ];
 
-const linkClass = "dy-focus rounded transition-colors hover:text-dy-forest";
+const linkClass = "dy-focus rounded underline-offset-4 transition-colors hover:text-dy-forest hover:underline";
 
 export function GlobalFooter() {
   return (

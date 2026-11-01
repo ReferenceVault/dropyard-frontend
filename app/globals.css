@@ -2,13 +2,83 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f360b;
+
+  /* Radii, elevation and motion shared by marketing, account and admin pages. */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 22px;
+  --shadow-card: 0 8px 28px rgba(15, 54, 11, 0.07);
+  --shadow-raised: 0 16px 36px -12px rgba(15, 54, 11, 0.2);
+  --shadow-panel: 0 24px 60px -30px rgba(15, 54, 11, 0.3);
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-spring: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --motion-press: 200ms var(--ease-spring);
+  --shadow-lift: 0 14px 32px -14px rgba(15, 54, 11, 0.28);
+  /* Lighter than green-strong, but still 4.5:1 with white text. */
+  --color-green-hover: #368531;
+  --transition-fast: 160ms var(--ease-out);
+  --transition-normal: 240ms var(--ease-out);
+  --control-height: 48px;
+}
+
+/* Tailwind's emerald, teal, slate and gray utilities are the brand's green and
+   grey-green here, so the account, legal, item and admin pages that use them
+   share the homepage palette. 500-600 keep 4.5:1 with white and vice versa. */
+@theme {
+  --color-emerald-50: #f3f8f3;
+  --color-emerald-100: #e2efe0;
+  --color-emerald-200: #c5dfc1;
+  --color-emerald-300: #9cc896;
+  --color-emerald-400: #6bab63;
+  --color-emerald-500: #3a8e31;
+  --color-emerald-600: #33802b;
+  --color-emerald-700: #2c6126;
+  --color-emerald-800: #1f4c1a;
+  --color-emerald-900: #0f360b;
+  --color-emerald-950: #0a2608;
+
+  --color-teal-50: #f3f8f3;
+  --color-teal-100: #e2efe0;
+  --color-teal-200: #c5dfc1;
+  --color-teal-300: #9cc896;
+  --color-teal-400: #6bab63;
+  --color-teal-500: #3a8e31;
+  --color-teal-600: #33802b;
+  --color-teal-700: #2c6126;
+  --color-teal-800: #1f4c1a;
+  --color-teal-900: #0f360b;
+  --color-teal-950: #0a2608;
+
+  --color-slate-50: #f6f9f6;
+  --color-slate-100: #edf2ec;
+  --color-slate-200: #dfe6de;
+  --color-slate-300: #c3cfc2;
+  --color-slate-400: #60745d;
+  --color-slate-500: #5f755c;
+  --color-slate-600: #4c6149;
+  --color-slate-700: #3a4e37;
+  --color-slate-800: #233a20;
+  --color-slate-900: #0f360b;
+  --color-slate-950: #0a2608;
+
+  --color-gray-50: #f6f9f6;
+  --color-gray-100: #edf2ec;
+  --color-gray-200: #dfe6de;
+  --color-gray-300: #c3cfc2;
+  --color-gray-400: #60745d;
+  --color-gray-500: #5f755c;
+  --color-gray-600: #4c6149;
+  --color-gray-700: #3a4e37;
+  --color-gray-800: #233a20;
+  --color-gray-900: #0f360b;
+  --color-gray-950: #0a2608;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-instrument-sans);
   --font-mono: var(--font-geist-mono);
   --font-dy: var(--font-instrument-sans);
 
@@ -20,24 +90,30 @@
   --color-dy-green: #3a8e31;
   --color-dy-green-strong: #33802b;
   --color-dy-orange: #f99605;
-  --color-dy-orange-strong: #b86a00;
+  --color-dy-orange-strong: #a35c00;
   --color-dy-gold: #f4b321;
   --color-dy-pale: #f3f8f3;
   --color-dy-muted: #5f755c;
   --color-dy-line: #d4ddd3;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-instrument-sans), Arial, Helvetica, sans-serif;
+}
+
+h1, h2, h3 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
+}
+
+/* Zero specificity, so a component's own focus style always wins. */
+:where(a, button, summary, [role="button"], [tabindex="0"]):focus-visible {
+  outline: 3px solid var(--color-dy-orange);
+  outline-offset: 2px;
 }
 
 /* Mobile-only horizontal-overflow clip on the document. Scoped to mobile so it
@@ -96,7 +172,7 @@ body {
    Replaces the JS `isMobile` branches that caused a first-paint flicker on
    mobile (SSR `useViewport` defaulted to width=1280 → desktop layout briefly
    rendered before client re-render). With CSS media queries the layout is
-   correct from the SSR HTML on any viewport. C.fawn = #EDE8E0 is hardcoded
+   correct from the SSR HTML on any viewport. C.fawn = #E3EAE2 is hardcoded
    here because globals.css can't reach the runtime color constants — keep
    in sync with the JSX file if the palette changes.
    ──────────────────────────────────────────────────────────────────────── */
@@ -109,7 +185,7 @@ body {
   align-items: center;
   padding: 0 18px 0 0;
   gap: 18px;
-  border-bottom: 1px solid #EDE8E0;
+  border-bottom: 1px solid #E3EAE2;
   background: #FFFFFF;
   flex-shrink: 0;
 }
@@ -128,7 +204,7 @@ body {
   align-items: center;
   height: 100%;
   padding-left: 18px;
-  border-right: 1px solid #EDE8E0;
+  border-right: 1px solid #E3EAE2;
 }
 @media (max-width: 768px) {
   .dy-seller-topnav__logo-zone {
@@ -179,7 +255,7 @@ body {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 1px solid #EDE8E0;
+  border: 1px solid #E3EAE2;
   background: #FFFFFF;
   cursor: pointer;
   display: flex;
@@ -188,7 +264,7 @@ body {
   transition: background 150ms ease;
 }
 .dy-seller-topnav__bell:hover {
-  background: #FFF9F0;
+  background: #FBFDFB;
 }
 @media (max-width: 768px) {
   .dy-seller-topnav__bell {
@@ -289,14 +365,18 @@ body {
   font-size: clamp(15px, 1.25vw, 24px);
   font-weight: 600;
   letter-spacing: -0.01em;
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast), transform var(--motion-press);
+}
+.dy-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .dy-btn--primary {
   background: var(--color-dy-green-strong);
   color: #ffffff;
 }
 .dy-btn--primary:hover {
-  background: var(--color-dy-mid);
+  background: var(--color-green-hover);
 }
 .dy-btn--light {
   background: #ffffff;
@@ -309,6 +389,119 @@ body {
 .dy-focus:focus-visible {
   outline: 3px solid var(--color-dy-orange);
   outline-offset: 2px;
+}
+/* Header links: the underline marks hover and the current page without moving
+   anything, and colour isn't the only signal. */
+.dy-navlink {
+  position: relative;
+}
+.dy-navlink::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -6px;
+  height: 2px;
+  background: var(--color-dy-orange);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--transition-normal);
+}
+.dy-navlink[aria-current="page"]::after {
+  transform: scaleX(1);
+}
+@media (hover: hover) {
+  .dy-navlink:hover::after {
+    transform: scaleX(1);
+  }
+  .dy-navlink:hover {
+    color: var(--color-dy-green-strong);
+  }
+}
+/* ────────────────────────────────────────────────────────────────────────
+   Interactions. :where() keeps the base rules at zero specificity, so a
+   component's own transition or transform always wins. Hover only applies on
+   devices with a real pointer, and scaling never touches layout.
+   ──────────────────────────────────────────────────────────────────────── */
+:where(button, [role="button"], .dy-press) {
+  transition: transform var(--motion-press), box-shadow var(--transition-fast), background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+:where(button:disabled) {
+  cursor: not-allowed;
+}
+:where(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea, select) {
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+/* A ring rather than an outline: many dashboard inputs set outline: none inline. */
+:where(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea, select):focus {
+  box-shadow: 0 0 0 3px var(--color-emerald-200);
+}
+.dy-mobile-bottom-nav button {
+  transition: transform var(--motion-press), color var(--transition-fast), background-color var(--transition-fast);
+}
+@media (prefers-reduced-motion: no-preference) {
+  :where(button:not(:disabled), [role="button"], .dy-press):active {
+    transform: scale(0.98);
+  }
+  .dy-mobile-bottom-nav button:active {
+    transform: scale(0.94);
+  }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .dy-btn--primary:not(:disabled):hover,
+  button.cta-primary:not(:disabled):hover {
+    transform: scale(1.03);
+    box-shadow: var(--shadow-raised);
+  }
+  .dy-btn--light:not(:disabled):hover,
+  .dy-press:hover {
+    transform: scale(1.02);
+  }
+  button.cta-primary:not(:disabled):active,
+  .dy-btn:not(:disabled):active {
+    transform: scale(0.98);
+  }
+  /* The whole article lifts, but only the photo zooms inside its own frame. */
+  .dy-item,
+  .dy-card-lift {
+    transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+  }
+  .dy-item img {
+    transition: transform var(--transition-normal);
+  }
+  .dy-item:hover {
+    transform: translateY(-4px);
+  }
+  .dy-item:hover img {
+    transform: scale(1.04);
+  }
+  /* !important: .fade-in's fill holds transform after it ends. */
+  .dy-card-lift:hover {
+    transform: translateY(-4px) !important;
+    box-shadow: var(--shadow-lift) !important;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  button[aria-label]:not(:disabled):hover {
+    box-shadow: 0 0 0 4px var(--color-emerald-100);
+  }
+  .dy-mobile-bottom-nav button:hover {
+    color: var(--color-dy-green-strong);
+  }
+  .dy-flip:hover .dy-flip__face {
+    box-shadow: var(--shadow-lift), var(--shadow-panel);
+  }
+}
+/* Form inputs. The ring sits outside the box, so focus can't shift the layout. */
+.dy-field {
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.dy-field::placeholder {
+  color: var(--color-slate-400);
+}
+.dy-field:focus {
+  outline: 2px solid var(--color-dy-green-strong);
+  outline-offset: 0;
+  box-shadow: 0 0 0 4px var(--color-emerald-100);
 }
 /* Item-card corner ribbon: a flag with a notch cut from its trailing edge. */
 .dy-ribbon {
@@ -350,4 +543,56 @@ body {
   html {
     scroll-behavior: smooth;
   }
+  .dy-rise {
+    animation: dy-rise var(--transition-normal) both;
+  }
+  .dy-tick {
+    display: inline-block;
+    animation: dy-tick 200ms var(--ease-out);
+  }
+  .dy-modal {
+    animation: dy-fade 180ms var(--ease-out);
+  }
+  .dy-modal > :not([hidden]) {
+    animation: dy-pop 200ms var(--ease-spring);
+  }
+  .dy-reveal-pending {
+    opacity: 0;
+  }
+  .dy-reveal-in {
+    animation: dy-reveal 420ms var(--ease-spring) backwards;
+  }
+}
+@media print {
+  .dy-reveal-pending {
+    opacity: 1;
+  }
+}
+/* Covers the dashboards' inline animations too, hence the blanket rule. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0s !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+@keyframes dy-fade {
+  from { opacity: 0; }
+}
+@keyframes dy-pop {
+  from { opacity: 0; transform: scale(0.97) translateY(6px); }
+}
+@keyframes dy-reveal {
+  from { opacity: 0; transform: translateY(12px); }
+}
+@keyframes dy-rise {
+  from { opacity: 0; transform: translateY(8px); }
+}
+@keyframes dy-tick {
+  from { opacity: 0.2; transform: translateY(-0.12em); }
 }

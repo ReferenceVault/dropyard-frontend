@@ -11,9 +11,10 @@ import { DropCycleProvider } from "@/context/DropCycleContext";
 import { LIVE_NEIGHBOURHOOD } from "@/lib/homeNeighbourhoods";
 import { ItemCard, ItemCardSkeleton, ItemsEmptyState } from "./ItemCard";
 import { NeighbourhoodsSection } from "./NeighbourhoodsSection";
-import { NextDropSection } from "./NextDropSection";
+import { FEATURED_SECTION_ID, NextDropSection } from "./NextDropSection";
 import { ShelfSection } from "./ShelfSection";
 import { useHomeData, type HomeItem, type LoadState } from "./useHomeData";
+import { useSectionReveal } from "./useSectionReveal";
 
 function Hero() {
   const buttonSize = "!min-h-[clamp(50px,3.95vw,76px)] !text-[clamp(15px,1.15vw,22px)]";
@@ -28,7 +29,7 @@ function Hero() {
         className="-z-20 object-cover object-[62%_center] lg:object-[center_45%]"
       />
       <div aria-hidden className="absolute inset-0 -z-10 bg-black/50 lg:bg-transparent lg:bg-gradient-to-r lg:from-black/45 lg:via-black/25 lg:to-transparent" />
-      <div className="dy-wrap py-12">
+      <div className="dy-wrap dy-rise py-12">
         <p className="text-[clamp(13px,1.1vw,21px)] font-semibold tracking-[0.1em] text-white">Neighbourhood Marketplace</p>
         <h1 id="hero-heading" className="dy-h1 mt-3 !text-[clamp(38px,3.95vw,76px)] !text-white">
           Your neighbourhood<br />
@@ -79,7 +80,7 @@ function FeaturedSection({ items, state, savedIds, onToggleSaved }: {
   onToggleSaved: (id: string) => void;
 }) {
   return (
-    <section aria-labelledby="featured-heading" className="dy-section bg-white">
+    <section id={FEATURED_SECTION_ID} tabIndex={-1} aria-labelledby="featured-heading" className="dy-section scroll-mt-20 bg-white outline-none xl:scroll-mt-[92px]">
       <div className="dy-wrap">
         <div className="flex flex-wrap items-center justify-between gap-5">
           <div>
@@ -214,6 +215,7 @@ function GoodStuff() {
 export function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const revealRef = useSectionReveal<HTMLDivElement>();
   const { state, featured, shelf, liveItems, feedPhase, reload, dropStats, neighbourCount, savedIds, claimedIds, userId, toggleSaved } = useHomeData();
 
   useEffect(() => {
@@ -224,7 +226,7 @@ export function HomeContent() {
   }, [searchParams, router]);
 
   return (
-    <div className="bg-white font-dy">
+    <div ref={revealRef} className="bg-white font-dy">
       <Hero />
       <TrustStrip />
       <DropCycleProvider>

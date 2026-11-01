@@ -73,9 +73,9 @@ const stats = [
 
 function accentStyles(accent) {
   const map = {
-    green:  "text-[#2f8a22] ring-[#2f8a22]/20 shadow-[0_10px_30px_rgba(47,138,34,0.15)]",
+    green:  "text-dy-green-strong ring-dy-green-strong/20 shadow-[0_10px_30px_rgba(47,138,34,0.15)]",
     mint:   "text-emerald-600 ring-emerald-400/20 shadow-[0_10px_30px_rgba(16,185,129,0.15)]",
-    orange: "text-[#ff9412] ring-[#ff9412]/20 shadow-[0_10px_30px_rgba(255,148,18,0.2)]",
+    orange: "text-dy-orange ring-dy-orange/20 shadow-[0_10px_30px_rgba(255,148,18,0.2)]",
     purple: "text-violet-600 ring-violet-400/20 shadow-[0_10px_30px_rgba(139,92,246,0.2)]",
   };
   return map[accent] || map.green;
@@ -91,7 +91,7 @@ function StatCard({ stat, shouldStart }) {
         <Icon className="h-5 w-5" />
       </div>
 
-      <div className="text-[27px] sm:text-[33px] font-semibold text-[#0b2f20] tracking-tighter">
+      <div className="text-[27px] sm:text-[33px] font-semibold text-dy-forest tracking-tighter">
         {stat.prefix || ""}
         {count.toLocaleString()}
         {stat.suffix || ""}
@@ -125,13 +125,13 @@ export default function TrustedLocallyStats() {
   }, []);
 
   return (
-    <section ref={sectionRef} className="bg-[#f7faf8] py-10 px-4 sm:px-6 lg:px-8">
+    <section ref={sectionRef} className="bg-dy-pale py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-6xl mx-auto text-center">
-        <p className="text-[11px] font-bold tracking-[0.18em] text-[#2f8a22] uppercase">
+        <p className="text-[11px] font-bold tracking-[0.18em] text-dy-green-strong uppercase">
           Trusted locally
         </p>
 
-        <h2 className="mt-2 text-[33px] sm:text-[45px] font-semibold tracking-tighter leading-[1.05] text-[#0b2f20]">
+        <h2 className="mt-2 text-[33px] sm:text-[45px] font-semibold tracking-tighter leading-[1.05] text-dy-forest">
           DropYard by the numbers
         </h2>
 

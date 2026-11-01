@@ -8,21 +8,21 @@ import React, { useState } from "react";
 import { dropOpenDay, dropOpenHourCompact } from "@/lib/dropCycle";
 
 const C = {
-  gLightBg: "#ECFDF5",
-  gSoft: "#D1FAE5",
-  gAccent: "#6EE7B7",
-  gPrimary: "#1F7A4D",
+  gLightBg: "#F3F8F3",
+  gSoft: "#E2EFE0",
+  gAccent: "#9CC896",
+  gPrimary: "#2C6126",
   gHover: "#17603D",
   gDark: "#0F3D2A",
   oLightBg: "#FFF7ED",
   oSoft: "#FED7AA",
-  oPrimary: "#F08A00",
+  oPrimary: "#F99605",
   oHover: "#C96F00",
 };
 
 const F = {
-  h: "'Outfit', sans-serif",
-  b: "'Plus Jakarta Sans', sans-serif",
+  h: "var(--font-instrument-sans), sans-serif",
+  b: "var(--font-instrument-sans), sans-serif",
 };
 
 function Icon({ name, size = 16, color = "currentColor" }) {
@@ -55,8 +55,8 @@ function WeeklyTimelineExperience({ onStartSelling, onBrowseDrop }) {
       step: "01",
       title: "List During The Week",
       time: "Monday–Friday",
-      color: "#1F7A4D",
-      bg: "#ECFDF5",
+      color: "#2C6126",
+      bg: "#F3F8F3",
       icon: "📦",
       text: "Sellers can list items throughout the week and choose whether items should sell immediately or enter the upcoming Drop.",
       note: "Create listings & sell instantly",
@@ -75,7 +75,7 @@ function WeeklyTimelineExperience({ onStartSelling, onBrowseDrop }) {
       step: "03",
       title: "Live Drop Begins",
       time: `${dropOpenDay()} ${dropOpenHourCompact()}`,
-      color: "#F08A00",
+      color: "#F99605",
       bg: "#FFF7ED",
       icon: "🔔",
       text: "Any unsold Shelf items automatically roll into the live Drop where buyers can instantly claim or negotiate.",
@@ -86,7 +86,7 @@ function WeeklyTimelineExperience({ onStartSelling, onBrowseDrop }) {
       step: "04",
       title: "Claim & Pickup",
       time: "Saturday–Sunday",
-      color: "#0F766E",
+      color: "#2C6126",
       bg: "#ECFEFF",
       icon: "🛒",
       text: "Buyers coordinate local pickup while sellers complete transactions quickly within the community.",
@@ -97,19 +97,19 @@ function WeeklyTimelineExperience({ onStartSelling, onBrowseDrop }) {
   return (
     <section className="relative overflow-hidden bg-[#FAFAF8] px-6 py-12">
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute left-[-12rem] top-[-10rem] h-[32rem] w-[32rem] rounded-full bg-[#6EE7B7]/10 blur-3xl" />
+        <div className="absolute left-[-12rem] top-[-10rem] h-[32rem] w-[32rem] rounded-full bg-[#9CC896]/10 blur-3xl" />
         <div className="absolute right-[-10rem] top-[10rem] h-[28rem] w-[28rem] rounded-full bg-[#FED7AA]/20 blur-3xl" />
       </div>
 
       <div className="relative mx-auto max-w-7xl">
         <div className="max-w-3xl">
-          <span className="inline-flex rounded-full border border-[#D1FAE5] bg-white px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.22em] text-[#1F7A4D] shadow-sm">
+          <span className="inline-flex rounded-full border border-[#E2EFE0] bg-white px-4 py-2 text-[10px] font-extrabold uppercase tracking-[0.22em] text-dy-mid shadow-sm">
             The DropYard Flow
           </span>
 
           <h2 className="mt-6 text-[26px] font-semibold leading-[1.05] tracking-tighter text-slate-900 sm:text-[38px] lg:text-[48px]">
             Designed around a
-            <span className="block text-[#F08A00]">weekly buying cycle.</span>
+            <span className="block text-dy-orange">weekly buying cycle.</span>
           </h2>
 
           <p className="mt-6 max-w-2xl text-[17px] leading-8 text-slate-500">
@@ -118,7 +118,7 @@ function WeeklyTimelineExperience({ onStartSelling, onBrowseDrop }) {
         </div>
 
         <div className="relative mt-10">
-          <div className="absolute left-0 right-0 top-[5rem] hidden h-[2px] bg-gradient-to-r from-[#1F7A4D]/20 via-[#F08A00]/30 to-[#0F766E]/20 lg:block" />
+          <div className="absolute left-0 right-0 top-[5rem] hidden h-[2px] bg-gradient-to-r from-dy-mid/20 via-dy-orange/30 to-dy-mid/20 lg:block" />
 
           <div className="grid gap-7 lg:grid-cols-4">
             {flow.map((item) => (
@@ -126,7 +126,7 @@ function WeeklyTimelineExperience({ onStartSelling, onBrowseDrop }) {
                 key={item.title}
                 className={`group relative overflow-hidden rounded-[2.3rem] border border-white/60 bg-white/90 p-8 backdrop-blur-xl transition-all duration-700 hover:-translate-y-3 hover:scale-[1.02] hover:shadow-[0_38px_100px_rgba(15,23,42,0.14)] ${
                   item.featured
-                    ? "shadow-[0_28px_90px_rgba(240,138,0,0.22)] ring-1 ring-[#F08A00]/12"
+                    ? "shadow-[0_28px_90px_rgba(240,138,0,0.22)] ring-1 ring-dy-orange/12"
                     : "shadow-[0_12px_40px_rgba(15,23,42,0.06)]"
                 }`}
                 style={{ borderColor: `${item.color}20` }}
@@ -157,7 +157,7 @@ function WeeklyTimelineExperience({ onStartSelling, onBrowseDrop }) {
                     </h3>
 
                     {item.featured && (
-                      <span className="mt-1 rounded-full bg-[#FFF7ED] px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-[#F08A00]">
+                      <span className="mt-1 rounded-full bg-[#FFF7ED] px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-dy-orange">
                         Peak Traffic
                       </span>
                     )}
@@ -176,12 +176,12 @@ function WeeklyTimelineExperience({ onStartSelling, onBrowseDrop }) {
         </div>
 
         <div className="mt-14 flex flex-wrap items-center justify-center gap-4">
-          <button onClick={onStartSelling} className="inline-flex items-center gap-2 rounded-full bg-[#1F7A4D] px-8 py-4 text-[13px] font-black text-white shadow-[0_12px_30px_rgba(31,122,77,0.22)] transition hover:-translate-y-1">
+          <button onClick={onStartSelling} className="inline-flex items-center gap-2 rounded-full bg-dy-mid px-8 py-4 text-[13px] font-black text-white shadow-[0_12px_30px_rgba(31,122,77,0.22)] transition hover:-translate-y-1">
             Start Selling
             <Icon name="arrow" size={16} />
           </button>
 
-          <button onClick={onBrowseDrop} className="inline-flex items-center gap-2 rounded-full border-2 border-[#F08A00] bg-white px-8 py-4 text-[13px] font-black text-[#F08A00] transition hover:-translate-y-1 hover:bg-[#FFF7ED]">
+          <button onClick={onBrowseDrop} className="inline-flex items-center gap-2 rounded-full border-2 border-dy-orange bg-white px-8 py-4 text-[13px] font-black text-dy-orange transition hover:-translate-y-1 hover:bg-[#FFF7ED]">
             Browse Upcoming Drop
             <Icon name="arrow" size={16} />
           </button>
@@ -221,7 +221,7 @@ function InfoSection({ onListShelf }) {
 
             <h2 className="m-0 mb-6 text-[clamp(27px,4vw,45px)] font-semibold leading-[1.05] tracking-tighter text-white">
               Don&apos;t want to wait for
-              <span className="block text-[#F08A00]">Saturday?</span>
+              <span className="block text-dy-orange">Saturday?</span>
             </h2>
 
             <p className="mb-9 max-w-[540px] text-[17px] leading-[1.6] text-white/80">
@@ -231,7 +231,7 @@ function InfoSection({ onListShelf }) {
             <ul className="mb-9 list-none border-t border-white/15 p-0">
               {bullets.map(([title, text], index) => (
                 <li key={title} className="flex items-start gap-5 border-b border-white/15 py-[18px]">
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#F08A00] text-[13px] font-extrabold text-white shadow-[0_4px_10px_-4px_rgba(240,138,0,0.6)]">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-dy-orange text-[13px] font-extrabold text-dy-forest shadow-[0_4px_10px_-4px_rgba(240,138,0,0.6)]">
                     {index + 1}
                   </span>
                   <div>
@@ -242,22 +242,22 @@ function InfoSection({ onListShelf }) {
               ))}
             </ul>
 
-            <button onClick={onListShelf} className="inline-flex items-center gap-2.5 rounded-full bg-[#F08A00] px-7 py-3.5 text-[15px] font-bold text-white shadow-[0_8px_22px_-8px_rgba(240,138,0,0.55)] transition hover:-translate-y-0.5 hover:bg-[#C96F00] hover:shadow-[0_12px_28px_-8px_rgba(240,138,0,0.7)]">
+            <button onClick={onListShelf} className="inline-flex items-center gap-2.5 rounded-full bg-dy-orange px-7 py-3.5 text-[15px] font-bold text-dy-forest shadow-[0_8px_22px_-8px_rgba(240,138,0,0.55)] transition hover:-translate-y-0.5 hover:bg-[#C96F00] hover:shadow-[0_12px_28px_-8px_rgba(240,138,0,0.7)]">
               List on The Shelf <span>&rarr;</span>
             </button>
           </div>
 
           <div className="relative flex justify-center before:absolute before:bottom-[-20px] before:left-1/2 before:z-0 before:h-10 before:w-4/5 before:-translate-x-1/2 before:rounded-full before:bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.35)_0%,transparent_70%)] before:blur-[20px]">
-            <div className="relative z-[1] w-full max-w-[420px] rotate-[1.8deg] rounded-[3px] bg-[#FAF6EE] px-8 py-9 text-[#1F2937] shadow-[0_32px_60px_-20px_rgba(0,0,0,0.5),0_12px_24px_-8px_rgba(0,0,0,0.18)] transition duration-500 hover:rotate-0 hover:-translate-y-1">
-              <div className="absolute right-[-22px] top-[70px] rotate-[13deg] rounded-sm border-[2.5px] border-[#1F7A4D] bg-[#FAF6EE] px-3 py-1 text-center text-[10.5px] font-extrabold leading-none tracking-[0.15em] text-[#1F7A4D] shadow-md">
+            <div className="relative z-[1] w-full max-w-[420px] rotate-[1.8deg] rounded-[3px] bg-[#FAF6EE] px-8 py-9 text-dy-forest shadow-[0_32px_60px_-20px_rgba(0,0,0,0.5),0_12px_24px_-8px_rgba(0,0,0,0.18)] transition duration-500 hover:rotate-0 hover:-translate-y-1">
+              <div className="absolute right-[-22px] top-[70px] rotate-[13deg] rounded-sm border-[2.5px] border-dy-mid bg-[#FAF6EE] px-3 py-1 text-center text-[10.5px] font-extrabold leading-none tracking-[0.15em] text-dy-mid shadow-md">
                 <span className="mb-0.5 block text-[8.5px] tracking-[0.18em] opacity-85">OFF THE</span>
                 <span className="block text-[13px] font-black tracking-[0.04em]">SHELF</span>
               </div>
 
-              <div className="mb-[18px] border-b border-dashed border-[#1F2937] pb-[18px] text-center">
+              <div className="mb-[18px] border-b border-dashed border-dy-forest pb-[18px] text-center">
                 <div className="mb-2 text-[28px] font-black leading-none tracking-[-0.025em]">
                   <span className="text-[#005A3F]">Drop</span>
-                  <span className="text-[#F08A00]">Yard</span>
+                  <span className="text-dy-orange">Yard</span>
                 </div>
                 <div className="text-[10px] font-bold tracking-[0.18em] text-[#6B7280]">SELLER · BARRHAVEN · THE SHELF</div>
               </div>
@@ -265,22 +265,22 @@ function InfoSection({ onListShelf }) {
               {receiptItems.map((item) => (
                 <div key={item.name} className="flex items-baseline justify-between gap-4 py-[7px] text-[13px] font-medium">
                   <div className="flex flex-1 items-baseline gap-2">
-                    {item.name} <span className="shrink-0 text-[9px] font-bold tracking-[0.1em] text-[#F08A00]">{item.day}</span>
+                    {item.name} <span className="shrink-0 text-[9px] font-bold tracking-[0.1em] text-dy-orange">{item.day}</span>
                   </div>
                   <div className="font-semibold tabular-nums">{item.amt}</div>
                 </div>
               ))}
 
-              <div className="mt-3 flex items-baseline justify-between gap-4 border-t border-dashed border-[#1F2937] pt-4 text-[15px] font-extrabold tracking-[0.01em]">
+              <div className="mt-3 flex items-baseline justify-between gap-4 border-t border-dashed border-dy-forest pt-4 text-[15px] font-extrabold tracking-[0.01em]">
                 <div className="font-extrabold tracking-[0.06em]">SHELF TOTAL</div>
                 <div className="text-[17px] font-extrabold">$233.00</div>
               </div>
 
-              <div className="mt-6 border-t border-dashed border-[#1F2937] pt-4 text-center text-[10px] font-bold leading-[1.7] tracking-[0.16em] text-[#6B7280]">
+              <div className="mt-6 border-t border-dashed border-dy-forest pt-4 text-center text-[10px] font-bold leading-[1.7] tracking-[0.16em] text-[#6B7280]">
                 6 ITEMS · 6 DIFFERENT DAYS
                 <br />
                 NO DROP NEEDED
-                <div className="mt-2 text-[13px] tracking-[0.2em] text-[#F08A00]">★ ★ ★ ★ ★</div>
+                <div className="mt-2 text-[13px] tracking-[0.2em] text-dy-orange">★ ★ ★ ★ ★</div>
               </div>
             </div>
           </div>
@@ -306,7 +306,7 @@ function FAQSection() {
           <div key={item[0]} className="border-b">
             <button onClick={() => setFaqOpen(faqOpen === index ? null : index)} className="flex w-full items-center justify-between py-5 text-left">
               <p className="font-bold text-slate-900">{item[0]}</p>
-              <Icon name="down" size={18} color="#94a3b8" />
+              <Icon name="down" size={18} color="#7F927C" />
             </button>
             <div className="overflow-hidden transition-all" style={{ maxHeight: faqOpen === index ? 220 : 0 }}>
               <p className="pb-5 text-[13px] leading-7 text-slate-500">{item[1]}</p>
@@ -323,7 +323,6 @@ export default function HowItWorksLanding(props) {
   const onSellerCta = props && props.onSellerCta;
   return (
     <>
-      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       <style>{`* { box-sizing: border-box; } body { margin: 0; }`}</style>
       <div style={{ minHeight: "100vh", backgroundColor: "#FAFAF8", fontFamily: F.b }}>
         <section className="relative overflow-hidden px-6 py-10 text-center sm:py-12" style={{ background: `linear-gradient(165deg,${C.gDark} 0%,${C.gHover} 50%,${C.gPrimary} 100%)` }}>
@@ -335,16 +334,16 @@ export default function HowItWorksLanding(props) {
               backgroundSize: "32px 32px",
             }}
           />
-          <div className="pointer-events-none absolute -right-32 -top-32 h-[28rem] w-[28rem] rounded-full bg-[#6EE7B7]/10 blur-3xl" />
-          <div className="pointer-events-none absolute -left-24 bottom-0 h-[24rem] w-[24rem] rounded-full bg-[#F08A00]/15 blur-3xl" />
+          <div className="pointer-events-none absolute -right-32 -top-32 h-[28rem] w-[28rem] rounded-full bg-[#9CC896]/10 blur-3xl" />
+          <div className="pointer-events-none absolute -left-24 bottom-0 h-[24rem] w-[24rem] rounded-full bg-dy-orange/15 blur-3xl" />
           <div className="pointer-events-none absolute left-1/2 top-1/4 h-60 w-60 -translate-x-1/2 rounded-full bg-[#FED7AA]/10 blur-3xl" />
 
           <div className="relative mx-auto max-w-4xl">
             {/* Pulsing live eyebrow */}
             <div className="mx-auto mb-6 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 shadow-[0_8px_24px_rgba(0,0,0,0.2)] backdrop-blur-md">
               <span className="relative flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#F08A00] opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#F08A00]" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-dy-orange opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-dy-orange" />
               </span>
               <span className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-100">
                 Live weekly rhythm
@@ -352,7 +351,7 @@ export default function HowItWorksLanding(props) {
             </div>
 
             <h1 className="text-[25px] font-semibold tracking-tighter leading-[1.05] text-white sm:text-[37px] lg:text-[49px]">
-              <span className="text-[#F08A00]">How</span> It Works
+              <span className="text-dy-orange">How</span> It Works
             </h1>
 
             <p className="mt-5 text-[15px] font-semibold text-[#FED7AA] sm:text-[17px]">
@@ -382,14 +381,14 @@ export default function HowItWorksLanding(props) {
                     key={i}
                     className={`flex flex-1 flex-col items-center rounded-2xl px-1 py-3 transition-all duration-300 sm:px-2 ${
                       d.featured
-                        ? "bg-[#F08A00] shadow-[0_12px_36px_rgba(240,138,0,0.55)] ring-2 ring-[#FED7AA]/60"
+                        ? "bg-dy-orange shadow-[0_12px_36px_rgba(240,138,0,0.55)] ring-2 ring-[#FED7AA]/60"
                         : "bg-white/10 backdrop-blur-sm hover:-translate-y-0.5 hover:bg-white/20"
                     }`}
                   >
-                    <span className={`text-[13px] font-black sm:text-[15px] ${d.featured ? "text-white" : "text-white/80"}`}>
+                    <span className={`text-[13px] font-black sm:text-[15px] ${d.featured ? "text-dy-forest" : "text-white/80"}`}>
                       {d.day}
                     </span>
-                    <span className={`mt-1 text-[9px] font-black uppercase tracking-[0.1em] sm:text-[9px] ${d.featured ? "text-white" : "text-white/60"}`}>
+                    <span className={`mt-1 text-[9px] font-black uppercase tracking-[0.1em] sm:text-[9px] ${d.featured ? "text-dy-forest" : "text-white/60"}`}>
                       {d.label}
                     </span>
                   </div>
@@ -414,10 +413,10 @@ export default function HowItWorksLanding(props) {
           <h2 className="text-[33px] font-semibold tracking-tighter text-white">Ready to join the next Drop?</h2>
           <p className="mx-auto mt-3 max-w-xl text-[13px] leading-7 text-white/50">Whether you&apos;re buying or selling, it only takes a minute to get started.</p>
           <div className="mt-7 flex flex-wrap justify-center gap-3">
-            <button onClick={onBuyerCta} className="inline-flex items-center gap-2 rounded-full bg-[#1F7A4D] px-7 py-3.5 text-[13px] font-bold text-white">
+            <button onClick={onBuyerCta} className="inline-flex items-center gap-2 rounded-full bg-dy-mid px-7 py-3.5 text-[13px] font-bold text-white">
               Browse as Buyer <Icon name="arrow" size={16} />
             </button>
-            <button onClick={onSellerCta} className="inline-flex items-center gap-2 rounded-full bg-[#F08A00] px-7 py-3.5 text-[13px] font-bold text-white">
+            <button onClick={onSellerCta} className="inline-flex items-center gap-2 rounded-full bg-dy-orange px-7 py-3.5 text-[13px] font-bold text-dy-forest">
               Become a Seller <Icon name="arrow" size={16} />
             </button>
           </div>

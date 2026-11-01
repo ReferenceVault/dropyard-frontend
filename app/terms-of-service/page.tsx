@@ -186,17 +186,17 @@ export default function TermsOfServicePage() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-[#f7faf8]">
+    <main className="min-h-screen bg-dy-pale">
       {/* progress */}
       <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-transparent">
         <div
-          className="h-full bg-gradient-to-r from-[#2f8a22] via-[#22c55e] to-[#ff9412] transition-[width] duration-150"
+          className="h-full bg-gradient-to-r from-dy-green-strong via-[#3A8E31] to-dy-orange transition-[width] duration-150"
           style={{ width: `${progress}%` }}
         />
       </div>
 
       {/* HERO */}
-      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
         <div className="absolute inset-0 pointer-events-none opacity-20">
           <div
             className="absolute inset-0"
@@ -248,7 +248,7 @@ export default function TermsOfServicePage() {
         </div>
 
         <svg
-          className="absolute bottom-0 left-0 right-0 w-full text-[#f7faf8]"
+          className="absolute bottom-0 left-0 right-0 w-full text-dy-pale"
           viewBox="0 0 1440 60"
           fill="currentColor"
           preserveAspectRatio="none"
@@ -287,7 +287,7 @@ export default function TermsOfServicePage() {
           {/* TOC */}
           <aside className="hidden lg:block">
             <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pr-2">
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#2f8a22] mb-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-dy-green-strong mb-4">
                 On this page
               </p>
               <nav className="flex flex-col gap-1 border-l border-slate-200 pl-4">
@@ -299,13 +299,13 @@ export default function TermsOfServicePage() {
                       href={`#section-${s.num}`}
                       className={`group relative -ml-[17px] flex items-center gap-3 rounded-r-lg py-1.5 pl-4 pr-2 text-[13px] transition-all ${
                         active
-                          ? "border-l-2 border-[#2f8a22] bg-emerald-50/60 font-semibold text-[#0b2f20]"
-                          : "border-l-2 border-transparent text-slate-500 hover:text-[#0b2f20] hover:bg-slate-50"
+                          ? "border-l-2 border-dy-green-strong bg-emerald-50/60 font-semibold text-dy-forest"
+                          : "border-l-2 border-transparent text-slate-500 hover:text-dy-forest hover:bg-slate-50"
                       }`}
                     >
                       <span
                         className={`text-[9px] font-black ${
-                          active ? "text-[#2f8a22]" : "text-slate-400"
+                          active ? "text-dy-green-strong" : "text-slate-400"
                         }`}
                       >
                         {s.num.padStart(2, "0")}
@@ -599,7 +599,7 @@ export default function TermsOfServicePage() {
                 Terms, our Community Guidelines, or applicable law.
               </Callout>
 
-              <h4 className="mt-8 text-[15px] font-bold text-[#0b2f20]">
+              <h4 className="mt-8 text-[15px] font-bold text-dy-forest">
                 12.1 Copyright complaints
               </h4>
               <p className="mt-3">
@@ -879,11 +879,11 @@ export default function TermsOfServicePage() {
               <p>Questions about these Terms? Email <InfoMailLink />.</p>
               <div className="mt-5 rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0f6a44] text-white shadow-md">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-dy-mid text-white shadow-md">
                     <Icon.Doc className="h-5 w-5" />
                   </div>
                   <div>
-                    <strong className="block text-[#0b2f20]">DropYard Inc.</strong>
+                    <strong className="block text-dy-forest">DropYard Inc.</strong>
                     <span className="text-[13px] text-slate-600">Ontario, Canada</span>
                   </div>
                 </div>
@@ -917,7 +917,7 @@ export default function TermsOfServicePage() {
             <div className="mt-14 border-t border-slate-200 pt-10 text-center">
               <Link
                 href="/"
-                className="inline-flex items-center gap-2 rounded-full bg-[#0f6a44] px-6 py-3 text-[13px] font-semibold text-white transition hover:bg-[#0b5638] hover:shadow-lg hover:-translate-y-0.5"
+                className="inline-flex items-center gap-2 rounded-full bg-dy-mid px-6 py-3 text-[13px] font-semibold text-white transition hover:bg-dy-mid hover:shadow-lg hover:-translate-y-0.5"
               >
                 <span>&larr;</span> Back to DropYard
               </Link>
@@ -955,7 +955,7 @@ function Section({
           <p className={`text-[10px] font-black uppercase tracking-[0.18em] ${accent.text}`}>
             Section {num.padStart(2, "0")}
           </p>
-          <h3 className="text-[19px] font-semibold tracking-tight text-[#0b2f20] sm:text-[23px]">
+          <h3 className="text-[19px] font-semibold tracking-tight text-dy-forest sm:text-[23px]">
             {title}
           </h3>
         </div>
@@ -969,7 +969,7 @@ function Section({
 
 function DropCap({ children }: { children: React.ReactNode }) {
   return (
-    <span className="float-left mr-2 mt-1 text-[47px] font-black leading-none text-[#2f8a22]">
+    <span className="float-left mr-2 mt-1 text-[47px] font-black leading-none text-dy-green-strong">
       {children}
     </span>
   );
@@ -993,7 +993,7 @@ function SummaryCard({
         <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${c.bg} ${c.text} ring-4 ${c.ring} transition-transform group-hover:scale-110`}>
           {icon}
         </div>
-        <h3 className="font-bold text-[#0b2f20]">{title}</h3>
+        <h3 className="font-bold text-dy-forest">{title}</h3>
       </div>
       <p className="mt-3 text-[13px] text-slate-600">{desc}</p>
     </div>
@@ -1031,7 +1031,7 @@ function Callout({
   const dot =
     tone === "green" ? "bg-emerald-500" : tone === "rose" ? "bg-rose-500" : "bg-amber-500";
   return (
-    <div className={`mt-5 flex gap-3 rounded-xl border p-4 text-[#0b2f20] ${styles}`}>
+    <div className={`mt-5 flex gap-3 rounded-xl border p-4 text-dy-forest ${styles}`}>
       <span className={`mt-1.5 h-2 w-2 flex-shrink-0 rounded-full ${dot}`} />
       <p className="text-[13px] leading-relaxed">{children}</p>
     </div>
@@ -1041,7 +1041,7 @@ function Callout({
 function FeatureCard({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 transition hover:border-emerald-300 hover:shadow-sm">
-      <p className="text-[11px] font-black uppercase tracking-wider text-[#2f8a22]">
+      <p className="text-[11px] font-black uppercase tracking-wider text-dy-green-strong">
         {title}
       </p>
       <p className="mt-1.5 text-[13px] text-slate-600">{desc}</p>
@@ -1056,7 +1056,7 @@ function NotCard({ label, sub }: { label: string; sub: string }) {
         <Icon.X className="h-4 w-4" />
       </span>
       <div>
-        <p className="text-[13px] font-bold text-[#0b2f20]">{label}</p>
+        <p className="text-[13px] font-bold text-dy-forest">{label}</p>
         <p className="mt-0.5 text-[11px] text-slate-600">{sub}</p>
       </div>
     </div>
@@ -1069,7 +1069,7 @@ function PaymentChip({ label }: { label: string }) {
       <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-emerald-700 ring-1 ring-emerald-200">
         <Icon.Dollar className="h-5 w-5" />
       </span>
-      <p className="text-[13px] font-bold text-[#0b2f20]">{label}</p>
+      <p className="text-[13px] font-bold text-dy-forest">{label}</p>
     </div>
   );
 }
@@ -1085,11 +1085,11 @@ function StepItem({
 }) {
   return (
     <li className="flex items-start gap-4 rounded-xl border border-slate-200 bg-white p-4">
-      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#0f6a44] text-[13px] font-black text-white shadow-sm">
+      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-dy-mid text-[13px] font-black text-white shadow-sm">
         {n}
       </span>
       <div>
-        <h5 className="text-[13px] font-bold text-[#0b2f20]">{title}</h5>
+        <h5 className="text-[13px] font-bold text-dy-forest">{title}</h5>
         <div className="mt-1 text-[13px] text-slate-600 leading-relaxed">{children}</div>
       </div>
     </li>
@@ -1105,7 +1105,7 @@ function GeneralRow({
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <p className="text-[11px] font-black uppercase tracking-wider text-[#2f8a22]">
+      <p className="text-[11px] font-black uppercase tracking-wider text-dy-green-strong">
         {label}
       </p>
       <p className="mt-1.5 text-[13px] text-slate-700 leading-relaxed">{children}</p>

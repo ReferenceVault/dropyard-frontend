@@ -721,16 +721,16 @@ export default function FAQPage() {
   const totalQs = categories.reduce((sum, c) => sum + c.qs.length, 0);
 
   return (
-    <main className="min-h-screen bg-[#f7faf8]">
+    <main className="min-h-screen bg-dy-pale">
       <div className="fixed top-0 left-0 right-0 z-50 h-1 bg-transparent">
         <div
-          className="h-full bg-gradient-to-r from-[#2f8a22] via-[#22c55e] to-[#ff9412] transition-[width] duration-150"
+          className="h-full bg-gradient-to-r from-dy-green-strong via-[#3A8E31] to-dy-orange transition-[width] duration-150"
           style={{ width: `${progress}%` }}
         />
       </div>
 
       {/* HERO */}
-      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+      <section className="relative overflow-hidden border-b border-emerald-100 bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
         <div className="absolute inset-0 pointer-events-none opacity-20">
           <div
             className="absolute inset-0"
@@ -795,7 +795,7 @@ export default function FAQPage() {
         </div>
 
         <svg
-          className="absolute bottom-0 left-0 right-0 w-full text-[#f7faf8]"
+          className="absolute bottom-0 left-0 right-0 w-full text-dy-pale"
           viewBox="0 0 1440 60"
           fill="currentColor"
           preserveAspectRatio="none"
@@ -817,7 +817,7 @@ export default function FAQPage() {
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-[11px] font-bold transition-all ${
                   isActive
                     ? `${C.bg} ${C.text} ring-2 ${C.ring}`
-                    : "text-slate-500 hover:bg-slate-50 hover:text-[#0b2f20]"
+                    : "text-slate-500 hover:bg-slate-50 hover:text-dy-forest"
                 }`}
               >
                 <c.Icon className="h-3.5 w-3.5" />
@@ -836,7 +836,7 @@ export default function FAQPage() {
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
                 <Icon.Search className="h-6 w-6" />
               </div>
-              <h3 className="mt-4 text-[17px] font-bold text-[#0b2f20]">
+              <h3 className="mt-4 text-[17px] font-bold text-dy-forest">
                 No matches for &ldquo;{query}&rdquo;
               </h3>
               <p className="mt-2 text-[13px] text-slate-500">
@@ -859,7 +859,7 @@ export default function FAQPage() {
                     <p className={`text-[10px] font-black uppercase tracking-[0.18em] ${C.text}`}>
                       {cat.qs.length} {cat.qs.length === 1 ? "question" : "questions"}
                     </p>
-                    <h2 className="text-[23px] font-semibold tracking-tight text-[#0b2f20] sm:text-[29px]">
+                    <h2 className="text-[23px] font-semibold tracking-tight text-dy-forest sm:text-[29px]">
                       {cat.title}
                     </h2>
                   </div>
@@ -881,7 +881,7 @@ export default function FAQPage() {
           })}
 
           {/* Bottom contact CTA */}
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0b2f20] via-[#0f6a44] to-[#2f8a22] p-10 text-center text-white shadow-xl">
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-dy-forest via-dy-mid to-dy-green-strong p-10 text-center text-white shadow-xl">
             <div className="absolute -top-16 -right-16 h-48 w-48 rounded-full bg-amber-300/20 blur-3xl" />
             <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-emerald-300/20 blur-3xl" />
             <div className="relative">
@@ -896,7 +896,7 @@ export default function FAQPage() {
               </p>
               <a
                 href="mailto:info@dropyard.app"
-                className="mt-6 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-[13px] font-semibold text-[#0b2f20] transition hover:bg-amber-100 hover:shadow-lg hover:-translate-y-0.5"
+                className="mt-6 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-[13px] font-semibold text-dy-forest transition hover:bg-amber-100 hover:shadow-lg hover:-translate-y-0.5"
               >
                 <Icon.Mail className="h-4 w-4" />
                 info@dropyard.app
@@ -958,7 +958,7 @@ function FAQItem({
         className="flex w-full items-center justify-between gap-4 p-5 text-left"
         aria-expanded={open}
       >
-        <span className="text-[15px] font-semibold text-[#0b2f20] sm:text-[17px]">
+        <span className="text-[15px] font-semibold text-dy-forest sm:text-[17px]">
           {q}
         </span>
         <span

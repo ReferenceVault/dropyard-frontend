@@ -48,14 +48,14 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f7faf8] p-4 lg:p-6">
+    <div className="h-screen overflow-hidden bg-dy-pale p-4 lg:p-6">
       <div className="w-full max-w-6xl mx-auto h-full bg-white rounded-3xl shadow-[0_30px_80px_rgba(11,47,32,0.10)] overflow-hidden grid grid-cols-1 lg:grid-cols-2 ring-1 ring-emerald-100">
         {/* LEFT — BRAND PANEL */}
         <div
           className="relative hidden lg:flex flex-col justify-between px-12 py-12 overflow-hidden"
           style={{
             background:
-              "linear-gradient(135deg, #f3fbf4 0%, #ecf5ed 45%, #def0e0 100%)",
+              "linear-gradient(135deg, #F3F8F3 0%, #ecf5ed 45%, #def0e0 100%)",
           }}
         >
           {/* subtle dot grid */}
@@ -68,14 +68,14 @@ export default function AdminLoginPage() {
             }}
           />
           {/* soft brand glows */}
-          <div className="absolute -top-32 -left-32 h-80 w-80 rounded-full bg-[#2f8a22]/15 blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-[#ff9412]/15 blur-3xl pointer-events-none" />
+          <div className="absolute -top-32 -left-32 h-80 w-80 rounded-full bg-dy-green-strong/15 blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-dy-orange/15 blur-3xl pointer-events-none" />
 
           {/* TOP brand bar (small) */}
           <div className="relative z-10 flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-[0.35em] text-[#0b2f20]/60">DropYard</span>
-            <span className="h-px flex-1 max-w-[80px] bg-[#0b2f20]/15" />
-            <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#2f8a22]">Admin</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.35em] text-dy-forest/60">DropYard</span>
+            <span className="h-px flex-1 max-w-[80px] bg-dy-forest/15" />
+            <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-dy-green-strong">Admin</span>
           </div>
 
           {/* CENTER: logo circle + tagline */}
@@ -93,22 +93,22 @@ export default function AdminLoginPage() {
             </div>
 
             {/* Decorative serif quote mark */}
-            <span aria-hidden="true" className="font-serif mt-6 text-[64px] leading-none text-[#0b2f20]/15 select-none">
+            <span aria-hidden="true" className="font-serif mt-6 text-[64px] leading-none text-dy-forest/15 select-none">
               &ldquo;
             </span>
 
             {/* Tagline */}
-            <h2 className="font-serif text-3xl font-medium tracking-tight text-[#0b2f20] -mt-5">
+            <h2 className="font-serif text-3xl font-medium tracking-tight text-dy-forest -mt-5">
               Built for neighbourhoods.
             </h2>
-            <p className="font-serif italic text-2xl text-[#ff9412] mt-1">
+            <p className="font-serif italic text-2xl text-dy-orange mt-1">
               Run with care.
             </p>
           </div>
 
           {/* BOTTOM footnote */}
-          <div className="relative z-10 flex items-center justify-center gap-2 text-[12px] text-[#0b2f20]/70 font-medium">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#ff9412]" />
+          <div className="relative z-10 flex items-center justify-center gap-2 text-[12px] text-dy-forest/70 font-medium">
+            <span className="h-1.5 w-1.5 rounded-full bg-dy-orange" />
             DropYard neighbourhood marketplace · stewarded with care
           </div>
         </div>
@@ -118,8 +118,8 @@ export default function AdminLoginPage() {
           {/* Top row: 3 dots + secure label */}
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#2f8a22]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#ff9412]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-dy-green-strong" />
+              <span className="h-2.5 w-2.5 rounded-full bg-dy-orange" />
               <span className="h-2.5 w-2.5 rounded-full bg-[#3b82f6]" />
             </div>
             <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400">
@@ -128,7 +128,7 @@ export default function AdminLoginPage() {
           </div>
 
           {/* Headline */}
-          <h1 className="font-serif text-4xl font-medium tracking-tight text-[#0b2f20]">
+          <h1 className="font-serif text-4xl font-medium tracking-tight text-dy-forest">
             Welcome back
           </h1>
           <p className="mt-1.5 text-sm text-slate-500">
@@ -151,7 +151,7 @@ export default function AdminLoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="admin@dropyard.app"
-                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-[#f7faf8] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2f8a22] focus:ring-2 focus:ring-[#2f8a22]/15 focus:bg-white transition"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-dy-pale text-slate-900 placeholder-slate-400 focus:outline-none focus:border-dy-green-strong focus:ring-2 focus:ring-dy-green-strong/15 focus:bg-white transition"
                 />
               </div>
             </div>
@@ -170,7 +170,7 @@ export default function AdminLoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-[#f7faf8] text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#2f8a22] focus:ring-2 focus:ring-[#2f8a22]/15 focus:bg-white transition"
+                  className="w-full pl-10 pr-3 py-2.5 rounded-xl border border-slate-200 bg-dy-pale text-slate-900 placeholder-slate-400 focus:outline-none focus:border-dy-green-strong focus:ring-2 focus:ring-dy-green-strong/15 focus:bg-white transition"
                 />
               </div>
             </div>
@@ -187,7 +187,7 @@ export default function AdminLoginPage() {
               disabled={submitting || !email || !password}
               className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-white font-bold tracking-wider uppercase text-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-[0_15px_35px_rgba(47,138,34,0.25)] active:scale-[0.99] hover:shadow-[0_18px_42px_rgba(47,138,34,0.32)]"
               style={{
-                background: "linear-gradient(135deg, #2f8a22 0%, #0f6a44 100%)",
+                background: "linear-gradient(135deg, #33802B 0%, #2C6126 100%)",
               }}
             >
               {submitting ? (
@@ -207,15 +207,15 @@ export default function AdminLoginPage() {
           {/* Trust badges */}
           <div className="mt-auto pt-6 border-t border-slate-100 flex items-center justify-center gap-5 text-[11px] font-bold uppercase tracking-wider text-slate-500">
             <span className="inline-flex items-center gap-1.5">
-              <Shield size={11} className="text-[#2f8a22]" /> Secure
+              <Shield size={11} className="text-dy-green-strong" /> Secure
             </span>
             <span className="text-slate-300">•</span>
             <span className="inline-flex items-center gap-1.5">
-              <KeyRound size={11} className="text-[#2f8a22]" /> Encrypted
+              <KeyRound size={11} className="text-dy-green-strong" /> Encrypted
             </span>
             <span className="text-slate-300">•</span>
             <span className="inline-flex items-center gap-1.5">
-              <EyeOff size={11} className="text-[#2f8a22]" /> Private
+              <EyeOff size={11} className="text-dy-green-strong" /> Private
             </span>
           </div>
 
