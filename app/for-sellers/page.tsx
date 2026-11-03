@@ -185,7 +185,7 @@ export default function ForSellersPage() {
         {/* ══════════ 4. AI SELLER AGENT ══════════ */}
         <section style={{ padding: "56px 24px", backgroundColor: "#fff" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 48, alignItems: "center" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 48, alignItems: "center" }}>
               <div>
                 <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 14px", borderRadius: 50, backgroundColor: C.aiLight, border: `1px solid ${C.aiBorder}`, marginBottom: 16 }}>
                   <Sparkles size={14} style={{ color: C.ai }} />

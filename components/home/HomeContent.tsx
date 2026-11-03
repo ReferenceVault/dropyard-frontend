@@ -216,7 +216,7 @@ export function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const revealRef = useSectionReveal<HTMLDivElement>();
-  const { state, featured, shelf, liveItems, feedPhase, reload, dropStats, neighbourCount, savedIds, claimedIds, userId, toggleSaved } = useHomeData();
+  const { state, featured, shelf, feedPhase, reload, neighbourCount, savedIds, toggleSaved } = useHomeData();
 
   useEffect(() => {
     const p = searchParams?.get("page");
@@ -231,9 +231,7 @@ export function HomeContent() {
       <TrustStrip />
       <DropCycleProvider>
         <NextDropSection
-          stats={state === "ready" ? dropStats : null}
-          neighbourCount={neighbourCount}
-          live={{ items: liveItems, state, feedPhase, savedIds, claimedIds, userId, onToggleSaved: toggleSaved }}
+          live={{ state, feedPhase }}
           onDropOpened={reload}
         />
       </DropCycleProvider>

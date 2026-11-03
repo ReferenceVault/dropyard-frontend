@@ -217,13 +217,13 @@ p {
 /* Sized for the trimmed wordmark (artwork fills ~94% of the box). The old
    Logo_1.png was 54% whitespace, so a 38px box drew only a ~17px mark. */
 .dy-seller-topnav__logo {
-  height: 30px;
+  height: 38px;
   width: auto;
   display: block;
 }
 @media (max-width: 768px) {
   .dy-seller-topnav__logo {
-    height: 24px;
+    height: 32px;
   }
 }
 
@@ -234,6 +234,13 @@ p {
 @media (max-width: 768px) {
   .dy-seller-topnav__breadcrumb {
     font-size: 13px;
+  }
+}
+/* Below ~370px the logo and header buttons leave the crumb under 50px, so it
+   showed "Overvi…" or a bare ellipsis. Each view's own heading names it there. */
+@media (max-width: 370px) {
+  .dy-seller-topnav__breadcrumb {
+    display: none !important;
   }
 }
 
@@ -449,7 +456,7 @@ p {
 @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .dy-btn--primary:not(:disabled):hover,
   button.cta-primary:not(:disabled):hover {
-    transform: scale(1.03);
+    transform: translateY(-2px);
     box-shadow: var(--shadow-raised);
   }
   .dy-btn--light:not(:disabled):hover,
@@ -487,7 +494,10 @@ p {
   .dy-mobile-bottom-nav button:hover {
     color: var(--color-dy-green-strong);
   }
-  .dy-flip:hover .dy-flip__face {
+  .dy-card {
+    transition: box-shadow var(--transition-normal);
+  }
+  .dy-card:hover {
     box-shadow: var(--shadow-lift), var(--shadow-panel);
   }
 }
@@ -506,32 +516,6 @@ p {
 /* Item-card corner ribbon: a flag with a notch cut from its trailing edge. */
 .dy-ribbon {
   clip-path: polygon(0 0, 100% 0, calc(100% - 0.75em) 50%, 100% 100%, 0 100%);
-}
-/* Next Drop card. Both sides share one grid cell, so the taller sets the
-   card's height and flipping can't shift the page. */
-.dy-flip {
-  perspective: 1600px;
-}
-.dy-flip__inner {
-  display: grid;
-  transform-style: preserve-3d;
-  transition: transform 600ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-.dy-flip__inner--flipped {
-  transform: rotateY(180deg);
-}
-.dy-flip__face {
-  grid-area: 1 / 1;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
-.dy-flip__face--back {
-  transform: rotateY(180deg);
-}
-@media (prefers-reduced-motion: reduce) {
-  .dy-flip__inner {
-    transition: none;
-  }
 }
 .dy-no-scrollbar {
   scrollbar-width: none;
@@ -562,6 +546,15 @@ p {
   .dy-reveal-in {
     animation: dy-reveal 420ms var(--ease-spring) backwards;
   }
+  .dy-footer-reveal {
+    transition: transform 480ms var(--ease-spring), opacity 360ms var(--ease-out);
+  }
+}
+/* Discover's closing reminder strip (BottomReveal): docked at the foot of the
+   screen, parked just below its spot until the end of the page is reached. */
+.dy-footer-reveal[data-revealed="false"] {
+  transform: translateY(100%);
+  opacity: 0;
 }
 @media print {
   .dy-reveal-pending {
