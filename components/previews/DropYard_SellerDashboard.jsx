@@ -7,6 +7,7 @@ import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { ModalA11y } from "@/components/ModalA11y";
+import DeleteAccountSection from "@/components/settings/DeleteAccountSection";
 import { useAuth } from "@/context/AuthContext";
 import { useDropCycle } from "@/context/DropCycleContext";
 import { formatPickupDateList, formatPickupDateLong } from "@/lib/pickupDates";
@@ -244,10 +245,10 @@ const CATEGORY_EMOJI = {
 };
 
 /* Avatar helpers */
-function avatarBg(name) {
-  const seeds = [C.green, C.amberDeep, C.sky, C.claret, C.purple, C.teal];
-  let h = 0; for (const ch of (name || "")) h = (h * 31 + ch.charCodeAt(0)) & 0xffff;
-  return seeds[h % seeds.length];
+// Every profile-initial avatar is the brand green (the Seller button's), with
+// white initials. Call sites still pass the name; it no longer matters.
+function avatarBg() {
+  return C.green;
 }
 function initialsOf(name) {
   if (!name) return "?";
@@ -1859,7 +1860,7 @@ function SellWithAITeaser({ notified, onNotify }) {
       <div style={{ position: "absolute", bottom: -40, left: 30, width: 100, height: 100, borderRadius: "50%", background: "radial-gradient(circle, " + C.ai + "0d 0%, transparent 70%)", pointerEvents: "none" }}/>
 
       <div style={{ position: "relative", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 24 }}>
-        <div style={{ flex: 1, minWidth: 280 }}>
+        <div style={{ flex: 1, minWidth: "min(280px, 100%)" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", borderRadius: 999, background: C.ai, marginBottom: 12, boxShadow: _SH_XS }}>
             <Sparkles size={11} style={{ color: "#fff" }} strokeWidth={2.6}/>
             <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 900, color: "#fff", letterSpacing: "0.1em", textTransform: "uppercase" }}>Coming soon</span>
@@ -4299,14 +4300,17 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
         </div>
       </div>
 
-      {/* Tab row */}
-      <div style={{ display: "flex", gap: isMobile ? 4 : 8, borderBottom: "1.5px solid " + C.fawn, paddingBottom: 0 }}>
+      {/* Tab row. On a 320px phone the three tabs and their counts need
+          ~300px of 288, which wrapped "My items" onto two lines; there the
+          row scrolls sideways instead of squeezing a label. */}
+      <div className={isMobile ? "preview-scroll" : undefined} style={{ display: "flex", gap: isMobile ? 4 : 8, borderBottom: "1.5px solid " + C.fawn, paddingBottom: 0, overflowX: isMobile ? "auto" : undefined, scrollbarWidth: isMobile ? "none" : undefined }}>
         {tabs.map(tab => {
           const active = activeView === tab.view || (tab.view === "orders" && ["orders","claims","pickups","history"].includes(activeView));
           return (
             <button key={tab.id} onClick={() => onNav(tab.view)} style={{
-              position: "relative", display: "flex", alignItems: "center", gap: 8,
-              padding: isMobile ? "10px 14px 12px" : "11px 18px 13px", border: "none", cursor: "pointer",
+              position: "relative", display: "flex", alignItems: "center", gap: isMobile ? 6 : 8,
+              padding: isMobile ? "10px 12px 12px" : "11px 18px 13px", border: "none", cursor: "pointer",
+              whiteSpace: "nowrap", flexShrink: 0,
               background: "transparent",
               fontFamily: F.head, fontSize: isMobile ? 13 : 14, fontWeight: active ? 900 : 700,
               color: active ? C.ink : C.mink,
@@ -4319,7 +4323,7 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
                   {tab.urgent > 0 && <span style={{ width: 4, height: 4, borderRadius: "50%", background: C.claret }}/>}
                 </span>
               )}
-              {active && <div style={{ position: "absolute", left: 0, right: 0, bottom: -1.5, height: 3, background: C.green, borderRadius: 2 }}/>}
+              {active && <div style={{ position: "absolute", left: 0, right: 0, bottom: isMobile ? 0 : -1.5, height: 3, background: C.green, borderRadius: 2 }}/>}
             </button>
           );
         })}
@@ -4434,7 +4438,7 @@ function QuestionsView({ onNav, accessToken = null, onQuestionsChanged = null })
 
                   {/* The question */}
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 13 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: C.greenMist, color: C.greenDeep, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: avatarBg(q.askerName), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
                       {(q.askerName || "B").charAt(0)}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -4602,7 +4606,11 @@ function ClosingTimeBanner({ counts, onDiscount }) {
 }
 
 function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, sellerItemsLoading, accessToken }) {
-  const { isMobile } = useViewport();
+  const { isMobile, width } = useViewport();
+  // The table's fixed tracks (photo, status, price, actions) need ~600px before
+  // Item and Category get any room; beside the sidebar that's only there from
+  // ~1200px. Below that the rows use the stacked card layout phones use.
+  const compactList = isMobile || width < 1200;
   // Drop-cycle wiring — coarse phase ("between" | "live" | "closing") drives
   // the Drop strip, lifecycle pills, and per-item actions (e.g. Make free).
   const cycle = useDropCycle();
@@ -5082,7 +5090,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
       {/* Items table — column headers + single-column list of rows aligned
           to the same grid tracks (Photo · Item · Category · Status · Price · Actions).
           Mobile skips the header row and stacks each item into a vertical card. */}
-      {filtered.length > 0 && !isMobile && (
+      {filtered.length > 0 && !compactList && (
         <div style={{ display: "grid", gridTemplateColumns: "60px minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(140px, 0.9fr) 80px minmax(220px, auto)", gap: 14, padding: "8px 18px", marginBottom: 6, fontFamily: F.head, fontSize: 10, fontWeight: 900, color: C.ash, letterSpacing: "0.14em", textTransform: "uppercase" }}>
           <span aria-hidden="true"/>
           <span>Item</span>
@@ -5093,14 +5101,14 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 10 : 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: compactList ? 10 : 8 }}>
         {filtered.map(item => {
           const lc = lifecycleOf(item);
           const meta = lifecycleMeta[lc];
           // Mobile card layout — vertical stack: thumb+title+price top row,
           // meta + status pills middle, action row bottom. Keeps every action
           // accessible without horizontal scroll.
-          if (isMobile) {
+          if (compactList) {
             return (
               <article key={item.id} style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: 14, border: "1.5px solid " + meta.border, background: C.paper }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
@@ -5182,6 +5190,19 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                     reason — a Shelf item is not queued for the Drop. */}
 
                 <div style={{ display: "flex", gap: 6, alignItems: "center", paddingTop: 10, borderTop: "1px dashed " + C.fawn }}>
+                  {/* Share — the table row's button, same allow-list. The card
+                      layout never had it, so phones (and now tablets, which
+                      use cards too) couldn't share a listing. */}
+                  {["queued", "live", "shelf"].includes(lc) && (
+                    <button
+                      onClick={async (e) => { e.stopPropagation(); await shareSellerListing(item); }}
+                      aria-label="Share this listing"
+                      title="Share"
+                      style={actionBtnIcon}
+                    >
+                      <Share2 size={13} style={{ color: C.greenDeep }} strokeWidth={2.4}/>
+                    </button>
+                  )}
                   {lc === "draft" && (
                     <>
                       <button onClick={() => openPublishChooser(item)} className="cta-primary" style={{ ...actionBtnSolid(C.green, C.greenDeep), flex: 1 }}>Publish</button>
@@ -10396,12 +10417,12 @@ function ProfileTab({ user, onSuccess }) {
     : "—";
 
   return (
-    <div style={{ maxWidth: 1160, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+    <div style={{ maxWidth: 1160, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 20 }}>
       {/* Profile information */}
       <form onSubmit={submitProfile} style={{ background: C.paper, border: "1px solid " + C.fawn, borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
         <h2 style={{ fontFamily: F.head, fontSize: 16, fontWeight: 800, color: C.ink, letterSpacing: "-0.01em" }}>Profile information</h2>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
           <SF_Field label="First name">
             <SF_Input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="First name" autoComplete="given-name" disabled={savingProfile}/>
           </SF_Field>
@@ -10414,7 +10435,7 @@ function ProfileTab({ user, onSuccess }) {
           <SF_Input type="email" value={user?.email || ""} readOnly disabled style={{ background: C.sand, color: C.mink }}/>
         </SF_Field>
 
-        <div style={{ background: C.sand, border: "1px solid " + C.fawn, borderRadius: 12, padding: "12px 14px", display: "flex", gap: 28 }}>
+        <div style={{ background: C.sand, border: "1px solid " + C.fawn, borderRadius: 12, padding: "12px 14px", display: "flex", flexWrap: "wrap", columnGap: 28, rowGap: 12 }}>
           <div>
             <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.ash, letterSpacing: "0.14em", textTransform: "uppercase" }}>Member since</p>
             <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.ink, marginTop: 2 }}>{memberSince}</p>
@@ -10481,6 +10502,8 @@ function ProfileTab({ user, onSuccess }) {
           </SF_PrimaryButton>
         </div>
       </form>
+
+      <div style={{ gridColumn: "1 / -1" }}><DeleteAccountSection/></div>
     </div>
   );
 }
@@ -10528,7 +10551,7 @@ function SubscriptionTab({ user, onSuccess }) {
   ];
 
   return (
-    <div style={{ maxWidth: 1160, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+    <div style={{ maxWidth: 1160, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 20 }}>
       {/* Current Plan */}
       <div style={{ background: C.paper, border: "1px solid " + C.fawn, borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
         <div>

@@ -26,9 +26,14 @@ export const metadata: Metadata = {
   title: "DropYard",
   description: "From one home to another. Local yard sales, simplified.",
   icons: {
-    // Tagline-free mark: at favicon size "From one home to another" is a grey
-    // smudge that shrinks the house and wordmark to fit around it.
-    icon: "/Logo_1.png",
+    // The house symbol alone, cropped from logo-wordmark.png. The full
+    // wordmark shrank to an unreadable strip at tab size. `?v=` busts the
+    // browser's favicon cache; bump it whenever these files change.
+    icon: [
+      { url: "/favicon.ico?v=2", sizes: "16x16 32x32 48x48" },
+      { url: "/icon-192.png?v=2", type: "image/png", sizes: "192x192" },
+    ],
+    apple: { url: "/apple-touch-icon.png?v=2", sizes: "180x180" },
   },
 };
 

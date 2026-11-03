@@ -109,7 +109,7 @@ export default function EmailBlastsPage() {
       )}
 
       {/* Stats */}
-      <section className="grid grid-cols-3 gap-4">
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
         <div className="rounded-2xl bg-white border border-slate-200 p-5">
           <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Active subscribers</p>
           <p className="mt-1 text-[28px] font-bold text-slate-900">{loading ? "—" : active}</p>

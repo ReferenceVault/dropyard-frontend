@@ -10,6 +10,16 @@ export type DropStatus = "UPCOMING" | "LIVE" | "ENDED";
 interface CurrentDrop {
   drop: { liveStart: string; closedStart: string; endsAt: string };
   now: string;
+  liveItemCount?: number;
+  liveSellerCount?: number;
+  claimCount?: number;
+}
+
+/** What buyers can see in the current Drop, as counted by the backend. */
+export interface LiveDropStats {
+  items: number;
+  claims: number;
+  sellers: number;
 }
 
 interface Schedule {
@@ -21,6 +31,8 @@ interface Schedule {
 }
 
 const FETCH_TIMEOUT_MS = 5000;
+/** Claims move during a live Drop, so the card's figures are refetched this often. */
+const LIVE_STATS_REFRESH_MS = 60_000;
 
 /** The next opening still ahead: during a live Drop, that's next week's. */
 function upcomingOpening(now: Date): Date {
@@ -39,16 +51,24 @@ export function useDropSchedule() {
   const { effectiveNow, simulatedDate } = useDropCycle();
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [settled, setSettled] = useState(false);
+  const [liveStats, setLiveStats] = useState<LiveDropStats | null>(null);
 
   const load = useCallback(() => {
     apiRequest<CurrentDrop>("/api/drop/current", { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
-      .then(({ drop, now }) => setSchedule({
-        liveStart:   new Date(drop.liveStart).getTime(),
-        closedStart: new Date(drop.closedStart).getTime(),
-        endsAt:      new Date(drop.endsAt).getTime(),
-        skewMs:      new Date(now).getTime() - Date.now(),
-      }))
-      .catch(() => { /* the local schedule stands in */ })
+      .then(({ drop, now, liveItemCount, liveSellerCount, claimCount }) => {
+        setSchedule({
+          liveStart:   new Date(drop.liveStart).getTime(),
+          closedStart: new Date(drop.closedStart).getTime(),
+          endsAt:      new Date(drop.endsAt).getTime(),
+          skewMs:      new Date(now).getTime() - Date.now(),
+        });
+        // Only real figures: an older backend without them leaves the card on "--".
+        if ([liveItemCount, liveSellerCount, claimCount].every((n) => typeof n === "number")) {
+          setLiveStats({ items: liveItemCount!, claims: claimCount!, sellers: liveSellerCount! });
+        }
+      })
+      // The local schedule stands in. Any figures already shown were real, so they stay.
+      .catch(() => {})
       .finally(() => setSettled(true));
   }, []);
 
@@ -71,6 +91,15 @@ export function useDropSchedule() {
     status = phase === "LIVE" ? "LIVE" : phase === "CLOSED" ? "ENDED" : "UPCOMING";
   }
 
+  // Fresh figures the moment the Drop opens, then on a timer while it runs.
+  const isLive = status === "LIVE";
+  useEffect(() => {
+    if (!isLive || simulatedDate) return;
+    load();
+    const id = setInterval(load, LIVE_STATS_REFRESH_MS);
+    return () => clearInterval(id);
+  }, [isLive, simulatedDate, load]);
+
   return {
     // The provider's clock starts at the epoch until it mounts on the client.
     // Nothing is decided until the backend has answered, so a Saturday page
@@ -81,5 +110,6 @@ export function useDropSchedule() {
     opensAt:   active && nowMs < active.liveStart ? new Date(active.liveStart) : upcomingOpening(now),
     closesAt:  active ? new Date(active.closedStart) : dropCloseMoment(now),
     simulated: !!simulatedDate,
+    liveStats,
   };
 }

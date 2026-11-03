@@ -76,7 +76,7 @@ export function GlobalHeader() {
     <nav aria-label="Main" className="fixed left-0 right-0 top-0 z-50 bg-white font-dy shadow-[0_1px_0_var(--color-dy-line)]">
       <div className="dy-wrap flex h-20 items-center justify-between gap-4 xl:h-[92px]">
         <Link href="/" className="dy-focus shrink-0 rounded" onClick={close}>
-          <Image src="/logo-wordmark.png" alt="DropYard home" width={1520} height={376} priority className="h-10 w-auto xl:h-[clamp(44px,2.9vw,56px)]" />
+          <Image src="/logo-wordmark.png" alt="DropYard home" width={1520} height={376} priority className="h-12 w-auto xl:h-[clamp(52px,3.5vw,66px)]" />
         </Link>
 
         <div className="hidden items-center gap-[clamp(16px,2.4vw,46px)] xl:flex">

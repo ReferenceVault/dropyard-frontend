@@ -12,6 +12,8 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * `onClose` is what Esc does, so pass the overlay's existing dismiss action.
  * Leave it out when dismissing would do something, like a rating prompt whose
  * only way out is a Skip that writes to the API.
+ *
+ * @param {{ label: string, onClose?: (() => void) | null }} props
  */
 export function ModalA11y({ label, onClose = null }) {
   const anchor = useRef(null);

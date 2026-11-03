@@ -103,7 +103,7 @@ export function AdminTopBar({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 text-white text-[12px] font-bold ring-2 ring-white shadow-sm">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-dy-green-strong text-white text-[12px] font-bold ring-2 ring-white shadow-sm">
             {initials}
           </span>
           <div className="hidden sm:flex flex-col leading-tight text-left">

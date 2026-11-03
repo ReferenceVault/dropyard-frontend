@@ -1,30 +1,12 @@
 import React from "react";
 
-const PALETTE = [
-  "from-emerald-400 to-emerald-600",
-  "from-amber-400 to-amber-600",
-  "from-violet-400 to-violet-600",
-  "from-sky-400 to-sky-600",
-  "from-rose-400 to-rose-600",
-  "from-teal-400 to-teal-600",
-];
-
-/** Deterministic colour from a seed string, so the same user always renders the same gradient. */
-function paletteIndex(seed: string): number {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = (hash * 31 + seed.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash) % PALETTE.length;
-}
-
+/** Profile-initial chip. Every avatar is the brand green with white initials. */
 export function AvatarChip({
   name,
-  seed,
   size = "md",
 }: {
   name: string;
-  /** Optional seed for colour selection (e.g. user id). Falls back to name. */
+  /** Used to vary the colour per user; avatars are now all brand green. Kept so callers needn't change. */
   seed?: string;
   size?: "sm" | "md" | "lg";
 }) {
@@ -42,11 +24,9 @@ export function AvatarChip({
     ? "h-10 w-10 text-sm"
     : "h-8 w-8 text-[11px]";
 
-  const grad = PALETTE[paletteIndex(seed ?? name)];
-
   return (
     <span
-      className={`inline-flex items-center justify-center rounded-full font-bold text-white bg-gradient-to-br ${grad} ${sizing} ring-2 ring-white shadow-sm flex-shrink-0`}
+      className={`inline-flex items-center justify-center rounded-full font-bold text-white bg-dy-green-strong ${sizing} ring-2 ring-white shadow-sm flex-shrink-0`}
       aria-hidden
     >
       {initials}

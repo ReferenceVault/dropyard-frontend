@@ -13,6 +13,7 @@ import { formatPickupDateList, formatPickupWeekday } from "@/lib/pickupDates";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { ModalA11y } from "@/components/ModalA11y";
+import DeleteAccountSection from "@/components/settings/DeleteAccountSection";
 import { useAuth } from "@/context/AuthContext";
 import {
   dropOpenHour, dropOpenHourCompact, dropOpenHourBadge,
@@ -543,10 +544,10 @@ const sneakPeekItems = [
   { id: 108, t: "Leather Couch (3-seater)",         estPrice: 320, img: "\uD83D\uDECB\uFE0F",  cat: "Furniture",       seller: "Priya M.", hood: "Barrhaven South", dist: "1.5 km" },
 ];
 
-function avatarBg(name) {
-  const seeds = [C.green, C.amberDeep, C.sky, C.claret, C.purple, C.teal];
-  let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) & 0xffff;
-  return seeds[h % seeds.length];
+// Every profile-initial avatar is the brand green (the Seller button's), with
+// white initials. Call sites still pass the name; it no longer matters.
+function avatarBg() {
+  return C.green;
 }
 
 function initialsOf(name) {
@@ -648,7 +649,7 @@ function computeDropState(now = new Date()) {
 
 // Avatar with dropdown menu - real user initials and sign-out.
 // Click outside (the invisible overlay) to close.
-function UserMenu({ user, onSignout, onOpenSettings }) {
+function UserMenu({ user, onSignout, onOpenSettings, dropState }) {
   const [open, setOpen] = useState(false);
   const initials = user?.name ? initialsOf(user.name) : "?";
   return (
@@ -658,7 +659,10 @@ function UserMenu({ user, onSignout, onOpenSettings }) {
         title={user?.name || "Account"}
         style={{
           width: 38, height: 38, borderRadius: "50%",
-          background: "linear-gradient(135deg, " + C.green + ", " + C.greenDeep + ")",
+          // The buyer's own avatar alone keeps the Drop colours (Point 2): brown
+          // between Drops, green while one is live, like the active tab. Every
+          // other profile avatar is avatarBg()'s brand green.
+          background: dropState === "live" ? C.green : C.amberDeep,
           display: "flex", alignItems: "center", justifyContent: "center",
           color: "#fff", fontFamily: F.head, fontWeight: 800, fontSize: 14,
           border: "2px solid " + C.paper, boxShadow: "0 0 0 1.5px " + C.greenMist,
@@ -846,10 +850,11 @@ function MobileBottomNav({ page, setPage, savedCount, claimsCount, unreadCount =
   );
 }
 
-// dropState is gone from the params: the nav's only use for it was choosing
-// between the amber pill and the green pill, and there is one active
-// treatment now. MobileBottomNav still takes it for its own accent.
-function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, onSwitchRole, onReset, user, onSignout }) {
+// The active tab is underlined, never filled. Its colour follows the Drop:
+// golden brown between Drops, green while one is live, the same split
+// MobileBottomNav and the filter chips use.
+function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, onSwitchRole, onReset, user, onSignout, dropState }) {
+  const activeColor = dropState === "live" ? C.green : C.amberDeep;
   const { isMobile } = useViewport();
   const navItems = [
     { id:"discover", label:"Discover" },
@@ -865,7 +870,7 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, on
           {/* Sizes are for the trimmed asset, whose artwork fills ~94% of the
               box. Logo_1.png was 54% whitespace, so its 44px box only drew a
               ~20px mark — which is why the logo looked small next to the nav. */}
-          <img src={LOGO_SRC} alt="DropYard" style={{ height: isMobile ? 24 : 30, width: "auto", display: "block" }}/>
+          <img src={LOGO_SRC} alt="DropYard" style={{ height: isMobile ? 32 : 38, width: "auto", display: "block" }}/>
         </Link>
 
         {/* Desktop primary nav — replaced by MobileBottomNav on small screens. */}
@@ -873,32 +878,26 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, on
           <nav style={{ display: "flex", alignItems: "center", gap: 4 }}>
             {navItems.map(item => {
               const active = page === item.id;
-              // Two active treatments, read straight off the design comps:
-              // Claims goes green with a bar under it, every other tab wears
-              // the pale amber pill. Six comps show this split and none
-              // contradict it (Claims green in both its shots, Saved /
-              // Messages / History amber in all four of theirs), so it's
-              // deliberate rather than drift. `underlined` is the whole rule
-              // — flip it to a constant to unify the two.
-              const underlined = active && item.id === "claims";
+              // Same padding active or not, so the underline never shifts
+              // the tabs around it.
               return (
-                <button key={item.id} onClick={() => { onReset && onReset(); setPage(item.id); }} style={{
+                <button key={item.id} aria-current={active ? "page" : undefined} onClick={() => { onReset && onReset(); setPage(item.id); }} style={{
                   position: "relative",
                   display: "flex", alignItems: "center", gap: 7,
-                  padding: underlined ? "8px 15px 13px" : "9px 16px",
-                  border: "none", borderRadius: underlined ? 0 : 999,
-                  background: active && !underlined ? C.amberMist : "transparent",
-                  color: active ? (underlined ? C.green : C.amberDeep) : C.mink,
+                  padding: "9px 16px",
+                  border: "none", borderRadius: 999,
+                  background: "transparent",
+                  color: active ? activeColor : C.mink,
                   fontSize: 15, fontWeight: active ? 800 : 600,
                   cursor: "pointer", fontFamily: F.head,
-                  transition: "color 200ms, background 200ms",
+                  transition: "color 200ms",
                 }}>
                   {item.label}
                   {item.badge && (
-                    <span style={{ fontSize: 11, fontWeight: 800, padding: "1px 8px", borderRadius: 20, background: active ? (underlined ? C.green : C.amber) : C.fawn, color: active ? "#fff" : C.mink }}>{item.badge}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, padding: "1px 8px", borderRadius: 20, background: active ? activeColor : C.fawn, color: active ? "#fff" : C.mink }}>{item.badge}</span>
                   )}
-                  {underlined && (
-                    <span aria-hidden="true" style={{ position: "absolute", left: 12, right: 12, bottom: 0, height: 3, borderRadius: "3px 3px 0 0", background: C.green }}/>
+                  {active && (
+                    <span aria-hidden="true" style={{ position: "absolute", left: 12, right: 12, bottom: 0, height: 3, borderRadius: "3px 3px 0 0", background: activeColor }}/>
                   )}
                 </button>
               );
@@ -915,7 +914,7 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, on
              so it still fits at 360px alongside logo + avatar. Desktop keeps the
              full label. */}
           <SwitchToSellerButton onClick={() => onSwitchRole && onSwitchRole()} compact={isMobile}/>
-          <UserMenu user={user} onSignout={onSignout} onOpenSettings={() => { onReset && onReset(); setPage("settings"); }}/>
+          <UserMenu user={user} onSignout={onSignout} onOpenSettings={() => { onReset && onReset(); setPage("settings"); }} dropState={dropState}/>
         </div>
       </div>
     </header>
@@ -964,6 +963,38 @@ function PageBar({ title, chip, chipIcon: ChipIcon, chipTone = "green", onBack }
           {ChipIcon && <ChipIcon size={isMobile ? 13 : 15} strokeWidth={2.2}/>}
           {chip}
         </span>
+      )}
+    </div>
+  );
+}
+
+// Summary tile for the Claims and History stat rows. Desktop: icon beside the
+// figure. Phones: the tiles are half the screen wide, and an icon beside the
+// figure left the label ~50px, so single words like "Completed" ran out of
+// the tile — there the icon sits above the figure instead.
+//   stat: { label, value, icon, color, bg, sub?, urgent? }
+function StatTile({ stat: s, index = 0 }) {
+  const { isMobile } = useViewport();
+  const Ic = s.icon;
+  return (
+    <div className="fade-in" style={{
+      padding: isMobile ? "14px" : "20px 22px", minWidth: 0, borderRadius: 18,
+      background: s.urgent ? s.bg : C.paper, border: "1px solid " + (s.urgent ? s.color + "40" : C.fawn),
+      animationDelay: (index * 40) + "ms", position: "relative",
+      display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 10 : 16,
+    }}>
+      <div style={{ width: isMobile ? 40 : 52, height: isMobile ? 40 : 52, borderRadius: isMobile ? 12 : 16, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Ic size={isMobile ? 19 : 23} strokeWidth={2.1} style={{ color: s.color }}/>
+      </div>
+      <div style={{ flex: 1, minWidth: 0, width: isMobile ? "100%" : undefined }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <p style={{ fontFamily: F.head, fontSize: isMobile ? 26 : 33, fontWeight: 900, color: s.color, letterSpacing: "-0.02em", lineHeight: 1 }}>{s.value}</p>
+          {s.sub && <span style={{ fontFamily: F.body, fontSize: isMobile ? 11 : 12, fontWeight: 600, color: C.ash, background: C.sand, border: "1px solid " + C.fawn, padding: isMobile ? "2px 8px" : "3px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>{s.sub}</span>}
+        </div>
+        <p style={{ fontFamily: F.body, fontSize: isMobile ? 13 : 14, fontWeight: 600, color: C.mink, marginTop: 5, lineHeight: 1.3 }}>{s.label}</p>
+      </div>
+      {s.urgent && (
+        <span style={{ position: isMobile ? "absolute" : "static", top: 14, right: 14, width: 8, height: 8, flexShrink: 0, borderRadius: "50%", background: s.color, boxShadow: "0 0 0 3px " + s.color + "35", animation: "pulseGreen 2s infinite" }}/>
       )}
     </div>
   );
@@ -1126,7 +1157,7 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
 
       <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
         {/* Left side */}
-        <div style={{ flex: 1, minWidth: 280 }}>
+        <div style={{ flex: 1, minWidth: "min(280px, 100%)" }}>
           {/* OPENS SATURDAY pill — amber parallel to LIVE NOW */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px 4px 10px", borderRadius: 999, background: C.amberDeep, boxShadow: "0 2px 10px " + C.amberDeep + "55", marginBottom: 8 }}>
             <span style={{ position: "relative", display: "inline-flex", width: 6, height: 6 }}>
@@ -1138,18 +1169,18 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
 
           {/* Headline — the countdown pill below already spells out the day and
               hour, so this sells the idea rather than repeating the schedule. */}
-          <h1 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.025em", lineHeight: 1.2, marginBottom: 10 }}>
+          <h1 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 700, color: CARD.ink, letterSpacing: "-0.02em", lineHeight: 1.2, marginBottom: 10 }}>
             Good finds. Right around the corner.
           </h1>
 
           {/* Body. The zero case keeps its own copy — "preview what your
               neighbours are selling" is an empty promise when nothing has
               been queued yet. */}
-          <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.ink, maxWidth: 520, lineHeight: 1.55, marginBottom: 12 }}>
+          <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 400, color: CARD.muted, maxWidth: 520, lineHeight: 1.55, marginBottom: 12 }}>
             {displayCount > 0 ? (
               <>Preview what your neighbours are selling and save your favourites before the {dropOpenDay()} Drop opens.</>
             ) : (
-              <>Items aren&apos;t queued yet — we&apos;ll notify you the moment the Drop opens. Tap <b style={{ color: C.ink, fontWeight: 900 }}>Remind me</b> below to lock it in.</>
+              <>Items aren&apos;t queued yet — we&apos;ll notify you the moment the Drop opens. Tap <b style={{ color: CARD.ink, fontWeight: 700 }}>Remind me</b> below to lock it in.</>
             )}
           </p>
 
@@ -1195,18 +1226,18 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
           <span style={{ width: 30, height: 30, borderRadius: "50%", background: C.amberDeep, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <Clock size={16} strokeWidth={2.4} style={{ color: "#fff" }}/>
           </span>
-          <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, whiteSpace: "nowrap" }}>Drop opens in</span>
+          <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 500, color: CARD.muted, whiteSpace: "nowrap" }}>Drop opens in</span>
         </span>
 
-        <div style={{ display: "flex", alignItems: "baseline", gap: 3, fontFamily: F.head, fontSize: 26, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 3, fontFamily: F.head, fontSize: 26, fontWeight: 700, color: CARD.ink, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
           <span>{t.d}</span>
-          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>d</span>
+          <span style={{ fontSize: 13, color: C.amber, fontWeight: 600 }}>d</span>
           <span style={{ marginLeft: 8 }}>{pad(t.h)}</span>
-          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>h</span>
+          <span style={{ fontSize: 13, color: C.amber, fontWeight: 600 }}>h</span>
           <span style={{ marginLeft: 8 }}>{pad(t.m)}</span>
-          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>m</span>
+          <span style={{ fontSize: 13, color: C.amber, fontWeight: 600 }}>m</span>
           <span style={{ marginLeft: 8 }}>{pad(t.s)}</span>
-          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 700 }}>s</span>
+          <span style={{ fontSize: 13, color: C.amber, fontWeight: 600 }}>s</span>
         </div>
 
         <span style={{ width: 1, alignSelf: "stretch", margin: "6px 0", background: C.amberDeep + "28", flexShrink: 0 }}/>
@@ -1419,7 +1450,7 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
 
       <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
         {/* Left: LIVE NOW pill, headline, body, avatars */}
-        <div style={{ flex: 1, minWidth: 280 }}>
+        <div style={{ flex: 1, minWidth: "min(280px, 100%)" }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px 4px 10px", borderRadius: 999, background: C.green, boxShadow: "0 2px 10px " + C.green + "55", marginBottom: 8 }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", boxShadow: "0 0 0 3px rgba(255,255,255,0.3)", animation: "pulseLive 1.6s ease-in-out infinite" }}/>
             <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: "#fff", letterSpacing: "0.1em" }}>LIVE NOW</span>
@@ -2260,15 +2291,14 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
 
   return (
     <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in dy-card-lift" style={{ background: C.paper, borderRadius: 22, overflow: "hidden", border: "1px solid " + CARD.border, cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-2px)" : "translateY(0)", boxShadow: cardShadow, animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
-      {/* Photo on plain white, contained rather than cropped. The tinted
-          gradient that used to sit back here coloured every product shot and
-          fought the white card; `contain` keeps the seller's framing intact
-          and leaves the negative space the handoff asks for. */}
+      {/* Full-bleed photo: it fills the whole 4:3 frame edge to edge, cropping
+          to fit rather than shrinking into a white inset. ItemImage's own
+          default is cover, so this card no longer overrides it. */}
       <div style={{ position: "relative", aspectRatio: "4/3", background: C.paper, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
         <ItemImage
           src={item.img}
           emojiSize={72}
-          imgStyle={{ objectFit: "contain", padding: isMobile ? 14 : 18, transform: hovered ? "scale(1.03)" : "scale(1)", transition: "transform 400ms ease" }}
+          imgStyle={{ transform: hovered ? "scale(1.03)" : "scale(1)", transition: "transform 400ms ease" }}
           spanStyle={{ transform: hovered ? "scale(1.03)" : "scale(1)", transition: "transform 400ms ease" }}
         />
         <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 10 }}>
@@ -2371,18 +2401,18 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
         )}
       </div>
 
-      <div style={{ padding: isMobile ? "16px 18px 18px" : "18px 22px 22px", display: "flex", flexDirection: "column", flex: 1 }}>
+      <div style={{ padding: isMobile ? "12px 16px 16px" : "14px 18px 18px", display: "flex", flexDirection: "column", flex: 1 }}>
         {fromPeek && (
           <p style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: CARD.font, fontSize: 10, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>
             <Heart size={9} fill={C.amber} stroke={C.amber} strokeWidth={0}/> Saved from your Sneak Peek
           </p>
         )}
-        <h3 style={{ fontFamily: CARD.font, fontSize: isMobile ? 19 : 23, fontWeight: 700, color: CARD.ink, letterSpacing: "-0.015em", lineHeight: 1.28, marginBottom: 10 }}>{item.t}</h3>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 16 }}>
+        <h3 style={{ fontFamily: CARD.font, fontSize: isMobile ? 16 : 18, fontWeight: 700, color: CARD.ink, letterSpacing: "-0.01em", lineHeight: 1.3, marginBottom: 6, overflowWrap: "anywhere" }}>{item.t}</h3>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 12 }}>
           {/* Price keeps priceColor() so a $0 listing still reads "Free" in
               claret — the handoff's green is the price colour, not a rule
               that every price is green. */}
-          <span style={{ fontFamily: CARD.font, fontSize: isMobile ? 29 : 32, fontWeight: 750, color: priceColor(item.p, CARD.green), letterSpacing: "-0.02em", lineHeight: 1.1 }}>{priceText(item.p)}</span>
+          <span style={{ fontFamily: CARD.font, fontSize: isMobile ? 21 : 24, fontWeight: 750, color: priceColor(item.p, CARD.green), letterSpacing: "-0.02em", lineHeight: 1.1 }}>{priceText(item.p)}</span>
           {item.op && <span style={{ fontFamily: CARD.font, fontSize: 13, fontWeight: 500, color: CARD.muted, textDecoration: "line-through" }}>${item.op}</span>}
           {discount && <span style={{ fontFamily: CARD.font, fontSize: 11, fontWeight: 700, color: C.amberDeep, background: C.amberMist, padding: "3px 8px", borderRadius: 6 }}>Save {discount}%</span>}
           {/* Seller's average rating, opposite the price. Only drawn once a
@@ -2391,9 +2421,9 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
           {typeof item.sellerRating === "number" && (
             <span
               title={"Rated " + item.sellerRating.toFixed(1) + " of 5 across " + item.sellerRatingCount + " completed pickup" + (item.sellerRatingCount === 1 ? "" : "s")}
-              style={{ marginLeft: "auto", alignSelf: "center", display: "flex", alignItems: "center", gap: 3, fontFamily: CARD.font, fontSize: 14, fontWeight: 650, color: CARD.ink }}
+              style={{ marginLeft: "auto", alignSelf: "center", display: "flex", alignItems: "center", gap: 3, fontFamily: CARD.font, fontSize: 13, fontWeight: 650, color: CARD.ink }}
             >
-              <Star size={14} fill={C.amber} strokeWidth={0} style={{ color: C.amber }}/> {item.sellerRating.toFixed(1)}
+              <Star size={13} fill={C.amber} strokeWidth={0} style={{ color: C.amber }}/> {item.sellerRating.toFixed(1)}
             </span>
           )}
         </div>
@@ -2401,16 +2431,16 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
         {/* Seller row — avatar beside a stacked name + metadata line, the way
             the handoff lays it out. The distance used to sit far right on its
             own; it belongs with the seller, since it's their distance. */}
-        <div style={{ paddingTop: 16, borderTop: "1px solid " + CARD.border, display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-          <div style={{ width: 38, height: 38, flexShrink: 0, borderRadius: "50%", background: avatarBg(item.seller), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: CARD.font, fontSize: 16, fontWeight: 700 }}>{item.seller.charAt(0)}</div>
+        <div style={{ paddingTop: 12, borderTop: "1px solid " + CARD.border, display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <div style={{ width: 32, height: 32, flexShrink: 0, borderRadius: "50%", background: avatarBg(item.seller), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: CARD.font, fontSize: 14, fontWeight: 700 }}>{item.seller.charAt(0)}</div>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: CARD.font, fontSize: 15, fontWeight: 650, color: CARD.ink, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.seller}</div>
-            <div style={{ fontFamily: CARD.font, fontSize: 13, fontWeight: 450, color: CARD.muted, lineHeight: 1.45, display: "flex", alignItems: "center", gap: 5 }}>
+            <div style={{ fontFamily: CARD.font, fontSize: 14, fontWeight: 650, color: CARD.ink, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.seller}</div>
+            <div style={{ fontFamily: CARD.font, fontSize: 12, fontWeight: 450, color: CARD.muted, lineHeight: 1.4, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
               <span>Neighbour</span>
               {sellerPlace && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <MapPin size={12} style={{ flexShrink: 0 }}/>
+                  <MapPin size={11} style={{ flexShrink: 0 }}/>
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sellerPlace}</span>
                 </>
               )}
@@ -2435,11 +2465,11 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
           style={{
             width: "100%",
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            minHeight: 50, padding: "0 12px", borderRadius: 14,
+            minHeight: 44, padding: "0 12px", borderRadius: 12,
             border: isOwn ? "1px solid " + CARD.border : "none",
             background: isOwn ? C.paper : isPreview ? C.sand : hasPendingOffer ? C.amberMist : (ctaHovered && !ctaDisabled ? CARD.greenHover : ctaBg),
             color: isOwn ? CARD.ink : isPreview ? CARD.muted : hasPendingOffer ? C.amberDeep : "#fff",
-            fontFamily: CARD.font, fontSize: isMobile ? 16 : 17, fontWeight: 700,
+            fontFamily: CARD.font, fontSize: 15, fontWeight: 700,
             cursor: (!isOwn && (isClaimed || hasPendingOffer)) ? "not-allowed" : "pointer",
             opacity: (isClaimed && !isOwn) ? 0.4 : 1,
             marginTop: "auto",
@@ -2449,12 +2479,12 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
           }}
         >
           {isOwn
-            ? <><Package size={17}/> Manage in Seller view</>
+            ? <><Package size={16}/> Manage in Seller view</>
             : isPreview
-              ? <><Clock size={17}/> Opens {dropOpenDay()} {dropOpenHour()}</>
+              ? <><Clock size={16}/> Opens {dropOpenDay()} {dropOpenHour()}</>
               : hasPendingOffer
-                ? <><Clock size={17}/> Waiting for seller</>
-                : <><ShoppingBag size={18} strokeWidth={2}/> {ctaLabel}</>}
+                ? <><Clock size={16}/> Waiting for seller</>
+                : <><ShoppingBag size={16} strokeWidth={2}/> {ctaLabel}</>}
         </button>
       </div>
     </article>
@@ -2684,9 +2714,58 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
 }
 
 /* ============================================================
+   SNEAK PEEK CARD PARTS — shared by PreviewStrip and SneakPeekListPage
+   ============================================================ */
+// ItemCard's type scale, so a queued item reads the same as a live one. Only
+// the amber "not yet live" framing (badge, haze, border) stays peek-specific.
+function sneakCardType(isMobile) {
+  return {
+    category: { fontFamily: CARD.font, fontSize: 11, fontWeight: 700, color: C.mink, padding: "3px 8px", borderRadius: 999, background: C.sand, letterSpacing: "0.04em" },
+    title:    { fontFamily: CARD.font, fontSize: isMobile ? 16 : 18, fontWeight: 700, color: CARD.ink, letterSpacing: "-0.01em", lineHeight: 1.3, marginBottom: 6, overflowWrap: "anywhere" },
+    sellerRow: { display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, marginBottom: 12 },
+    seller:   { fontFamily: CARD.font, fontSize: 14, fontWeight: 650, color: CARD.ink, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    place:    { fontFamily: CARD.font, fontSize: 12, fontWeight: 450, color: CARD.muted, lineHeight: 1.4, whiteSpace: "nowrap" },
+    around:   { fontFamily: CARD.font, fontSize: 11, fontWeight: 700, color: CARD.muted, letterSpacing: "0.06em", textTransform: "uppercase" },
+    price: (p) => ({ fontFamily: CARD.font, fontSize: isMobile ? 21 : 24, fontWeight: 750, color: priceColor(p, CARD.green), letterSpacing: "-0.02em", lineHeight: 1.1 }),
+  };
+}
+
+// Share + save, top right of the photo. Share is ItemCard's (BUG-051): native
+// share sheet where available, clipboard otherwise. Both stop propagation so
+// neither opens the preview.
+function SneakPeekCardActions({ item, isSaved, onToggleSave }) {
+  const round = { width: 32, height: 32, borderRadius: "50%", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 6px rgba(31,29,25,0.15)", transition: "all 150ms" };
+  return (
+    <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 8 }}>
+      <button
+        type="button"
+        onClick={async (e) => { e.stopPropagation(); await shareListing(item); }}
+        aria-label="Share this listing"
+        title="Share"
+        style={{ ...round, background: "rgba(255,255,255,0.92)", color: CARD.green }}
+      >
+        <Share2 size={15} strokeWidth={2.4}/>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onToggleSave(item.id); }}
+        aria-label={isSaved ? "Remove from Saturday saves" : "Save for Saturday"}
+        aria-pressed={isSaved}
+        title={isSaved ? "Saved for Saturday" : "Save for Saturday"}
+        style={{ ...round, background: isSaved ? C.amber : "rgba(255,255,255,0.92)", color: isSaved ? "#fff" : C.ink }}
+      >
+        <Heart size={15} strokeWidth={2.4} fill={isSaved ? "#fff" : "none"}/>
+      </button>
+    </div>
+  );
+}
+
+/* ============================================================
    SNEAK PEEK LIST PAGE — full grid of items dropping Saturday
    ============================================================ */
 function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack, sneakPeekSource = null }) {
+  const { isMobile } = useViewport();
+  const type = sneakCardType(isMobile);
   const [filter, setFilter] = useState("all"); // "all" | "saved"
   // Use the live API-sourced sneak peek when provided (authed user); fall
   // back to the hardcoded demo array only when nothing was passed (i.e.
@@ -2795,19 +2874,18 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
                   <div style={{ position: "absolute", top: 10, left: 10, padding: "4px 9px", borderRadius: 999, background: C.amber, color: "#fff", fontFamily: F.head, fontSize: 10, fontWeight: 900, letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: 4, boxShadow: "0 2px 6px " + C.amber + "50" }}>
                     <Clock size={10} strokeWidth={2.6}/> {dropOpenDay(true).toUpperCase()} {dropOpenHourBadge()}
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); togglePreview(item.id); }} style={{ position: "absolute", top: 8, right: 8, width: 32, height: 32, borderRadius: "50%", border: "none", background: isSaved ? C.amber : "rgba(255,255,255,0.92)", color: isSaved ? "#fff" : C.ink, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 6px rgba(31,29,25,0.15)" }}>
-                    <Heart size={15} strokeWidth={2.4} fill={isSaved ? "#fff" : "none"}/>
-                  </button>
+                  <SneakPeekCardActions item={item} isSaved={isSaved} onToggleSave={togglePreview}/>
                 </div>
                 <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", flex: 1 }}>
-                  <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, padding: "3px 8px", borderRadius: 999, background: C.sand, letterSpacing: "0.04em", alignSelf: "flex-start", marginBottom: 8 }}>{item.cat}</span>
-                  <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, lineHeight: 1.3, letterSpacing: "-0.01em", marginBottom: 6, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{item.t}</p>
-                  <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, marginBottom: 12, display: "flex", alignItems: "center", gap: 4 }}>
-                    {item.seller.split(" ")[0]} <span style={{ color: C.smoke }}>·</span> {item.dist}
+                  <span style={{ ...type.category, alignSelf: "flex-start", marginBottom: 8 }}>{item.cat}</span>
+                  <h3 style={type.title}>{item.t}</h3>
+                  <p style={type.sellerRow}>
+                    <span style={type.seller}>{item.seller.split(" ")[0]}</span>
+                    <span style={type.place}>· {item.dist}</span>
                   </p>
-                  <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 5 }}>
-                    <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.06em", textTransform: "uppercase" }}>Around</span>
-                    <span style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em" }}>${item.estPrice}</span>
+                  <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 6 }}>
+                    <span style={type.around}>Around</span>
+                    <span style={type.price(item.estPrice)}>${item.estPrice}</span>
                   </div>
                 </div>
               </article>
@@ -2832,6 +2910,8 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
   // Live data flows in via `sneakPeekSource`; fall back to the demo array
   // when no source is provided (i.e. /preview/buyer-dashboard).
   const source = Array.isArray(sneakPeekSource) ? sneakPeekSource : sneakPeekItems;
+  const { isMobile } = useViewport();
+  const type = sneakCardType(isMobile);
 
   // Hide the whole section when there's nothing to preview. Authed users
   // with zero queued items shouldn't see a header with no content beneath
@@ -2851,6 +2931,7 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
         eyebrowBg={C.amber}
         pulse={true}
         title="Dropping this Saturday"
+        titleStyle={REFRESHED_HEADING}
         subtitle="A curated preview of what neighbours are bringing. Save anything that catches your eye and we'll highlight it the moment the Drop opens."
         action={{ label: "See all sneak peeks", onClick: onSeeAllPreviews }}
       />
@@ -2918,70 +2999,27 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
                   {dropOpenDay(true).toUpperCase()} {dropOpenHourBadge()}
                 </div>
 
-                {/* Save icon — top right */}
-                <button onClick={(e) => { e.stopPropagation(); togglePreview(item.id); }} title={isSaved ? "Saved for Saturday" : "Save for Saturday"} style={{
-                  position: "absolute",
-                  top: 8,
-                  right: 8,
-                  width: 32,
-                  height: 32,
-                  borderRadius: "50%",
-                  border: "none",
-                  background: isSaved ? C.amber : "rgba(255,255,255,0.92)",
-                  color: isSaved ? "#fff" : C.ink,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  cursor: "pointer",
-                  boxShadow: "0 2px 6px rgba(31,29,25,0.15)",
-                  transition: "all 150ms",
-                }}>
-                  <Heart size={15} strokeWidth={2.4} fill={isSaved ? "#fff" : "none"}/>
-                </button>
+                {/* Share + save — top right */}
+                <SneakPeekCardActions item={item} isSaved={isSaved} onToggleSave={togglePreview}/>
               </div>
 
-              {/* Card body */}
+              {/* Card body — ItemCard's type scale (see sneakCardType) */}
               <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", flex: 1 }}>
-                {/* Category chip */}
                 <div style={{ marginBottom: 8 }}>
-                  <span style={{
-                    fontFamily: F.head,
-                    fontSize: 10,
-                    fontWeight: 800,
-                    color: C.mink,
-                    padding: "3px 8px",
-                    borderRadius: 999,
-                    background: C.sand,
-                    letterSpacing: "0.04em",
-                  }}>{item.cat}</span>
+                  <span style={type.category}>{item.cat}</span>
                 </div>
 
-                {/* Title */}
-                <p style={{
-                  fontFamily: F.head,
-                  fontSize: 14,
-                  fontWeight: 800,
-                  color: C.ink,
-                  lineHeight: 1.3,
-                  letterSpacing: "-0.01em",
-                  marginBottom: 6,
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                }}>{item.t}</p>
+                <h3 style={type.title}>{item.t}</h3>
 
-                {/* Seller + distance */}
-                <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, marginBottom: 12, display: "flex", alignItems: "center", gap: 4 }}>
-                  {item.seller.split(" ")[0]}
-                  <span style={{ color: C.smoke }}>·</span>
-                  {item.dist}
+                <p style={type.sellerRow}>
+                  <span style={type.seller}>{item.seller.split(" ")[0]}</span>
+                  <span style={type.place}>· {item.dist}</span>
                 </p>
 
                 {/* Price estimate — framed as approximate */}
-                <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 5 }}>
-                  <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.06em", textTransform: "uppercase" }}>Around</span>
-                  <span style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em" }}>${item.estPrice}</span>
+                <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 6 }}>
+                  <span style={type.around}>Around</span>
+                  <span style={type.price(item.estPrice)}>${item.estPrice}</span>
                 </div>
               </div>
             </article>
@@ -2996,7 +3034,12 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
 /* ============================================================
    SECTION HEADER
    ============================================================ */
-function SectionHeader({ eyebrow, title, subtitle, action, eyebrowBg, eyebrowColor, pulse }) {
+// Heading treatment from the Saturday Drop banner (Point 14): Instrument
+// Sans at its real bold, charcoal. Passed to SectionHeader as titleStyle by
+// the Discover sections that have moved over to it.
+const REFRESHED_HEADING = { fontWeight: 700, color: CARD.ink, letterSpacing: "-0.02em" };
+
+function SectionHeader({ eyebrow, title, subtitle, action, eyebrowBg, eyebrowColor, pulse, titleStyle = null }) {
   return (
     <div style={{ padding: "44px 0 20px" }}>
       <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
@@ -3012,7 +3055,7 @@ function SectionHeader({ eyebrow, title, subtitle, action, eyebrowBg, eyebrowCol
           ) : (
             <p style={{ display: "inline-block", fontFamily: F.head, fontSize: 11, fontWeight: 800, color: eyebrowColor || C.green, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 10, padding: "4px 11px", background: eyebrowBg || C.greenMist, borderRadius: 999 }}>{eyebrow}</p>
           ))}
-          <h2 style={{ fontFamily: F.head, fontSize: 28, fontWeight: 900, color: C.ink, letterSpacing: "-0.025em", lineHeight: 1.1, marginBottom: subtitle ? 6 : 0 }}>{title}</h2>
+          <h2 style={{ fontFamily: F.head, fontSize: 28, fontWeight: 900, color: C.ink, letterSpacing: "-0.025em", lineHeight: 1.1, marginBottom: subtitle ? 6 : 0, ...titleStyle }}>{title}</h2>
           {subtitle && <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>{subtitle}</p>}
         </div>
         {action && (
@@ -3996,26 +4039,24 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
           left, the purchase panel in a narrower rail on the right. The page
           shell is already a centred 1280px column, inside the 1200–1320
           band the brief asks for. */}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) 380px", gap: isMobile ? 24 : 48, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "minmax(0, 1fr) 380px", gap: isMobile ? 24 : 48, alignItems: "start" }}>
         <div>
           {/* Image area with badge overlays.
               BUG-066 — heroSrc swaps with the active thumbnail. Photo
               count pill in the bottom-right tells the buyer there's more
               to see when sources > 1. */}
-          {/* The hero shows the WHOLE item, so it contains rather than covers.
-              It used to inherit ItemImage's default objectFit: "cover", which
-              crops to fill — fine for the uniform card grid, wrong here: a
-              tall item (a trimmer, a floor pump, a chair) had its top and
-              bottom sliced off on the one page where the buyer is trying to
-              judge what they're claiming.
+          {/* The hero fills the whole gallery box, edge to edge (ItemImage's
+              default objectFit: "cover", centred). It used to contain the photo
+              with padding instead, so nothing was ever cropped, but that left
+              wide and tall photos floating in empty bands. The trade-off is
+              back: a photo far from the box's shape loses its edges here.
 
               maxHeight caps the box as well. At 4/3 the left column runs to
               roughly 640px tall on a desktop, which pushed the item past the
-              fold; the cap keeps the whole photo on screen next to the
-              purchase panel. Padding keeps a contained image clear of the
-              badges and arrows sitting on top of it. */}
+              fold; the cap keeps the photo on screen next to the purchase
+              panel. */}
           <div style={{ position: "relative", aspectRatio: "4/3", maxHeight: isMobile ? 340 : 480, borderRadius: 16, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn, marginBottom: isMobile ? 12 : 16, overflow: "hidden" }}>
-            <ItemImage src={heroSrc} emojiSize={160} imgStyle={{ objectFit: "contain", padding: isMobile ? 10 : 16 }}/>
+            <ItemImage src={heroSrc} emojiSize={160}/>
             {/* BUG-068 — prev/next arrow buttons on the hero. Always visible
                 when there are 2+ photos so buyers can flip without scrolling
                 down to thumbnails. Arrow keys on keyboard also work (see
@@ -4170,7 +4211,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
           )}
 
           {/* 4-column details grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(4, minmax(0, 1fr))", gap: 10, marginBottom: 24 }}>
             <div style={{ padding: "16px 12px", borderRadius: 12, background: C.paper, border: "1px solid " + C.fawn, textAlign: "center" }}>
               <Shield size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/>
               <p style={{ fontFamily: D.font, fontSize: 10.5, fontWeight: 500, color: C.ash, letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 5 }}>Condition</p>
@@ -4803,23 +4844,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
       {/* Stats grid — four across, 2×2 on mobile. Same template as History's
           row so the two pages' stat strips line up instead of drifting. */}
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14, marginBottom: isMobile ? 16 : 22 }}>
-        {stats.map((s, i) => {
-          const Ic = s.icon;
-          return (
-            <div key={i} className="fade-in" style={{ padding: isMobile ? "14px 12px" : "20px 22px", minWidth: 0, borderRadius: 18, background: s.urgent ? s.bg : C.paper, border: "1px solid " + (s.urgent ? s.color + "40" : C.fawn), animationDelay: (i * 40) + "ms", display: "flex", alignItems: "center", gap: 16 }}>
-              <div style={{ width: 52, height: 52, borderRadius: 16, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Ic size={23} strokeWidth={2.1} style={{ color: s.color }}/>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontFamily: F.head, fontSize: 33, fontWeight: 900, color: s.color, letterSpacing: "-0.02em", lineHeight: 1 }}>{s.value}</p>
-                <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.mink, marginTop: 5 }}>{s.label}</p>
-              </div>
-              {s.urgent && (
-                <span style={{ width: 8, height: 8, borderRadius: "50%", background: s.color, boxShadow: "0 0 0 3px " + s.color + "35", animation: "pulseGreen 2s infinite" }}/>
-              )}
-            </div>
-          );
-        })}
+        {stats.map((s, i) => <StatTile key={i} stat={s} index={i}/>)}
       </div>
 
       {/* Empty state */}
@@ -4834,7 +4859,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
             const isRating = ratingId === c.id;
 
             return (
-              <article key={c.id} className="fade-in" style={{ padding: "20px 24px", borderRadius: 20, background: c.status === "pickup-overdue" ? C.amberMist : (urgent ? "#FFF5F5" : C.paper), border: "1px solid " + (highlightId === c.id ? C.green : c.status === "pickup-overdue" ? C.amber + "40" : urgent ? C.claret + "40" : C.fawn), boxShadow: highlightId === c.id ? "0 0 0 4px " + C.greenMist + ", 0 8px 24px rgba(48,132,36,0.18)" : "none", transition: "box-shadow 200ms, border-color 200ms", animationDelay: (idx * 50) + "ms" }}>
+              <article key={c.id} className="fade-in" style={{ padding: isMobile ? 16 : "20px 24px", borderRadius: 20, background: c.status === "pickup-overdue" ? C.amberMist : (urgent ? "#FFF5F5" : C.paper), border: "1px solid " + (highlightId === c.id ? C.green : c.status === "pickup-overdue" ? C.amber + "40" : urgent ? C.claret + "40" : C.fawn), boxShadow: highlightId === c.id ? "0 0 0 4px " + C.greenMist + ", 0 8px 24px rgba(48,132,36,0.18)" : "none", transition: "box-shadow 200ms, border-color 200ms", animationDelay: (idx * 50) + "ms" }}>
                 {c.status === "pickup-overdue" && c.autoCancelsIn && (
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "10px 14px", borderRadius: 12, background: C.paper, border: "1px solid " + C.amber + "35", marginBottom: 14 }}>
                     <AlertCircle size={14} style={{ color: C.amberDeep, flexShrink: 0, marginTop: 1 }}/>
@@ -4853,20 +4878,20 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                   </div>
                 )}
 
-                <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 12 : 20, flexWrap: isMobile ? "wrap" : "nowrap" }}>
+                <div style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 12 : 20, flexWrap: isMobile ? "wrap" : "nowrap" }}>
                   <div style={{ width: isMobile ? 72 : 104, height: isMobile ? 72 : 104, flexShrink: 0, borderRadius: 18, background: "linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
                     <ItemImage src={c.img || c.e} emojiSize={52}/>
                   </div>
 
                   <div style={{ flex: isMobile ? "1 1 calc(100% - 84px)" : 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6, flexWrap: "wrap" }}>
-                      <h3 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em" }}>{c.t}</h3>
+                      <h3 style={{ fontFamily: F.head, fontSize: isMobile ? 18 : 22, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em", overflowWrap: "anywhere" }}>{c.t}</h3>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 13, fontWeight: 800, padding: "5px 13px", borderRadius: 999, background: stage.bg, color: stage.color, letterSpacing: "0.02em" }}>
                         <StageIcon size={13}/> {stage.label}
                       </span>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-                      <span style={{ fontFamily: F.head, fontSize: 28, fontWeight: 900, color: priceColor(c.price, C.green), letterSpacing: "-0.02em" }}>{priceText(c.price)}</span>
+                      <span style={{ fontFamily: F.head, fontSize: isMobile ? 24 : 28, fontWeight: 900, color: priceColor(c.price, C.green), letterSpacing: "-0.02em" }}>{priceText(c.price)}</span>
                       <span style={{ fontFamily: F.head, fontSize: 15, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 5 }}>
                         <User size={14}/> {c.seller}
                       </span>
@@ -4894,7 +4919,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                             buyerConfirmedReceiptAt) but does NOT flip the claim
                             status. Only the seller flips it to PICKED_UP. */}
                         {c.buyerConfirmedReceipt ? (
-                          <span style={{ padding: "9px 14px", borderRadius: 999, background: C.greenMist || "#dcfce7", color: C.greenDeep || "#15803d", fontFamily: F.head, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+                          <span style={{ padding: "9px 14px", borderRadius: 999, background: C.greenMist || "#dcfce7", color: C.greenDeep || "#15803d", fontFamily: F.head, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, maxWidth: "100%" }}>
                             <CheckCircle size={13}/> Receipt confirmed — waiting for seller
                           </span>
                         ) : (
@@ -4915,7 +4940,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                     {c.status === "pickup-overdue" && !isRating && (
                       <>
                         {c.buyerConfirmedReceipt ? (
-                          <span style={{ padding: "9px 14px", borderRadius: 999, background: C.greenMist || "#dcfce7", color: C.greenDeep || "#15803d", fontFamily: F.head, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+                          <span style={{ padding: "9px 14px", borderRadius: 999, background: C.greenMist || "#dcfce7", color: C.greenDeep || "#15803d", fontFamily: F.head, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, maxWidth: "100%" }}>
                             <CheckCircle size={13}/> Receipt confirmed — waiting for seller
                           </span>
                         ) : (
@@ -4941,7 +4966,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                             wording now, outlined rather than filled, with the
                             chevron the design puts on it. Still a span: it was
                             never clickable and that hasn't changed. */}
-                        <span style={{ fontFamily: F.head, fontSize: 15, fontWeight: 700, color: C.amberDeep, padding: "12px 18px", background: C.paper, borderRadius: 999, border: "1.5px solid " + C.amber + "66", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
+                        <span style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 15, fontWeight: 700, color: C.amberDeep, padding: isMobile ? "10px 14px" : "12px 18px", background: C.paper, borderRadius: isMobile ? 22 : 999, border: "1.5px solid " + C.amber + "66", display: "flex", alignItems: "center", gap: 8, whiteSpace: isMobile ? "normal" : "nowrap", maxWidth: "100%", minHeight: 44, boxSizing: "border-box" }}>
                           <Clock size={16}/> Waiting for seller response
                           <ChevronRight size={16} style={{ opacity: 0.75 }}/>
                         </span>
@@ -6744,6 +6769,33 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
     const layerTint = tx.layer === "drop" ? C.greenMist : tx.layer === "shelf" ? C.amberMist : C.sand;
     const layerBadge = tx.layer === "drop" ? { label: "Drop", bg: C.green, color: "#fff" } : tx.layer === "shelf" ? { label: "Shelf", bg: C.amber, color: "#fff" } : { label: "Drop", bg: C.green, color: "#fff" };
 
+    // Desktop: right of the details. Phones: a full-width row under them,
+    // price on the left and the review action on the right.
+    const priceAndAction = (
+      <div style={{ display: "flex", alignItems: "center", gap: __isMobile ? 12 : 18, flexShrink: 0, justifyContent: __isMobile ? "space-between" : undefined, flexWrap: __isMobile ? "wrap" : undefined }}>
+        <div style={{ textAlign: __isMobile ? "left" : "right", minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, justifyContent: __isMobile ? "flex-start" : "flex-end" }}>
+            <span style={{ fontFamily: F.head, fontSize: __isMobile ? 22 : 27, fontWeight: 900, color: priceColor(tx.price, C.green), letterSpacing: "-0.02em" }}>{priceText(tx.price)}</span>
+            {tx.origPrice && <span style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.ash, textDecoration: "line-through" }}>${tx.origPrice}</span>}
+          </div>
+          {saved > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: __isMobile ? "flex-start" : "flex-end", marginTop: 4 }}>
+              <TrendingDown size={13} style={{ color: C.greenDeep }}/>
+              <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.greenDeep }}>Saved ${saved}</span>
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: __isMobile ? 10 : 18 }}>
+          {!tx.rated && !isReviewing && (
+            <button onClick={() => { setReviewId(tx.id); setReviewStars(0); }} style={{ minHeight: 44, padding: __isMobile ? "10px 16px" : "11px 18px", borderRadius: 999, border: "1.5px solid " + C.amber, background: C.paper, color: C.amberDeep, fontFamily: F.head, fontSize: __isMobile ? 14 : 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
+              <Star size={16}/> Leave review
+            </button>
+          )}
+          <ChevronRight aria-hidden="true" size={20} style={{ color: C.smoke, flexShrink: 0 }}/>
+        </div>
+      </div>
+    );
+
     return (
       // A row inside the month card now, not a card of its own: no radius or
       // outer margin, and a hairline on top to separate it from whatever sits
@@ -6751,7 +6803,7 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
       // the rest. The highlight flash moves from a ring to a tinted row with
       // a green edge, since a ring needs a gap around it to read.
       <article style={{ padding: __isMobile ? "14px 16px" : "16px 22px", background: highlightId === tx.id ? C.greenMist : "transparent", borderTop: "1px solid " + C.fawn, boxShadow: highlightId === tx.id ? "inset 3px 0 0 " + C.green : "none", transition: "box-shadow 200ms, background 200ms" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: __isMobile ? 14 : 18 }}>
+        <div style={{ display: "flex", alignItems: __isMobile ? "flex-start" : "center", gap: __isMobile ? 14 : 18 }}>
           <div style={{ width: __isMobile ? 64 : 88, height: __isMobile ? 64 : 88, borderRadius: 14, background: layerTint, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
             <ItemImage src={tx.img} emojiSize={__isMobile ? 30 : 40}/>
           </div>
@@ -6774,29 +6826,12 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
             )}
           </div>
           {/* Price, review action and chevron sit side by side on the right
-              rather than stacked under the price. */}
-          <div style={{ display: "flex", alignItems: "center", gap: __isMobile ? 10 : 18, flexShrink: 0 }}>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, justifyContent: "flex-end" }}>
-                <span style={{ fontFamily: F.head, fontSize: __isMobile ? 22 : 27, fontWeight: 900, color: priceColor(tx.price, C.green), letterSpacing: "-0.02em" }}>{priceText(tx.price)}</span>
-                {tx.origPrice && <span style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.ash, textDecoration: "line-through" }}>${tx.origPrice}</span>}
-              </div>
-              {saved > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end", marginTop: 4 }}>
-                  <TrendingDown size={13} style={{ color: C.greenDeep }}/>
-                  <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.greenDeep }}>Saved ${saved}</span>
-                </div>
-              )}
-            </div>
-            {!tx.rated && !isReviewing && (
-              <button onClick={() => { setReviewId(tx.id); setReviewStars(0); }} style={{ padding: "11px 18px", borderRadius: 999, border: "1.5px solid " + C.amber, background: C.paper, color: C.amberDeep, fontFamily: F.head, fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
-                <Star size={16}/> Leave review
-              </button>
-            )}
-            <ChevronRight aria-hidden="true" size={20} style={{ color: C.smoke, flexShrink: 0 }}/>
-          </div>
+              rather than stacked under the price. On phones that block took
+              the row's width and left the title, seller and date a ~70px
+              column, so there it moves to its own row under the details. */}
+          {!__isMobile && priceAndAction}
         </div>
-
+        {__isMobile && <div style={{ marginTop: 12 }}>{priceAndAction}</div>}
         {isReviewing && (
           <div style={{ marginTop: 14, padding: 14, borderRadius: 12, background: C.sand, border: "1px solid " + C.fawn }}>
             <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 10 }}>How was your experience with {tx.seller}?</p>
@@ -6827,34 +6862,13 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
       <PageBar onBack={onBack} title="Purchase history"/>
 
       {/* Stats grid */}
-      <div style={{ display: "grid", gridTemplateColumns: __isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: __isMobile ? 10 : 14, marginBottom: __isMobile ? 16 : 22 }}>
-        {stats.map((s, i) => {
-          const Ic = s.icon;
-          return (
-            // Icon beside the number instead of stacked above it, so this row
-            // is the same component shape as the Claims row. `sub` ("vs
-            // original") moves from the card's top corner to a chip sitting
-            // next to the value it qualifies — floated up there it read as a
-            // label for the whole card.
-            <div key={i} className="fade-in" style={{ padding: "20px 22px", borderRadius: 18, background: C.paper, border: "1px solid " + C.fawn, animationDelay: (i * 40) + "ms", display: "flex", alignItems: "center", gap: 16 }}>
-              <div style={{ width: 52, height: 52, borderRadius: 16, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <Ic size={23} strokeWidth={2.1} style={{ color: s.color }}/>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-                  <p style={{ fontFamily: F.head, fontSize: 33, fontWeight: 900, color: s.color, letterSpacing: "-0.02em", lineHeight: 1 }}>{s.value}</p>
-                  {s.sub && <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.ash, background: C.sand, border: "1px solid " + C.fawn, padding: "3px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>{s.sub}</span>}
-                </div>
-                <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.mink, marginTop: 5 }}>{s.label}</p>
-              </div>
-            </div>
-          );
-        })}
+      <div style={{ display: "grid", gridTemplateColumns: __isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(4, 1fr)", gap: __isMobile ? 10 : 14, marginBottom: __isMobile ? 16 : 22 }}>
+        {stats.map((s, i) => <StatTile key={i} stat={s} index={i}/>)}
       </div>
 
       {/* Unrated nudge */}
       {unratedCount > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 18px", borderRadius: 14, background: C.amberMist, border: "1px solid " + C.amber + "30", marginBottom: 22 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, rowGap: 2, flexWrap: "wrap", padding: "12px 18px", borderRadius: 14, background: C.amberMist, border: "1px solid " + C.amber + "30", marginBottom: 22 }}>
           <Star size={16} style={{ color: C.amberDeep, flexShrink: 0 }}/>
           <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.amberDeep }}>{unratedCount} unrated purchase{unratedCount !== 1 ? "s" : ""}</p>
           <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink }}>Reviews help neighbours build trust.</p>
@@ -6927,6 +6941,9 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
 /* ============================================================
    SELL-WITH-AI CTA — shown at bottom of Discover in both states
    ============================================================ */
+// Hidden until the AI selling agent launches. Flip to true to bring it back.
+const SHOW_SELL_WITH_AI_CTA = false;
+
 function SellWithAICta({ onSwitchRole }) {
   // Rolling messages that cycle every 3 seconds
   const messages = [
@@ -7027,6 +7044,76 @@ function SellWithAICta({ onSwitchRole }) {
             letterSpacing: "0.08em", textTransform: "uppercase",
             whiteSpace: "nowrap",
           }}>Coming soon</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ============================================================
+   BOTTOM REVEAL — Discover's closing reminder strip
+   ============================================================ */
+// Two parts:
+//   - a slot at the very end of Discover, in normal flow and empty, sized to
+//     the strip. It reserves the room the strip shows in, so the strip can
+//     never land on the last cards, and its bottom edge is the sentinel.
+//   - the strip itself, docked to the foot of the screen (above the bottom
+//     nav on phones). It slides up into view once the sentinel is on screen,
+//     i.e. the user has reached the end of Discover, and back down when they
+//     scroll away. Docked, it sits in the empty space below the listings
+//     rather than tight under them.
+// The sentinel doesn't move with the strip, so the animation can't feed back
+// into the observer. Reduced motion keeps the same show/hide, minus the
+// transition (globals.css).
+const BOTTOM_REVEAL_GAP = 24;            // strip to screen edge, desktop
+const BOTTOM_REVEAL_GAP_MOBILE = 76;     // clears the ~60px bottom nav
+function BottomReveal({ children }) {
+  const { isMobile } = useViewport();
+  const sentinel = useRef(null);
+  const strip = useRef(null);
+  const [inView, setInView] = useState(false);
+  const [stripHeight, setStripHeight] = useState(0);
+
+  useEffect(() => {
+    const el = strip.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => setStripHeight(Math.ceil(entry.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el) return;
+    // Count the end as reached only once the slot is clear of the bottom
+    // nav (phones) or a little way up from the screen edge (desktop), so the
+    // docked strip always lands in the empty slot area, never on a card.
+    const io = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting), {
+      rootMargin: isMobile ? "0px 0px -64px 0px" : `0px 0px -${BOTTOM_REVEAL_GAP + 16}px 0px`,
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [isMobile]);
+
+  const hidden = !inView;
+  return (
+    <section style={{ paddingTop: 18, paddingBottom: 12 }}>
+      <div aria-hidden="true" style={{ height: stripHeight }}/>
+      <div ref={sentinel} aria-hidden="true" style={{ height: 1, marginTop: -1 }}/>
+      <div style={{
+        position: "fixed", left: 0, right: 0, zIndex: 2, pointerEvents: "none",
+        bottom: isMobile ? `calc(${BOTTOM_REVEAL_GAP_MOBILE}px + env(safe-area-inset-bottom, 0px))` : BOTTOM_REVEAL_GAP,
+        display: "flex", justifyContent: "center", padding: "0 16px",
+      }}>
+        <div
+          ref={strip}
+          className="dy-footer-reveal"
+          data-revealed={hidden ? "false" : "true"}
+          aria-hidden={hidden ? "true" : "false"}
+          inert={hidden || undefined}
+          style={{ pointerEvents: hidden ? "none" : "auto" }}
+        >
+          {children}
         </div>
       </div>
     </section>
@@ -7166,7 +7253,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
         const betweenPool = [...shelfItems].sort((a, b) => (a.id * 7 % 13) - (b.id * 7 % 13));
         return (
           <>
-            <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" subtitle={betweenPool.length + " items you can grab today — Shelf items available for pickup anytime."} pulse={true}/>
+            <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" titleStyle={REFRESHED_HEADING} subtitle={betweenPool.length + " items you can grab today — Shelf items available for pickup anytime."} pulse={true}/>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
               {betweenPool.map((item, i) => (
                 <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
@@ -7179,7 +7266,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
       {/* BETWEEN DROPS, Shelf filter — Shelf items only */}
       {!isLive && filter === "shelf" && shelfItems.length > 0 && (
         <>
-          <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" subtitle={shelfItems.length + " items ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
+          <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" titleStyle={REFRESHED_HEADING} subtitle={shelfItems.length + " items ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {shelfItems.map((item, i) => (
               <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
@@ -7203,13 +7290,13 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
       )}
 
       {/* Sell-with-AI CTA — the hero promotional surface, shown in both states */}
-      <SellWithAICta onSwitchRole={onSwitchRole}/>
+      {SHOW_SELL_WITH_AI_CTA && <SellWithAICta onSwitchRole={onSwitchRole}/>}
 
       {/* Quiet reminder row — only during Between Drops. No panel, no border, no gradient.
-          Sits as a gentle utility footer beneath the AI banner, signaling Saturday without
-          competing for attention. */}
+          The last thing on Discover; BottomReveal slides it up into place as the end of
+          the page comes into view, signaling Saturday without competing for attention. */}
       {state === "between" && filter === "all" && (
-        <section style={{ paddingTop: 18, paddingBottom: 12 }}>
+        <BottomReveal>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, flexWrap: "wrap" }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
               <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8 }}>
@@ -7234,7 +7321,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
               {reminded ? <><Check size={13}/> Reminder set</> : <><Bell size={13}/> Remind me Saturday</>}
             </button>
           </div>
-        </section>
+        </BottomReveal>
       )}
     </>
   );
@@ -7466,12 +7553,12 @@ function BuyerProfileContent({ user, onSuccess }) {
     : "—";
 
   return (
-    <div style={{ maxWidth: 1160, margin: "0 auto", display: "grid", gridTemplateColumns: __isMobile ? "1fr" : "1fr 1fr", gap: 20 }}>
+    <div style={{ maxWidth: 1160, margin: "0 auto", display: "grid", gridTemplateColumns: __isMobile ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))", gap: 20 }}>
       {/* Profile information */}
       <form onSubmit={submitProfile} style={{ background: C.paper, border: "1px solid " + C.fawn, borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
         <h2 style={{ fontFamily: F.head, fontSize: 16, fontWeight: 800, color: C.ink, letterSpacing: "-0.01em" }}>Profile information</h2>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
           <BSF_Field label="First name">
             <BSF_Input value={firstName} onChange={e => setFirstName(e.target.value)} placeholder="First name" autoComplete="given-name" disabled={savingProfile}/>
           </BSF_Field>
@@ -7484,7 +7571,7 @@ function BuyerProfileContent({ user, onSuccess }) {
           <BSF_Input type="email" value={user?.email || ""} readOnly disabled style={{ background: C.sand, color: C.mink }}/>
         </BSF_Field>
 
-        <div style={{ background: C.sand, border: "1px solid " + C.fawn, borderRadius: 12, padding: "12px 14px", display: "flex", gap: 28 }}>
+        <div style={{ background: C.sand, border: "1px solid " + C.fawn, borderRadius: 12, padding: "12px 14px", display: "flex", flexWrap: "wrap", columnGap: 28, rowGap: 12 }}>
           <div>
             <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.ash, letterSpacing: "0.14em", textTransform: "uppercase" }}>Member since</p>
             <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.ink, marginTop: 2 }}>{memberSince}</p>
@@ -7567,6 +7654,7 @@ function SettingsPage({ user }) {
       <BSF_SuccessBanner message={toast} onClose={() => setToast(null)}/>
       <BuyerSettingsHeader/>
       <BuyerProfileContent user={user} onSuccess={setToast}/>
+      <div style={{ marginTop: 20 }}><DeleteAccountSection/></div>
     </div>
   );
 }
@@ -8298,7 +8386,7 @@ export default function DropYardBuyerDashboard({
       <GlobalStyle/>
       <div style={{ minHeight: "100vh", background: C.page, color: C.ink, position: "relative" }}>
         <HillsBackdrop/>
-        <TopBar page={page} setPage={setPage} savedCount={savedIds.size} claimsCount={claims.length} messagesUnread={messagesUnreadCount} onSwitchRole={onSwitchRole} onReset={resetNav} user={user} onSignout={onSignoutRequest}/>
+        <TopBar page={page} setPage={setPage} savedCount={savedIds.size} claimsCount={claims.length} messagesUnread={messagesUnreadCount} onSwitchRole={onSwitchRole} onReset={resetNav} user={user} onSignout={onSignoutRequest} dropState={dropState}/>
 
         {/* position + z-index are load-bearing: HillsBackdrop is fixed with
             z-index 0, and a positioned element paints above unpositioned

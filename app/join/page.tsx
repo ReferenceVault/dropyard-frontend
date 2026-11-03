@@ -15,6 +15,7 @@ import {
   Heart,
   Check,
   AlertCircle,
+  CheckCircle2,
   Loader2,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -233,6 +234,13 @@ function JoinPageContent() {
           <h2 className="text-2xl font-bold text-gray-900 mb-8 text-center">
             {authMode === "signin" ? "Welcome Back" : "Create your account"}
           </h2>
+
+          {searchParams.get("deleted") === "1" && !error && (
+            <div role="status" className="flex items-center gap-2 px-4 py-3 mb-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
+              <CheckCircle2 size={16} className="shrink-0" />
+              Your account has been deleted and you&apos;ve been signed out.
+            </div>
+          )}
 
           {error && (
             <div className="flex items-center gap-2 px-4 py-3 mb-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
