@@ -53,6 +53,9 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
             <span className="truncate">{item.neighbourhood}</span>
           </p>
           <p className={`mt-1 text-dy-muted ${compact ? "text-[clamp(12px,0.8vw,15px)]" : "text-[clamp(14px,1.15vw,22px)]"}`}>{item.pickup}</p>
+          {item.pickupHours && (
+            <p className={`text-dy-muted ${compact ? "text-[clamp(12px,0.8vw,15px)]" : "text-[clamp(14px,1.15vw,22px)]"}`}>{item.pickupHours}</p>
+          )}
         </div>
       </Link>
       {action && <div className="mt-2 px-1">{action}</div>}

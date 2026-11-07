@@ -32,6 +32,7 @@ export default function UnsubscribePage() {
 function UnsubscribeInner() {
   const params = useSearchParams();
   const token = params.get("token") || "";
+  const isReminders = params.get("type") === "drop-reminders";
   const [state, setState]   = useState<"loading" | "done" | "already" | "invalid">("loading");
   const [email, setEmail]   = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -41,7 +42,7 @@ function UnsubscribeInner() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${BASE_URL}/api/email-subscriptions/unsubscribe`, {
+        const res = await fetch(`${BASE_URL}${isReminders ? "/api/drop-reminders/unsubscribe" : "/api/email-subscriptions/unsubscribe"}`, {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
           body:    JSON.stringify({ token }),
@@ -62,7 +63,26 @@ function UnsubscribeInner() {
       }
     })();
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, isReminders]);
+
+  // "Remind me" emails before the Saturday Drop: their own switch, separate
+  // from the newsletter, turned off by a signed link (?type=drop-reminders).
+  if (isReminders && (state === "done" || state === "already")) {
+    return (
+      <main className="min-h-screen bg-[#f9fbf9] flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center">
+          <CheckCircle2 size={32} className={`mx-auto ${state === "done" ? "text-emerald-600" : "text-slate-400"}`} />
+          <h1 className="mt-3 text-[20px] font-bold text-slate-900">
+            {state === "done" ? <>Drop reminders are off.</> : <>Drop reminders were already off.</>}
+          </h1>
+          <p className="mt-2 text-[14px] text-slate-600 leading-relaxed">
+            We won&rsquo;t email you before the Saturday Drop anymore. Your other DropYard emails aren&rsquo;t affected.
+          </p>
+          <p className="mt-4 text-[12px] text-slate-500">Changed your mind? Tap &ldquo;Remind me&rdquo; on the Discover page to turn them back on.</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#f9fbf9] flex items-center justify-center px-4">

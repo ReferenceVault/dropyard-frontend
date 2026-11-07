@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { formatPickupDateList } from "@/lib/pickupDates";
+import { pickupWindowsShort } from "@/lib/pickupWindows";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -19,6 +20,7 @@ interface ApiItem {
   pickupMode?: string;
   pickupDays?: string[];
   pickupCustomDates?: string[];
+  pickupWindows?: string[];
   seller?: { id?: string; neighborhood?: string | null } | null;
   _count?: { watchlist?: number };
 }
@@ -30,6 +32,8 @@ export interface HomeItem {
   photo: string | null;
   neighbourhood: string;
   pickup: string;
+  /** "Evenings · 4 PM–7 PM"; null when the seller set no window. */
+  pickupHours: string | null;
   sellerId: string | null;
 }
 
@@ -65,6 +69,7 @@ function toHomeItem(api: ApiItem): HomeItem {
     photo:         api.photos?.find(Boolean) ?? null,
     neighbourhood: api.seller?.neighborhood || "Nearby",
     pickup:        pickupLabel(api),
+    pickupHours:   pickupWindowsShort(api.pickupWindows),
     sellerId:      api.seller?.id ?? null,
   };
 }
