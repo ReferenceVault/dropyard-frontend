@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 // uploadItemPhoto is named for its first caller but is a generic authed
 // multipart POST to /api/uploads/s3 — same endpoint, same CSRF and
@@ -10,6 +11,7 @@ import { apiRequest, uploadItemPhoto } from "@/lib/api";
 import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { useDropCycle } from "@/context/DropCycleContext";
 import { formatPickupDateList, formatPickupWeekday } from "@/lib/pickupDates";
+import { PICKUP_WINDOWS, PICKUP_WINDOW_IDS, selectedPickupWindows } from "@/lib/pickupWindows";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { ModalA11y } from "@/components/ModalA11y";
@@ -273,6 +275,11 @@ function adaptBuyerClaim(api) {
   // state; ACCEPTED (was CONFIRMED) is the "ready for pickup" state.
   let uiStatus;
   if (api.status === "PROPOSED")        uiStatus = "offer-pending";
+  // Receipt confirmed = transaction complete. New confirmations become
+  // PICKED_UP server-side and leave this list; an older claim confirmed before
+  // that change is still ACCEPTED, and reads as Completed (no Cancel), not
+  // as a scheduled pickup.
+  else if (api.status === "ACCEPTED" && api.buyerConfirmedReceiptAt) uiStatus = "completed";
   else if (api.status === "ACCEPTED")   uiStatus = isToday ? "pickup-today" : "pickup-scheduled";
   else if (api.status === "PICKED_UP")  uiStatus = "picked-up";
   else                                  uiStatus = (api.status || "").toLowerCase();
@@ -610,7 +617,7 @@ function ItemImage({ src, emojiSize, imgStyle, spanStyle }) {
 }
 
 function GlobalStyle() {
-  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #F3F8F3; color: #0F360B; font-family: var(--font-instrument-sans), sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #E2EFE0; color: #2C6126; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; }   .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #60745D !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } @keyframes spin { to { transform: rotate(360deg); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border-radius: 22px; overflow: hidden; border: 1px solid #E7E3DD; box-shadow: 0 1px 2px rgba(31, 29, 25, 0.03); } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 767px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
+  const css = "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; } body { background: #F3F8F3; color: #0F360B; font-family: var(--font-instrument-sans), sans-serif; -webkit-font-smoothing: antialiased; overflow-x: hidden; } ::selection { background: #E2EFE0; color: #2C6126; } button { font-family: inherit; } input, textarea { font-family: inherit; } @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } @keyframes pulseGreen { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes pulseAmber { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } } @keyframes slideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } } .fade-in { animation: fadeUp 0.55s cubic-bezier(0.25, 1, 0.5, 1) both; }   .preview-scroll::-webkit-scrollbar { height: 6px; } .preview-scroll::-webkit-scrollbar-track { background: #F4EFE6; border-radius: 3px; } .preview-scroll::-webkit-scrollbar-thumb { background: #D6CFC4; border-radius: 3px; } .chip-hover:hover { border-color: #60745D !important; } @keyframes pulseLive { 0% { transform: scale(1); opacity: 0.8; } 70% { transform: scale(2.2); opacity: 0; } 100% { transform: scale(2.2); opacity: 0; } } @keyframes aiShimmer { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } } @keyframes sellAiPulse { 0%, 100% { transform: scale(1); box-shadow: 0 4px 14px #7C3AED40; } 50% { transform: scale(1.05); box-shadow: 0 6px 20px #7C3AED60; } } @keyframes skel { 0% { background-position: -200px 0; } 100% { background-position: calc(200px + 100%) 0; } } @keyframes bump { 0% { transform: scale(1); } 30% { transform: scale(1.18); } 60% { transform: scale(0.95); } 100% { transform: scale(1); } } @keyframes spin { to { transform: rotate(360deg); } } .skel { background: linear-gradient(90deg, #F4EFE6 0%, #FAF6EE 50%, #F4EFE6 100%); background-size: 400px 100%; animation: skel 1.6s ease-in-out infinite; border-radius: 8px; } .skel-card { background: #FFFFFF; border-radius: 22px; overflow: hidden; border: 1px solid #E7E3DD; box-shadow: 0 1px 2px rgba(31, 29, 25, 0.03); } .bump { animation: bump 0.5s cubic-bezier(0.25, 1, 0.5, 1); } .dy-hero-bleed { width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); margin-top: -24px; padding: 26px 40px; border-radius: 0; } @media (max-width: 768px) { .dy-hero-bleed { margin-top: -16px; padding: 20px 20px; } }";
   // 100vw counts the vertical scrollbar, so the bleed overhangs the viewport
   // by its width. The clip goes on body, not on the dashboard wrapper: an
   // overflow value there would make that div a scroll container and break the
@@ -855,12 +862,19 @@ function MobileBottomNav({ page, setPage, savedCount, claimsCount, unreadCount =
 // MobileBottomNav and the filter chips use.
 function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, onSwitchRole, onReset, user, onSignout, dropState }) {
   const activeColor = dropState === "live" ? C.green : C.amberDeep;
+  // During a live Drop the active tab is a pale-green pill (dark-green label,
+  // solid green count) instead of the underline. Between Drops it keeps the
+  // brown underline. greenDeep, not green, for the label: green on greenMist
+  // is ~4.1:1, under AA for 15px text.
+  const livePill = dropState === "live";
   const { isMobile } = useViewport();
   const navItems = [
     { id:"discover", label:"Discover" },
     { id:"saved",    label:"Saved",    badge: savedCount  > 0 ? savedCount  : null },
     { id:"claims",   label:"Claims",   badge: claimsCount > 0 ? claimsCount : null },
-    { id:"messages", label:"Messages", badge: messagesUnread > 0 ? messagesUnread : null },
+    // Messages carries the green envelope tag below instead of the neutral
+    // fawn counter: unread messages need action, a saved count doesn't.
+    { id:"messages", label:"Messages", envelope: messagesUnread > 0 ? messagesUnread : null },
     { id:"history",  label:"History" },
   ];
   return (
@@ -886,17 +900,41 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, on
                   display: "flex", alignItems: "center", gap: 7,
                   padding: "9px 16px",
                   border: "none", borderRadius: 999,
-                  background: "transparent",
-                  color: active ? activeColor : C.mink,
+                  background: active && livePill ? C.greenMist : "transparent",
+                  color: active ? (livePill ? C.greenDeep : activeColor) : C.mink,
                   fontSize: 15, fontWeight: active ? 800 : 600,
                   cursor: "pointer", fontFamily: F.head,
-                  transition: "color 200ms",
+                  transition: "color 200ms, background-color 200ms",
                 }}>
                   {item.label}
+                  {/* Unread conversations — the buyer's counterpart of the
+                      seller sidebar's envelope tag (same green, icon and
+                      count, same server-backed unreadCount). Pinned to the
+                      tab's top-right corner rather than inline, so a message
+                      arriving doesn't widen the tab and nudge the others. */}
+                  {item.envelope && (
+                    <span
+                      role="img"
+                      aria-label={item.envelope + " unread conversation" + (item.envelope === 1 ? "" : "s")}
+                      title={item.envelope + " unread conversation" + (item.envelope === 1 ? "" : "s")}
+                      style={{
+                        position: "absolute", top: -7, right: -9,
+                        display: "inline-flex", alignItems: "center", gap: 3,
+                        padding: "2px 6px", borderRadius: 999,
+                        background: C.green, color: "#fff",
+                        boxShadow: "0 0 0 2px " + C.page,
+                        fontFamily: F.head, fontSize: 10, fontWeight: 800, lineHeight: 1.2,
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <Mail size={11} strokeWidth={2.4} aria-hidden="true"/>
+                      {item.envelope > 99 ? "99+" : item.envelope}
+                    </span>
+                  )}
                   {item.badge && (
                     <span style={{ fontSize: 11, fontWeight: 800, padding: "1px 8px", borderRadius: 20, background: active ? activeColor : C.fawn, color: active ? "#fff" : C.mink }}>{item.badge}</span>
                   )}
-                  {active && (
+                  {active && !livePill && (
                     <span aria-hidden="true" style={{ position: "absolute", left: 12, right: 12, bottom: 0, height: 3, borderRadius: "3px 3px 0 0", background: activeColor }}/>
                   )}
                 </button>
@@ -1080,6 +1118,150 @@ function HillsBackdrop() {
    Soft amber gradient panel. Pulsing dot, eyebrow, headline,
    subtitle, "Remind me" CTA. Lighter outline (12% amber).
    ============================================================ */
+/* ============================================================
+   DROP REMINDER MODAL — opened by both "Remind me" controls
+   (the countdown band and the bottom strip). Reads and writes
+   /api/drop-reminders; the root holds the server's answer, so
+   both buttons always show the same saved state.
+   ============================================================ */
+const REMINDER_INTERVALS = [
+  { id: "HOURS_24",   label: "24 hours before",   minutes: 24 * 60 },
+  { id: "HOURS_1",    label: "1 hour before",     minutes: 60 },
+  { id: "MINUTES_15", label: "15 minutes before", minutes: 15 },
+];
+// "Friday 8:00 AM", on the Drop's own clock (Toronto), from the server's
+// next opening time.
+function reminderSlotLabel(nextDropAt, minutes) {
+  if (!nextDropAt) return null;
+  const at = new Date(new Date(nextDropAt).getTime() - minutes * 60000);
+  return new Intl.DateTimeFormat("en-US", { timeZone: "America/Toronto", weekday: "long", hour: "numeric", minute: "2-digit" }).format(at);
+}
+
+function DropReminderModal({ view, accessToken, onClose, onSaved }) {
+  const { isMobile } = useViewport();
+  const saved = view?.reminder || { enabled: false, intervals: [] };
+  const fromSaved = (r) => new Set(r?.enabled && r.intervals.length ? r.intervals : REMINDER_INTERVALS.map((i) => i.id));
+  const [picked, setPicked] = useState(() => fromSaved(saved));
+  // The settings are re-read when the dialog opens; until the buyer touches a
+  // box, show whatever the server says is saved.
+  const [touched, setTouched] = useState(false);
+  const savedKey = saved.enabled + ":" + saved.intervals.join(",");
+  useEffect(() => {
+    if (!touched) setPicked(fromSaved(view?.reminder));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedKey]);
+  const [busy, setBusy] = useState(null); // "save" | "off"
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(null); // confirmation text, shown only after the server confirmed
+  const usable = !!view?.emailUsable;
+
+  const toggle = (id) => { setTouched(true); setPicked((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
+
+  async function submit(kind) {
+    if (busy) return;
+    setBusy(kind); setError(null);
+    try {
+      const res = kind === "off"
+        ? await apiRequest("/api/drop-reminders", { method: "DELETE", token: accessToken })
+        : await apiRequest("/api/drop-reminders", { method: "PUT", token: accessToken, body: JSON.stringify({ intervals: REMINDER_INTERVALS.map((i) => i.id).filter((id) => picked.has(id)) }) });
+      onSaved(res);
+      setDone(kind === "off"
+        ? "Drop reminders are off. You can turn them back on anytime."
+        : saved.enabled ? "Reminders updated. We'll email you before Saturday's Drop." : "You're all set! We'll email you before Saturday's Drop.");
+    } catch (err) {
+      setError(err?.message || "Couldn't save your reminders. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const pad = isMobile ? "20px 18px" : "26px 28px";
+  const btn = (primary) => ({ minHeight: 44, padding: "0 18px", borderRadius: 999, border: primary ? "none" : "1.5px solid " + C.fawn, background: primary ? C.green : C.paper, color: primary ? "#fff" : C.mink, fontFamily: F.head, fontSize: 14, fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: primary ? "0 2px 0 " + C.greenDeep : "none" });
+
+  return (
+    <div onClick={busy ? undefined : onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: isMobile ? 12 : 24, backdropFilter: "blur(4px)" }}>
+      <ModalA11y label="Drop reminders" onClose={busy ? null : onClose}/>
+      <div onClick={(e) => e.stopPropagation()} className="fade-in" style={{ background: C.paper, borderRadius: 24, width: "100%", maxWidth: 460, maxHeight: "92vh", overflow: "auto", boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)", padding: pad }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <span style={{ width: 44, height: 44, borderRadius: 14, background: C.amberSoft, color: C.amberDeep, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Bell size={20}/></span>
+            <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 19 : 21, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em", lineHeight: 1.2 }}>Get reminded before the Drop!</h2>
+          </div>
+          <button onClick={onClose} disabled={!!busy} aria-label="Close" style={{ border: "none", background: C.sand, width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: busy ? "not-allowed" : "pointer", flexShrink: 0 }}><X size={18}/></button>
+        </div>
+
+        {done ? (
+          <div role="status" style={{ marginTop: 8 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "14px 16px", borderRadius: 14, background: C.greenMist, border: "1px solid " + C.green + "30" }}>
+              <CheckCircle size={18} style={{ color: C.greenDeep, flexShrink: 0, marginTop: 1 }}/>
+              <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 700, color: C.greenDeep, lineHeight: 1.45 }}>{done}</p>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+              <button onClick={onClose} className="cta-primary" style={btn(true)}>Done</button>
+            </div>
+          </div>
+        ) : !accessToken ? (
+          <>
+            <p style={{ fontFamily: F.body, fontSize: 14, color: C.mink, lineHeight: 1.55, margin: "4px 0 18px" }}>Sign in to get an email before the Saturday Drop opens.</p>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}><button onClick={onClose} style={btn(false)}>Close</button></div>
+          </>
+        ) : !view ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "18px 0", color: C.mink, fontFamily: F.body, fontSize: 14 }}><Loader2 size={18} style={{ animation: "spin 1s linear infinite" }}/> Loading your reminder settings…</div>
+        ) : (
+          <>
+            <p style={{ fontFamily: F.body, fontSize: 14, color: C.mink, lineHeight: 1.55, margin: "4px 0 16px" }}>We&apos;ll email you before the Saturday Drop opens so you don&apos;t miss the latest finds.</p>
+
+            <fieldset style={{ border: "none", padding: 0, margin: "0 0 16px" }}>
+              <legend style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>Email me</legend>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {REMINDER_INTERVALS.map((it) => {
+                  const on = picked.has(it.id);
+                  const when = reminderSlotLabel(view.nextDropAt, it.minutes);
+                  return (
+                    <label key={it.id} style={{ display: "flex", alignItems: "center", gap: 12, minHeight: 48, padding: "10px 14px", borderRadius: 14, border: "1.5px solid " + (on ? C.green + "70" : C.fawn), background: on ? C.greenMist : C.paper, cursor: usable ? "pointer" : "not-allowed", opacity: usable ? 1 : 0.6 }}>
+                      <input type="checkbox" checked={on} disabled={!usable || !!busy} onChange={() => toggle(it.id)} style={{ width: 18, height: 18, accentColor: C.green, flexShrink: 0 }}/>
+                      <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                        <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>{it.label}</span>
+                        {when && <span style={{ fontFamily: F.body, fontSize: 12, color: C.mink }}>{when}</span>}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            {view.email && (
+              <p style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: F.body, fontSize: 13, color: C.mink, margin: "0 0 12px", minWidth: 0 }}>
+                <Mail size={15} style={{ flexShrink: 0 }}/>
+                <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>Reminders go to <b style={{ color: C.ink }}>{view.email}</b></span>
+              </p>
+            )}
+            {!usable && (
+              <p role="alert" style={{ padding: "10px 14px", borderRadius: 12, background: C.amberMist, border: "1px solid " + C.amber + "40", fontFamily: F.body, fontSize: 13, color: C.amberDeep, lineHeight: 1.5, margin: "0 0 12px" }}>
+                {view.emailReason || "An email address is required for reminders."}
+              </p>
+            )}
+            {error && <p role="alert" style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.claret, margin: "0 0 12px" }}>{error}</p>}
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "flex-end", alignItems: "center", marginTop: 6 }}>
+              {saved.enabled && (
+                <button onClick={() => submit("off")} disabled={!!busy} style={{ ...btn(false), marginRight: "auto", color: C.claret, borderColor: C.claret + "40" }}>
+                  {busy === "off" ? <><Loader2 size={15} style={{ animation: "spin 1s linear infinite" }}/> Turning off…</> : "Turn off reminders"}
+                </button>
+              )}
+              <button onClick={onClose} disabled={!!busy} style={btn(false)}>Cancel</button>
+              <button onClick={() => submit("save")} disabled={!usable || !!busy || picked.size === 0} className="cta-primary" style={{ ...btn(true), opacity: (!usable || picked.size === 0) ? 0.5 : 1, cursor: (!usable || busy || picked.size === 0) ? "not-allowed" : "pointer" }}>
+                {busy === "save" ? <><Loader2 size={15} style={{ animation: "spin 1s linear infinite" }}/> Saving…</> : saved.enabled ? "Update reminders" : "Enable Reminders"}
+              </button>
+            </div>
+            {picked.size === 0 && usable && <p style={{ fontFamily: F.body, fontSize: 12, color: C.mink, textAlign: "right", marginTop: 8 }}>Choose at least one reminder time.</p>}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerNames = null }) {
   // Real countdown to the next drop-open moment (Saturday 8 AM by default).
   // `now` starts null on first render so SSR + initial client hydration produce
@@ -1246,7 +1428,7 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
           {dropOpenDay()} {dropOpenHourLong()}
         </span>
 
-        <button onClick={onRemindMe} style={{
+        <button onClick={onRemindMe} aria-haspopup="dialog" style={{
           display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
           padding: "12px 22px", borderRadius: 999, border: "none",
           background: reminded ? C.paper : C.amberDeep,
@@ -1255,7 +1437,7 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
           cursor: "pointer", flexShrink: 0,
           boxShadow: reminded ? "inset 0 0 0 1.5px " + C.amberDeep + "40" : "0 2px 0 " + C.amberDeep,
         }}>
-          {reminded ? <><Check size={15}/> Notified</> : <><Bell size={15}/> Remind me</>}
+          {reminded ? <><Check size={15}/> Reminders enabled</> : <><Bell size={15}/> Remind me</>}
         </button>
       </div>
     </section>
@@ -1396,29 +1578,25 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
     : 0;
 
   return (
-    // Contained card, not the full-bleed strip AnticipationBand uses — and
-    // the width is what makes the height work, so the two can't be tuned
-    // separately.
+    // Full bleed, like AnticipationBand: dy-hero-bleed breaks the band out of
+    // the centred 1280px column so it spans the viewport and sits flush under
+    // the nav, with no gap above or at the sides. The class owns the width,
+    // side offsets, negative top margin, padding and square corners, so none
+    // of those are set inline here or they'd win over it.
     //
-    // The artwork is 3:1. Stretched edge to edge on a 1920px screen the band
-    // is a 7:1 letterbox, and object-fit: cover can only show a ~40% slice
-    // through the middle — a close-up of two tables instead of a street.
-    // Growing the band to fix that got it to ~60% but made it 380px tall,
-    // which eats the fold. Narrowing it solves both at once: inside the
-    // dashboard's 1216px column, 250px of height shows MORE of the photo
-    // (~62%) than 380px did at full width, in a third less vertical space.
-    <section className="fade-in" style={{
+    // This used to be a contained card because the 3:1 artwork crops harder
+    // the wider the band gets (object-fit: cover shows a narrower slice at
+    // 1920px). The live band is now full width by request; height stays
+    // pinned so it doesn't eat the fold.
+    <section className="fade-in dy-hero-bleed" style={{
       background: "#1F1A14",
       marginBottom: 20,
       position: "relative",
       overflow: "hidden",
-      borderRadius: 20,
       boxShadow: "0 4px 24px rgba(31, 29, 25, 0.18)",
       // Pinned at 250px on desktop; the vw term only takes over on narrow
-      // screens, where the column is the viewport and a short band would
-      // crop hard again.
+      // screens, where a short band would crop hard.
       minHeight: "clamp(190px, 19vw, 250px)",
-      padding: "26px 28px",
     }}>
       {/* Background — one photo, edge to edge, exactly as the between-drops
           band does it. This used to be HeroPhotoMosaic: the live Drop's own
@@ -1433,7 +1611,12 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
         src={BANNER_LIVE_SRC}
         alt=""
         aria-hidden="true"
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 46%" }}
+        // Full bleed at a fixed height, a wide screen shows only a band of the
+        // 3:1 photo (~39% of it at 1920px). 60% centres that band on the sale
+        // itself — tables, toy car, books — where 46% kept the tree tops and
+        // cut the tables off at the bottom edge. Phones are height-limited, so
+        // the position barely moves them.
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 60%" }}
       />
 
       {/* Primary scrim — dark on the left where text lives, fading right so the
@@ -1877,8 +2060,8 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
           </div>
           <span style={{
             width: 32, height: 32, borderRadius: "50%",
-            background: state === "between" ? C.amber : C.green, display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 2px 6px " + (state === "between" ? C.amber : C.green) + "40",
+            background: state === "between" ? C.amberDeep : C.green, display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: "0 2px 6px " + (state === "between" ? C.amberDeep : C.green) + "40",
             flexShrink: 0,
           }}>
             <Search size={14} style={{ color: "#fff" }} strokeWidth={2.6}/>
@@ -1988,7 +2171,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
             padding: activeSegment ? "0 22px 0 16px" : "0 16px",
             borderRadius: 999,
             border: "none",
-            background: state === "between" ? C.amber : C.green,
+            background: state === "between" ? C.amberDeep : C.green,
             color: "#fff",
             cursor: "pointer",
             display: "flex",
@@ -1997,7 +2180,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
             fontFamily: F.head,
             fontSize: 14,
             fontWeight: 800,
-            boxShadow: "0 4px 12px " + (state === "between" ? C.amber : C.green) + "40",
+            boxShadow: "0 4px 12px " + (state === "between" ? C.amberDeep : C.green) + "40",
             transition: "all 220ms cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
@@ -2236,12 +2419,18 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   // Three distinct overlay states share the same "no claim button" treatment but each has
   // its own copy and accent colour:
   //   isClaimedByOther   — seed data marks this as already claimed by another neighbour (amber)
-  //   isClaimedByMe      — current user has an active claim, pickup pending (green)
+  //   isClaimedByMe      — the seller accepted this viewer's claim; pickup pending (green)
   //   isPurchasedByMe    — current user has completed pickup; item is theirs (sand/grey)
   // Purchased takes precedence over claimed (a completed claim is no longer "active").
+  // Only the first and last use the overlay. A claim the seller accepted
+  // is still in progress, so it keeps the card readable and reports its
+  // stage the way a pending claim does: a badge ("Item claimed") and a
+  // parked CTA ("Pick up pending").
   const isPurchasedByMe = purchasedByMe === true;
-  const isClaimedByOther = item.status === "claimed";
   const isClaimedByMe = claimedByMe === true && !isPurchasedByMe;
+  // An accepted claim makes the item RESERVED, which adapts to "claimed".
+  // When the claim is this viewer's, it isn't someone else's.
+  const isClaimedByOther = item.status === "claimed" && !isClaimedByMe;
   // Queued for the next Drop — browsable now, claimable when the Drop opens.
   // Treated as un-actionable here so the card can't start a claim the backend
   // will refuse.
@@ -2349,6 +2538,13 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             <Clock size={11}/> Claim pending
           </span>
         )}
+        {/* Stage two of the same claim: the seller accepted it. Same pill,
+            green instead of amber, until the pickup completes. */}
+        {isClaimedByMe && !isOwn && (
+          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: CARD.font, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: C.greenMist, color: C.greenDeep, border: "1px solid " + C.green + "55", display: "flex", alignItems: "center", gap: 4 }}>
+            <Check size={11} strokeWidth={2.8}/> Item claimed
+          </span>
+        )}
         {/* The seller answered a question this buyer asked, and they haven't
             read it. Sits top-left under the layer badge so it survives
             alongside the offer-pending / price-drop badges below. Clears the
@@ -2366,24 +2562,22 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             <Package size={11}/> Your listing
           </span>
         )}
-        {isClaimed && (
+        {isClaimed && !isClaimedByMe && (
           <div style={{ position: "absolute", inset: 0, background: "rgba(255,249,240,0.88)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, backdropFilter: "blur(2px)" }}>
             <div style={{
               display: "flex", alignItems: "center", gap: 6, padding: "6px 14px",
-              background: isPurchasedByMe ? C.sand : isClaimedByMe ? C.greenMist : C.amberMist,
-              color:      isPurchasedByMe ? C.ash  : isClaimedByMe ? C.greenDeep : C.amberDeep,
+              background: isPurchasedByMe ? C.sand : C.amberMist,
+              color:      isPurchasedByMe ? C.ash  : C.amberDeep,
               fontFamily: F.head, fontSize: 11, fontWeight: 800, borderRadius: 999,
-              border: "1.5px solid " + (isPurchasedByMe ? C.fawn : isClaimedByMe ? C.green + "40" : C.amber + "40"),
+              border: "1.5px solid " + (isPurchasedByMe ? C.fawn : C.amber + "40"),
               letterSpacing: "0.04em"
             }}>
               {isPurchasedByMe
                 ? <><Check size={11} strokeWidth={2.8}/> PICKED UP</>
-                : <><Clock size={11}/> {isClaimedByMe ? "YOU CLAIMED THIS" : "PICKUP PENDING"}</>}
+                : <><Clock size={11}/> PICKUP PENDING</>}
             </div>
             {isPurchasedByMe ? (
               <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, textAlign: "center", lineHeight: 1.4, maxWidth: 200 }}>You picked this up. Find it in your <b style={{ color: C.ink }}>History</b>.</p>
-            ) : isClaimedByMe ? (
-              <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, textAlign: "center", lineHeight: 1.4, maxWidth: 200 }}>Pickup pending. Track this in your <b style={{ color: C.greenDeep }}>Claims</b> tab.</p>
             ) : isOwn ? (
               // The seller's own item, claimed by a neighbour. "Notify me if
               // it frees up" is the wrong offer to make the person who owns
@@ -2447,6 +2641,8 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             </div>
           </div>
         </div>
+        {/* No pickup hours on the listing card: buyers see the schedule on
+            the item page (ItemDetail's Pickup availability), not here. */}
 
         <button
           onClick={e => {
@@ -2467,11 +2663,11 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
             minHeight: 44, padding: "0 12px", borderRadius: 12,
             border: isOwn ? "1px solid " + CARD.border : "none",
-            background: isOwn ? C.paper : isPreview ? C.sand : hasPendingOffer ? C.amberMist : (ctaHovered && !ctaDisabled ? CARD.greenHover : ctaBg),
-            color: isOwn ? CARD.ink : isPreview ? CARD.muted : hasPendingOffer ? C.amberDeep : "#fff",
+            background: isOwn ? C.paper : isPreview ? C.sand : hasPendingOffer ? C.amberMist : isClaimedByMe ? C.greenMist : (ctaHovered && !ctaDisabled ? CARD.greenHover : ctaBg),
+            color: isOwn ? CARD.ink : isPreview ? CARD.muted : hasPendingOffer ? C.amberDeep : isClaimedByMe ? C.greenDeep : "#fff",
             fontFamily: CARD.font, fontSize: 15, fontWeight: 700,
             cursor: (!isOwn && (isClaimed || hasPendingOffer)) ? "not-allowed" : "pointer",
-            opacity: (isClaimed && !isOwn) ? 0.4 : 1,
+            opacity: (isClaimed && !isOwn && !isClaimedByMe) ? 0.4 : 1,
             marginTop: "auto",
             // The handoff asks for a flat button; the 2px underglow that gave
             // the old CTA its weight is gone now that the label carries it.
@@ -2484,7 +2680,9 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
               ? <><Clock size={16}/> Opens {dropOpenDay()} {dropOpenHour()}</>
               : hasPendingOffer
                 ? <><Clock size={16}/> Waiting for seller</>
-                : <><ShoppingBag size={16} strokeWidth={2}/> {ctaLabel}</>}
+                : isClaimedByMe
+                  ? <><Clock size={16}/> Pick up pending</>
+                  : <><ShoppingBag size={16} strokeWidth={2}/> {ctaLabel}</>}
         </button>
       </div>
     </article>
@@ -2542,16 +2740,18 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 380px", gap: isMobile ? 24 : 40, alignItems: "start" }}>
         {/* Image area with locked-preview styling */}
         <div>
-          {/* Same contain + height cap as the live item detail hero — this is
-              the same page for a queued item, and a cropped preview is worse
-              here: deciding whether to save it is the only thing this page is
-              for. */}
+          {/* Same fill + height cap as the live item detail hero: the photo
+              covers the whole box (cropping what doesn't fit, never
+              stretching), as on the Shelf. It used to be contained with
+              padding, which left beige bands beside any photo whose shape
+              didn't match the box. The muted filter stays: it's the
+              "not live yet" cue the queued cards share. */}
           <div style={{ position: "relative", aspectRatio: "4/3", maxHeight: isMobile ? 340 : 480, borderRadius: 24, background: "linear-gradient(135deg, " + C.amberMist + " 0%, " + C.sand + " 100%)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn + "80", marginBottom: 24, overflow: "hidden" }}>
             <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at center, transparent 40%, " + C.amber + "12 100%)", pointerEvents: "none" }}/>
             <ItemImage
               src={heroSrc}
               emojiSize={160}
-              imgStyle={{ objectFit: "contain", padding: isMobile ? 10 : 16, filter: "saturate(0.85)", opacity: 0.92 }}
+              imgStyle={{ filter: "saturate(0.85)", opacity: 0.92 }}
               spanStyle={{ filter: "saturate(0.85)", opacity: 0.92 }}
             />
 
@@ -2714,6 +2914,31 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
 }
 
 /* ============================================================
+   PICKUP HOURS LINE — on Sneak Peek cards (ItemCard no longer shows it)
+   ============================================================ */
+// "Pickup · Evenings · 4 PM–7 PM", muted like the seller line above it.
+// Renders nothing when the listing has no window set: no invented hours.
+// Each window stays on one line with its hours, so a narrow card wraps
+// between windows rather than splitting "4 PM–7 PM" in two.
+function PickupHoursLine({ windows, style = null }) {
+  const wins = selectedPickupWindows(windows);
+  if (!wins.length) return null;
+  return (
+    <p style={{ display: "flex", alignItems: "flex-start", gap: 6, fontFamily: CARD.font, fontSize: 12, fontWeight: 450, color: CARD.muted, lineHeight: 1.4, ...style }}>
+      <Clock size={12} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}/>
+      <span style={{ minWidth: 0 }}>
+        Pickup ·{" "}
+        {wins.length === 1
+          ? <span style={{ whiteSpace: "nowrap" }}>{wins[0].label} · {wins[0].shortTime}</span>
+          : wins.map((w, i) => (
+            <span key={w.id}>{i > 0 && " · "}<span style={{ whiteSpace: "nowrap" }}>{w.label} {w.shortTime}</span></span>
+          ))}
+      </span>
+    </p>
+  );
+}
+
+/* ============================================================
    SNEAK PEEK CARD PARTS — shared by PreviewStrip and SneakPeekListPage
    ============================================================ */
 // ItemCard's type scale, so a queued item reads the same as a live one. Only
@@ -2785,10 +3010,11 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
           header it was clicked from. Stays an <h1> because this is a page,
           not a section of one, so SectionHeader's <h2> isn't right here. */}
       <div style={{ marginBottom: 28 }}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "6px 14px 6px 11px", background: C.amber, borderRadius: 999, boxShadow: "0 2px 10px " + C.amber + "55" }}>
+        {/* Same amberDeep as the Remind me button (and the Discover header's pill). */}
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "6px 14px 6px 11px", background: C.amberDeep, borderRadius: 999, boxShadow: "0 2px 10px " + C.amberDeep + "55" }}>
           <span style={{ position: "relative", display: "inline-flex", width: 10, height: 10 }}>
             <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "#fff", opacity: 0.6, animation: "pulseLive 1.5s ease-in-out infinite" }}/>
-            <span style={{ position: "relative", width: 10, height: 10, borderRadius: "50%", background: "#fff", boxShadow: "0 0 0 2px " + C.amber }}/>
+            <span style={{ position: "relative", width: 10, height: 10, borderRadius: "50%", background: "#fff", boxShadow: "0 0 0 2px " + C.amberDeep }}/>
           </span>
           <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 900, color: "#fff", letterSpacing: "0.18em", textTransform: "uppercase" }}>Sneak peek</span>
         </div>
@@ -2883,9 +3109,10 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
                     <span style={type.seller}>{item.seller.split(" ")[0]}</span>
                     <span style={type.place}>· {item.dist}</span>
                   </p>
+                  <PickupHoursLine windows={item.pickupWindows || item.raw?.pickupWindows} style={{ marginTop: -6, marginBottom: 12 }}/>
                   <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 6 }}>
-                    <span style={type.around}>Around</span>
-                    <span style={type.price(item.estPrice)}>${item.estPrice}</span>
+                    {!isFreePrice(item.estPrice) && <span style={type.around}>Around</span>}
+                    <span style={type.price(item.estPrice)}>{priceText(item.estPrice)}</span>
                   </div>
                 </div>
               </article>
@@ -2928,7 +3155,7 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
           anticipation for something that hasn't opened yet. */}
       <SectionHeader
         eyebrow="Sneak peek"
-        eyebrowBg={C.amber}
+        eyebrowBg={C.amberDeep}
         pulse={true}
         title="Dropping this Saturday"
         titleStyle={REFRESHED_HEADING}
@@ -3015,11 +3242,12 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
                   <span style={type.seller}>{item.seller.split(" ")[0]}</span>
                   <span style={type.place}>· {item.dist}</span>
                 </p>
+                <PickupHoursLine windows={item.pickupWindows || item.raw?.pickupWindows} style={{ marginTop: -6, marginBottom: 12 }}/>
 
                 {/* Price estimate — framed as approximate */}
                 <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 6 }}>
-                  <span style={type.around}>Around</span>
-                  <span style={type.price(item.estPrice)}>${item.estPrice}</span>
+                  {!isFreePrice(item.estPrice) && <span style={type.around}>Around</span>}
+                  <span style={type.price(item.estPrice)}>{priceText(item.estPrice)}</span>
                 </div>
               </div>
             </article>
@@ -3354,7 +3582,11 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
     }
   };
 
-  return (
+  // Portalled to <body>. The dashboard content sits in a stacking context
+  // (position: relative; zIndex: 1) below the sticky top bar (zIndex 40), so
+  // rendered in place this overlay's zIndex only counted inside that
+  // context and the top bar covered the modal's heading and close button.
+  return createPortal(
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: isMobile ? 12 : 24, backdropFilter: "blur(4px)" }}>
       <ModalA11y label="Claim this item" onClose={onClose}/>
       <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: C.paper, borderRadius: 24, width: "100%", maxWidth: 520, maxHeight: "92vh", overflow: "auto", boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
@@ -3627,7 +3859,8 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
         )}
 
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -3825,14 +4058,10 @@ function toDetailItem(item) {
 // gets POSTed as the claim's pickupSlot — so sellers received commitments for
 // windows they never offered.
 //
-// Time ranges mirror the seller listing form exactly (DropYard_SellerDashboard
-// lines 3075-3077); if those change, change them here too.
-const PICKUP_WINDOW_LABELS = {
-  morning:   "9 am - 12 pm",
-  afternoon: "12 - 4 pm",
-  evening:   "4 - 7 pm",
-};
-const PICKUP_WINDOW_ORDER = ["morning", "afternoon", "evening"];
+// The slot wording ("9 am - 12 pm") comes from lib/pickupWindows' slotTime,
+// unchanged, because these strings are what the claim sends to the seller.
+const PICKUP_WINDOW_LABELS = Object.fromEntries(PICKUP_WINDOWS.map((w) => [w.id, w.slotTime]));
+const PICKUP_WINDOW_ORDER = PICKUP_WINDOW_IDS;
 const WEEKDAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const WEEKDAY_FULL = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
 
@@ -3918,12 +4147,88 @@ function formatPickupSummary(item) {
     else                                                                                                daySummary = allDays.filter(d => days.includes(d)).join(" · ");
   }
 
-  const winLabels   = { morning: "Mornings", afternoon: "Afternoons", evening: "Evenings" };
-  const winSummary  = !windows.length || windows.length === 3
-    ? "Anytime"
-    : windows.map(w => winLabels[w] || w).join(" · ");
+  // Each selected window with its hours (lib/pickupWindows). None selected
+  // keeps the old "Anytime" wording, with no hours made up for it.
+  const windowList = selectedPickupWindows(windows);
+  const winSummary = windowList.length ? windowList.map((w) => w.label).join(" · ") : "Anytime";
 
-  return { days: daySummary, windows: winSummary };
+  return { days: daySummary, windows: winSummary, windowList };
+}
+
+/* ============================================================
+   PHOTO LIGHTBOX — the item page's photo, bigger.
+   Opened by double-clicking (double-tapping) the hero photo. Shows
+   the whole photo, uncropped, fitted to the screen. Double-click /
+   double-tap inside it magnifies around that point; moving the
+   pointer (or a finger) pans; doing it again fits it back. Closes
+   with ×, Escape (ModalA11y), or a click outside the photo.
+   ============================================================ */
+const isPhotoUrl = (src) => typeof src === "string" && /^(https?:\/\/|data:image\/)/i.test(src);
+const ZOOM_SCALE = 2.5;
+
+function PhotoLightbox({ src, title, index, count, onPrev, onNext, onClose }) {
+  const { isMobile } = useViewport();
+  // null = fitted; {x, y} = magnified around that point (percent of the photo).
+  const [zoom, setZoom] = useState(null);
+  const lastTap = useRef(0);
+  // (A new photo starts fitted: the parent keys this component by src.)
+
+  const pointIn = (e, el) => {
+    const r = el.getBoundingClientRect();
+    const p = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+    const clamp = (v) => Math.min(100, Math.max(0, v));
+    return { x: clamp(((p.clientX - r.left) / r.width) * 100), y: clamp(((p.clientY - r.top) / r.height) * 100) };
+  };
+  const toggleZoom = (e) => { const el = e.currentTarget; const at = pointIn(e, el); setZoom((z) => (z ? null : at)); };
+  const pan = (e) => { if (zoom) setZoom(pointIn(e, e.currentTarget)); };
+  // Double-tap on touch screens (the browser's own double-tap zoom is off
+  // here via touch-action, so this is the only thing a double-tap does).
+  const onTouchEnd = (e) => {
+    const now = Date.now();
+    if (now - lastTap.current < 300) { e.preventDefault(); lastTap.current = 0; toggleZoom(e); }
+    else lastTap.current = now;
+  };
+
+  const ctl = (extra) => ({ position: "absolute", width: 44, height: 44, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.92)", color: C.ink, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.25)", zIndex: 2, ...extra });
+
+  // Portalled to <body>: the page content sits in a z-index stacking context
+  // below the sticky top bar, which would otherwise cover the viewer's top
+  // edge — × included.
+  return createPortal(
+    <div onClick={(e) => { if (e.target === e.currentTarget) onClose(); }} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(20, 18, 15, 0.88)", display: "flex", alignItems: "center", justifyContent: "center", padding: isMobile ? "64px 12px" : "64px 88px" }}>
+      <ModalA11y label={"Photo " + (index + 1) + " of " + count + (title ? " — " + title : "")} onClose={onClose}/>
+      <button type="button" onClick={onClose} aria-label="Close photo viewer" style={ctl({ top: 12, right: 12 })}><X size={20}/></button>
+      {count > 1 && (
+        <>
+          <button type="button" onClick={onPrev} aria-label="Previous photo" style={ctl({ left: isMobile ? 8 : 24, top: "50%", transform: "translateY(-50%)" })}><ChevronLeft size={22} strokeWidth={2.4}/></button>
+          <button type="button" onClick={onNext} aria-label="Next photo" style={ctl({ right: isMobile ? 8 : 24, top: "50%", transform: "translateY(-50%)" })}><ChevronRight size={22} strokeWidth={2.4}/></button>
+          <span style={{ position: "absolute", bottom: 18, left: "50%", transform: "translateX(-50%)", padding: "5px 12px", borderRadius: 999, background: "rgba(255,255,255,0.14)", color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 700 }}>{index + 1} / {count}</span>
+        </>
+      )}
+      <div
+        onDoubleClick={toggleZoom}
+        onMouseMove={pan}
+        onTouchMove={pan}
+        onTouchEnd={onTouchEnd}
+        style={{ position: "relative", overflow: "hidden", borderRadius: 10, lineHeight: 0, maxWidth: "100%", maxHeight: "100%", cursor: zoom ? "zoom-out" : "zoom-in", touchAction: zoom ? "none" : "manipulation", userSelect: "none", WebkitUserSelect: "none" }}
+      >
+        {/* The uploaded photo itself, at full resolution — the point of the
+            viewer. next/image would resize it through the optimiser. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={title ? "Photo of " + title : "Item photo"}
+          draggable={false}
+          style={{
+            display: "block", maxWidth: "100%", maxHeight: "calc(100vh - 128px)", width: "auto", height: "auto", objectFit: "contain",
+            transform: zoom ? "scale(" + ZOOM_SCALE + ")" : "none",
+            transformOrigin: zoom ? zoom.x + "% " + zoom.y + "%" : "50% 50%",
+          }}
+        />
+      </div>
+    </div>,
+    document.body,
+  );
 }
 
 function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller, onViewSeller, savedIds, onToggleSave, accessToken = null, onGoToMessages = null, onClaimCreated = null, currentUserId = null, onSwitchRole = null, dropState = "between" }) {
@@ -3970,6 +4275,22 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
   // Clamp the index if the photo set shrinks (e.g. socket refresh removes one)
   const safeIdx = Math.min(activePhotoIdx, Math.max(0, galleryPhotos.length - 1));
   const heroSrc = galleryPhotos[safeIdx] || item.img;
+
+  // Double-click (double-tap) the hero photo to see it bigger in a lightbox.
+  // Only real photos (not the emoji placeholder), and never from the arrows
+  // or any other control sitting on the photo.
+  const [zoomOpen, setZoomOpen] = useState(false);
+  const [zoomBtnFocused, setZoomBtnFocused] = useState(false);
+  const canZoom = isPhotoUrl(heroSrc);
+  const heroTap = useRef(0);
+  const fromControl = (e) => !!(e.target && e.target.closest && e.target.closest("button, a"));
+  const onHeroDoubleClick = (e) => { if (canZoom && !fromControl(e)) setZoomOpen(true); };
+  const onHeroTouchEnd = (e) => {
+    if (!canZoom || fromControl(e)) return;
+    const now = Date.now();
+    if (now - heroTap.current < 300) { e.preventDefault(); heroTap.current = 0; setZoomOpen(true); }
+    else heroTap.current = now;
+  };
 
   // BUG-068 — prev/next arrow handlers + keyboard support. Wraps around so
   // pressing right on the last photo loops back to the first, mirroring how
@@ -4055,8 +4376,20 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
               roughly 640px tall on a desktop, which pushed the item past the
               fold; the cap keeps the photo on screen next to the purchase
               panel. */}
-          <div style={{ position: "relative", aspectRatio: "4/3", maxHeight: isMobile ? 340 : 480, borderRadius: 16, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn, marginBottom: isMobile ? 12 : 16, overflow: "hidden" }}>
+          <div onDoubleClick={onHeroDoubleClick} onTouchEnd={onHeroTouchEnd} style={{ position: "relative", aspectRatio: "4/3", maxHeight: isMobile ? 340 : 480, borderRadius: 16, background: C.sand, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid " + C.fawn, marginBottom: isMobile ? 12 : 16, overflow: "hidden", cursor: canZoom ? "zoom-in" : undefined, touchAction: canZoom ? "manipulation" : undefined }}>
             <ItemImage src={heroSrc} emojiSize={160}/>
+            {/* Keyboard route to the same viewer: invisible until it has focus. */}
+            {canZoom && (
+              <button
+                type="button"
+                onClick={() => setZoomOpen(true)}
+                onFocus={() => setZoomBtnFocused(true)}
+                onBlur={() => setZoomBtnFocused(false)}
+                style={{ position: "absolute", left: 14, bottom: 14, zIndex: 2, padding: "7px 12px", borderRadius: 999, border: "none", background: "rgba(31,29,25,0.75)", color: "#fff", fontFamily: D.font, fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: zoomBtnFocused ? 1 : 0, pointerEvents: zoomBtnFocused ? "auto" : "none" }}
+              >
+                Enlarge photo
+              </button>
+            )}
             {/* BUG-068 — prev/next arrow buttons on the hero. Always visible
                 when there are 2+ photos so buyers can flip without scrolling
                 down to thumbnails. Arrow keys on keyboard also work (see
@@ -4250,7 +4583,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
             return (
               <div style={{ padding: "20px 28px", borderRadius: 16, background: C.paper, border: "1px solid " + C.fawn, marginBottom: 16 }}>
                 <h3 style={{ fontFamily: D.font, fontSize: 15, fontWeight: 600, color: C.mink, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 14 }}>Pickup availability</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))", gap: 14 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
                     <div style={{ width: 36, height: 36, borderRadius: 11, background: C.greenMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <Calendar size={16} style={{ color: C.greenDeep }}/>
@@ -4260,13 +4593,24 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                       <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink }}>{pickup.days}</p>
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+                  <div style={{ display: "flex", alignItems: pickup.windowList.length > 1 ? "flex-start" : "center", gap: 11 }}>
                     <div style={{ width: 36, height: 36, borderRadius: 11, background: C.amberMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <Clock size={16} style={{ color: C.amberDeep }}/>
                     </div>
                     <div style={{ minWidth: 0 }}>
                       <p style={{ fontFamily: D.font, fontSize: 10, fontWeight: 600, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>Time windows</p>
-                      <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink }}>{pickup.windows}</p>
+                      {pickup.windowList.length === 0 ? (
+                        <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink }}>{pickup.windows}</p>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {pickup.windowList.map((w) => (
+                            <p key={w.id} style={{ fontFamily: D.font, lineHeight: 1.3 }}>
+                              <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: C.ink }}>{w.label}</span>
+                              <span style={{ display: "block", fontSize: 13, fontWeight: 500, color: C.mink, whiteSpace: "nowrap" }}>{w.time}</span>
+                            </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -4478,6 +4822,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
         </div>
       </div>
 
+      {zoomOpen && canZoom && <PhotoLightbox key={heroSrc} src={heroSrc} title={item.title} index={safeIdx} count={Math.max(1, galleryPhotos.length)} onPrev={goPrev} onNext={goNext} onClose={() => setZoomOpen(false)}/>}
       {showClaim && <ClaimModal item={item} onClose={() => setShowClaim(false)} onConfirm={handleClaimConfirm} accessToken={accessToken} onGoToMessages={onGoToMessages} onClaimCreated={onClaimCreated}/>}
       {showAsk && <AskModal item={item} onClose={() => setShowAsk(false)} onSend={async (msg) => {
         // Posts a PUBLIC question onto the item's Q&A — visible to every buyer
@@ -4615,7 +4960,7 @@ function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggle
 /* ============================================================
    CLAIMS PAGE
    ============================================================ */
-function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpenThread = null, highlightId = null, onClearHighlight = null, accessToken = null }) {
+function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpenThread = null, highlightId = null, onClearHighlight = null, accessToken = null, completedTotal = null, onClaimsChanged = null }) {
   const { isMobile } = useViewport();
   // Clear the highlight after a brief flash so the row settles.
   useEffect(() => {
@@ -4639,33 +4984,41 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(null), 4000); };
 
-  // BUG-055 unified lifecycle — buyer's button is "Confirm receipt", NOT
-  // "Picked up". It pings the seller (system message + buyerConfirmedReceiptAt
-  // timestamp) but does NOT change claim status. Only the seller can flip
-  // the claim to PICKED_UP server-side (fraud prevention: a buyer can't
-  // claim → confirm → SOLD without ever meeting the seller).
+  // "Confirm receipt" completes the transaction: the server moves the claim
+  // to PICKED_UP and the item to SOLD, the same end state as the seller's
+  // "Mark picked up". It used to only ping the seller and leave the claim
+  // ACCEPTED, so the card kept its Cancel button after the buyer had the
+  // item. The claim leaves this list and lands in History as Completed.
   //
-  // Rating is decoupled from the transaction: it happens later on the
-  // History tab, accessible anytime once the seller marks PICKED_UP.
+  // Rating is decoupled from the transaction: it happens on the History tab.
+  const [confirmingId, setConfirmingId] = useState(null);
   const confirmReceipt = async (claim) => {
     const isReal = accessToken && typeof claim.id === "string" && !claim.id.startsWith("bc");
     if (!isReal) {
-      // Demo path — no API, just flash success.
-      flash("Receipt confirmed. The seller will mark the pickup complete on their side.");
+      // Demo path — no API; complete it locally.
+      setClaims(prev => prev.filter(c => c.id !== claim.id));
+      flash("Receipt confirmed — " + claim.t + " is complete. You'll find it in History.");
       return;
     }
+    if (confirmingId) return;
+    setConfirmingId(claim.id);
     try {
-      await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/confirm-receipt", {
+      const res = await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/confirm-receipt", {
         method: "POST",
         token:  accessToken,
       });
-      // Optimistic local update — claim stays in the list (still ACCEPTED)
-      // but we set a flag so the UI can show "Receipt confirmed — waiting
-      // for seller to mark complete".
-      setClaims(prev => prev.map(c => c.id === claim.id ? { ...c, buyerConfirmedReceipt: true } : c));
-      flash("Receipt confirmed. Seller has been notified to complete the pickup.");
+      if (res?.claim?.status === "PICKED_UP") {
+        setClaims(prev => prev.filter(c => c.id !== claim.id));
+        flash("Receipt confirmed — " + claim.t + " is complete. You'll find it in History.");
+      } else {
+        setClaims(prev => prev.map(c => c.id === claim.id ? { ...c, status: "completed", buyerConfirmedReceipt: true } : c));
+        flash("Receipt confirmed.");
+      }
     } catch (err) {
       flash("Couldn't confirm receipt — " + (err?.message || "try again"));
+    } finally {
+      setConfirmingId(null);
+      if (onClaimsChanged) onClaimsChanged();
     }
   };
 
@@ -4728,6 +5081,9 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
     } catch (err) {
       setClaims(snapshot); // rollback
       flash("Could not cancel claim: " + (err?.message || "try again"));
+      // Refused (completed since this list loaded, say): refetch so the card
+      // shows where the claim really is.
+      if (onClaimsChanged) onClaimsChanged();
     }
   };
 
@@ -4754,6 +5110,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
     } catch (err) {
       setClaims(snapshot);
       flash("Could not release the claim: " + (err?.message || "try again"));
+      if (onClaimsChanged) onClaimsChanged();
     }
   };
 
@@ -4816,10 +5173,12 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
   const todayCount     = claims.filter(c => c.status === "pickup-today" || c.status === "pickup-overdue").length;
   const scheduledCount = claims.filter(c => c.status === "pickup-scheduled").length;
   const pendingCount   = claims.filter(c => c.status === "offer-pending").length;
-  // "completed" is already one of stageInfo's statuses — a claim sits here
-  // until the buyer confirms receipt, so the count was derivable all along
-  // and the row was just three cards wide.
-  const completedCount = claims.filter(c => c.status === "completed").length;
+  // Completed = the buyer's PICKED_UP claims (completedTotal, counted by the
+  // root from /api/claims/mine — they live in History, not in this list) plus
+  // any older receipt-confirmed claim still shown here as "completed".
+  // Preview mode has no total and counts the list alone.
+  const completedCount = (completedTotal || 0) + claims.filter(c => c.status === "completed").length;
+  const activeCount = claims.filter(c => c.status !== "completed").length;
 
   const stats = [
     { label: "Pickup today",   value: todayCount,     icon: Clock,       color: C.claret,    bg: C.claretMist, urgent: todayCount > 0 },
@@ -4830,7 +5189,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
 
   return (
     <>
-      <PageBar onBack={onBack} title="Pickups & offers" chip={claims.length + " active claim" + (claims.length !== 1 ? "s" : "")}/>
+      <PageBar onBack={onBack} title="Pickups & offers" chip={activeCount + " active claim" + (activeCount !== 1 ? "s" : "")}/>
 
       {/* Success toast */}
       {toast && (
@@ -4923,7 +5282,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                             <CheckCircle size={13}/> Receipt confirmed — waiting for seller
                           </span>
                         ) : (
-                          <button onClick={() => confirmReceipt(c)} className="cta-primary" style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
+                          <button onClick={() => confirmReceipt(c)} disabled={confirmingId === c.id} className="cta-primary" style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
                             <CheckCircle size={13}/> Confirm receipt
                           </button>
                         )}
@@ -4937,6 +5296,16 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                         )}
                       </>
                     )}
+                    {c.status === "completed" && !isRating && (
+                      <>
+                        <span style={{ padding: "9px 14px", borderRadius: 999, background: C.greenMist || "#dcfce7", color: C.greenDeep || "#15803d", fontFamily: F.head, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, maxWidth: "100%" }}>
+                          <CheckCircle size={13}/> Receipt confirmed
+                        </span>
+                        <button onClick={() => { if (onOpenThread) onOpenThread(c.t); else if (onGoToMessages) onGoToMessages(); }} title="Open the message thread with the seller" style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                          <MessageCircle size={13}/> Message
+                        </button>
+                      </>
+                    )}
                     {c.status === "pickup-overdue" && !isRating && (
                       <>
                         {c.buyerConfirmedReceipt ? (
@@ -4944,7 +5313,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                             <CheckCircle size={13}/> Receipt confirmed — waiting for seller
                           </span>
                         ) : (
-                          <button onClick={() => confirmReceipt(c)} className="cta-primary" style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
+                          <button onClick={() => confirmReceipt(c)} disabled={confirmingId === c.id} className="cta-primary" style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
                             <CheckCircle size={13}/> Confirm receipt
                           </button>
                         )}
@@ -5327,7 +5696,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
       await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/confirm-receipt", {
         method: "POST", token: accessToken,
       });
-      chatFlashOk("Receipt confirmed. Seller has been notified.");
+      chatFlashOk("Receipt confirmed — transaction complete.");
       setActiveClaimsTick(t => t + 1);
     } catch (err) { chatFlashErr("confirm receipt", err); }
     finally { setChatBusyClaimId(null); }
@@ -6370,7 +6739,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                         <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginTop: 2 }}>
                           {isProposed && pc.amount !== listed && ("Listed at $" + listed + " · ")}
                           {isProposed && ("expires " + (pc.expiresAt ? new Date(pc.expiresAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "soon"))}
-                          {isAccepted && (buyerConfirmed ? "Receipt confirmed — waiting for seller to mark pickup complete." : "Coordinate pickup here, then confirm receipt once you have the item.")}
+                          {isAccepted && (buyerConfirmed ? "Receipt confirmed — this transaction is complete." : "Coordinate pickup here, then confirm receipt once you have the item.")}
                         </p>
                       </div>
                     </div>
@@ -7308,7 +7677,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
               </span>
             </span>
             <span style={{ color: C.smoke, fontSize: 12 }}>·</span>
-            <button onClick={onRemindMe} style={{
+            <button onClick={onRemindMe} aria-haspopup="dialog" style={{
               display: "inline-flex", alignItems: "center", gap: 5,
               padding: 0, border: "none", background: "none",
               fontFamily: F.head, fontSize: 13, fontWeight: 700,
@@ -7318,7 +7687,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
               textUnderlineOffset: 4,
               textDecorationColor: reminded ? C.amberDeep + "50" : C.amber + "50",
             }}>
-              {reminded ? <><Check size={13}/> Reminder set</> : <><Bell size={13}/> Remind me Saturday</>}
+              {reminded ? <><Check size={13}/> Reminders enabled</> : <><Bell size={13}/> Remind me Saturday</>}
             </button>
           </div>
         </BottomReveal>
@@ -7899,7 +8268,22 @@ export default function DropYardBuyerDashboard({
   const [savedPreview, setSavedPreview] = useState(() => accessToken ? new Set() : new Set([101, 104]));
   const [viewingPreview, setViewingPreview] = useState(null); // sneak peek item being previewed
   const [showSneakList, setShowSneakList] = useState(false); // full sneak peek list page
-  const [reminded, setReminded] = useState(false);
+  // Drop reminders. The server's answer (GET/PUT/DELETE /api/drop-reminders)
+  // is the only state: both "Remind me" controls read `reminded` from it, so
+  // a change made through either one shows on the other at once, and a
+  // refresh or a new sign-in restores it. This used to be a local flag that
+  // only flipped the labels and showed a toast — nothing was saved or sent.
+  const [reminderView, setReminderView] = useState(null);
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const reminded = !!reminderView?.reminder?.enabled;
+  useEffect(() => {
+    if (!accessToken) { setReminderView(null); return; }
+    let cancelled = false;
+    apiRequest("/api/drop-reminders", { token: accessToken })
+      .then((data) => { if (!cancelled) setReminderView(data); })
+      .catch(() => { /* buttons stay at "Remind me"; the modal retries on open */ });
+    return () => { cancelled = true; };
+  }, [accessToken]);
   const [toast, setToast] = useState(null);
   // Drop state is derived from the system clock (see computeDropState).
   // We re-check every 60 seconds so the UI flips automatically the moment
@@ -7940,7 +8324,14 @@ export default function DropYardBuyerDashboard({
   // claimsTick is bumped by socket events so the list reflects seller actions
   // (confirm / reject / picked-up) in real time.
   const [claimsTick, setClaimsTick] = useState(0);
+  const [completedClaimsTotal, setCompletedClaimsTotal] = useState(null);
+  // Nav badges count open claims only — a receipt-confirmed one is done.
+  const activeClaimsCount = claims.filter((c) => c.status !== "completed").length;
   useSocketEvent("claim:updated", () => setClaimsTick((t) => t + 1));
+  // A claim this buyer made in another tab or device: its card badge ("Claim
+  // pending") reads off this list, which otherwise waited for the next
+  // claim:updated or a reload to learn about it.
+  useSocketEvent("claim:new", () => setClaimsTick((t) => t + 1));
   useEffect(() => {
     if (!accessToken) return;
     let cancelled = false;
@@ -7955,6 +8346,7 @@ export default function DropYardBuyerDashboard({
           .filter((c) => c.status === "PROPOSED" || c.status === "ACCEPTED")
           .map(adaptBuyerClaim).filter(Boolean);
         setClaims(active);
+        setCompletedClaimsTotal(list.filter((c) => c.status === "PICKED_UP").length);
       })
       .catch(() => {
         // On a real-user network blip, prefer an empty list over fake data \u2014
@@ -8186,7 +8578,7 @@ export default function DropYardBuyerDashboard({
       if (c.itemId == null) continue;
       // Anything that isn't already picked up or fully cancelled counts as
       // "actively claimed" for overlay purposes.
-      if (c.status === "picked-up" || c.status === "cancelled" || c.status === "rejected") continue;
+      if (c.status === "picked-up" || c.status === "completed" || c.status === "cancelled" || c.status === "rejected") continue;
       // A claim the seller hasn't answered yet doesn't hold the item: it is
       // still listed and any neighbour can claim it too, so the card must not
       // go into the "YOU CLAIMED THIS" state and lock its own CTA. Tracked
@@ -8209,7 +8601,7 @@ export default function DropYardBuyerDashboard({
   const purchasedIds = useMemo(() => {
     const done = new Set();
     for (const c of claims) {
-      if (c.itemId != null && c.status === "picked-up") done.add(c.itemId);
+      if (c.itemId != null && (c.status === "picked-up" || c.status === "completed")) done.add(c.itemId);
     }
     return done;
   }, [claims]);
@@ -8326,7 +8718,11 @@ export default function DropYardBuyerDashboard({
   // local Set stays behind for the token-less preview route.
   const peekSaved  = accessToken ? savedIds   : savedPreview;
   const peekToggle = accessToken ? toggleSave : togglePreview;
-  const handleRemindMe = () => { setReminded(true); setToast(`We'll ping you ${dropOpenDay()} at ${dropOpenHour()}.`); };
+  const handleRemindMe = () => {
+    setReminderOpen(true);
+    // Fresh copy on open, in case it changed in another tab or device.
+    if (accessToken) apiRequest("/api/drop-reminders", { token: accessToken }).then(setReminderView).catch(() => {});
+  };
 
   const handleClaimComplete = async (item, slot, realClaim = null) => {
     const parts = slot ? slot.split(" ") : [];
@@ -8386,7 +8782,8 @@ export default function DropYardBuyerDashboard({
       <GlobalStyle/>
       <div style={{ minHeight: "100vh", background: C.page, color: C.ink, position: "relative" }}>
         <HillsBackdrop/>
-        <TopBar page={page} setPage={setPage} savedCount={savedIds.size} claimsCount={claims.length} messagesUnread={messagesUnreadCount} onSwitchRole={onSwitchRole} onReset={resetNav} user={user} onSignout={onSignoutRequest} dropState={dropState}/>
+        {reminderOpen && <DropReminderModal view={reminderView} accessToken={accessToken} onClose={() => setReminderOpen(false)} onSaved={setReminderView}/>}
+        <TopBar page={page} setPage={setPage} savedCount={savedIds.size} claimsCount={activeClaimsCount} messagesUnread={messagesUnreadCount} onSwitchRole={onSwitchRole} onReset={resetNav} user={user} onSignout={onSignoutRequest} dropState={dropState}/>
 
         {/* position + z-index are load-bearing: HillsBackdrop is fixed with
             z-index 0, and a positioned element paints above unpositioned
@@ -8419,7 +8816,7 @@ export default function DropYardBuyerDashboard({
               )}
               {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={peekSaved} togglePreview={peekToggle} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null} answeredIds={answeredIds}/>}
               {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole} answeredIds={answeredIds}/>}
-              {page === "claims"   && <ClaimsPage claims={claims} setClaims={setClaims} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} onGoToMessages={() => setPage("messages")} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} accessToken={accessToken}/>}
+              {page === "claims"   && <ClaimsPage claims={claims} setClaims={setClaims} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} onGoToMessages={() => setPage("messages")} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} accessToken={accessToken} completedTotal={completedClaimsTotal} onClaimsChanged={() => setClaimsTick((t) => t + 1)}/>}
               {page === "messages" && <MessagesPage user={user} accessToken={accessToken} claims={claims} onAcceptCounter={handleAcceptCounterByItemTitle} onDeclineCounter={handleDeclineCounterByItemTitle} openThreadId={openThreadId} onConsumeOpenThread={() => setOpenThreadId(null)} onBack={() => setPage("discover")} convList={convList} onConvListChange={setConvList}/>}
               {page === "history"  && <HistoryPage highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} accessToken={accessToken} onBack={() => setPage("discover")}/>}
               {page === "settings" && <SettingsPage user={user}/>}
@@ -8455,7 +8852,7 @@ export default function DropYardBuyerDashboard({
           page={page}
           setPage={(p) => { resetNav(); setPage(p); }}
           savedCount={savedIds.size}
-          claimsCount={claims.length}
+          claimsCount={activeClaimsCount}
           unreadCount={messagesUnreadCount}
           dropState={dropState}
         />

@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CalendarDays, ClipboardList, FileText, HandHeart, MapPin, Truck, type LucideIcon } from "lucide-react";
+import { CalendarDays, ClipboardList, FileText, HandHeart, Truck, type LucideIcon } from "lucide-react";
 import EarlyAccessSection from "@/components/EarlyAccessSection";
 import { SELL_HREF } from "@/components/GlobalHeader";
 import { DropCycleProvider } from "@/context/DropCycleContext";
@@ -15,6 +15,21 @@ import { FEATURED_SECTION_ID, NextDropSection } from "./NextDropSection";
 import { ShelfSection } from "./ShelfSection";
 import { useHomeData, type HomeItem, type LoadState } from "./useHomeData";
 import { useSectionReveal } from "./useSectionReveal";
+
+// The hero's location pin: a solid pin with a round cut-out (even-odd fill,
+// so the button colour shows through) over a separate oval base. Drawn in
+// currentColor, sized in em, so it follows the button's text colour and size.
+function HeroPinIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden focusable="false">
+      <path
+        fillRule="evenodd"
+        d="M12 .8C7.9.8 4.8 3.86 4.8 7.85c0 4.8 5.42 10.4 6.4 11.37a1.13 1.13 0 0 0 1.6 0c.98-.97 6.4-6.57 6.4-11.37C19.2 3.86 16.1.8 12 .8Zm0 4.15a2.9 2.9 0 1 0 0 5.8 2.9 2.9 0 0 0 0-5.8Z"
+      />
+      <ellipse cx="12" cy="21.75" rx="4.9" ry="1.7" />
+    </svg>
+  );
+}
 
 function Hero() {
   const buttonSize = "!min-h-[clamp(50px,3.95vw,76px)] !text-[clamp(15px,1.15vw,22px)]";
@@ -41,7 +56,10 @@ function Hero() {
         </p>
         <div className="mt-[clamp(22px,1.9vw,36px)] flex flex-wrap gap-[clamp(12px,0.85vw,16px)]">
           <Link href="/buyer" className={`dy-btn dy-btn--primary dy-focus ${buttonSize}`}>
-            <MapPin className="h-[1em] w-[1em]" fill="currentColor" aria-hidden />
+            {/* 1.25em with the button's gap trimmed by the same 0.25em: the
+                pin's size and spacing from the reference design, while the
+                button keeps exactly its old width. */}
+            <HeroPinIcon className="h-[1.25em] w-[1.25em] -mr-[0.25em] shrink-0" />
             Browsing {LIVE_NEIGHBOURHOOD}
           </Link>
           <Link href={SELL_HREF} className={`dy-btn dy-btn--light dy-focus ${buttonSize}`}>Sell Something</Link>

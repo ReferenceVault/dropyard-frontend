@@ -11,6 +11,7 @@ import DeleteAccountSection from "@/components/settings/DeleteAccountSection";
 import { useAuth } from "@/context/AuthContext";
 import { useDropCycle } from "@/context/DropCycleContext";
 import { formatPickupDateList, formatPickupDateLong } from "@/lib/pickupDates";
+import { PICKUP_WINDOWS, selectedPickupWindows } from "@/lib/pickupWindows";
 import {
   dropCloseMoment,
   nextDropMoment,
@@ -250,6 +251,23 @@ const CATEGORY_EMOJI = {
 function avatarBg() {
   return C.green;
 }
+/* Claim pickup — the one way every seller surface (Messages, Orders → Scheduled
+   pickups, the inventory row) marks a claim picked up. The server decides
+   (PATCH /picked-up accepts only an ACCEPTED claim); the caller opens the
+   rate-the-buyer prompt only once the response says the claim IS PICKED_UP.
+   Orders and the inventory row used to open the rating first and send the
+   PATCH after it, so a claim cancelled since the list loaded still got a
+   "Item Picked Up!" rating window before the server refused it. */
+async function markClaimPickedUp(claimId, token) {
+  const res = await apiRequest("/api/claims/" + encodeURIComponent(claimId) + "/picked-up", { method: "PATCH", token });
+  if (res?.claim?.status !== "PICKED_UP") {
+    throw new Error("The claim wasn't marked picked up. Refresh and try again.");
+  }
+  return res.claim;
+}
+// Same wording as the Messages banner's error.
+const pickupErrorText = (err) => "Couldn't mark picked up: " + (err?.message || "try again");
+
 function initialsOf(name) {
   if (!name) return "?";
   const parts = name.split(/\s+/).filter(Boolean);
@@ -547,7 +565,9 @@ function SwitchToBuyerButton({ onClick }) {
 // no column, no route, no counter anywhere in the backend — so it could only
 // ever be decoration that read as data. If per-seller AI credits are built
 // later, this comes back reading a real number.
-function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, countBadge = 0, collapsed = false }) {
+// envelopeCount: unread conversations, shown on the expanded Messages item as
+// a green envelope tag (Feedback 14 · 4). Same source as the bell.
+function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, countBadge = 0, envelopeCount = 0, collapsed = false }) {
   const [hover, setHover] = useState(false);
   const bg = active
     ? accentMist
@@ -696,8 +716,34 @@ function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, count
         </span>
       )}
 
+      {/* Envelope tag — unread conversations on Messages. */}
+      {envelopeCount > 0 && (
+        <span
+          role="img"
+          aria-label={envelopeCount + " unread conversation" + (envelopeCount === 1 ? "" : "s")}
+          title={envelopeCount + " unread conversation" + (envelopeCount === 1 ? "" : "s")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            padding: "2px 7px",
+            borderRadius: 999,
+            background: C.green,
+            color: "#fff",
+            fontFamily: F.head,
+            fontSize: 10,
+            fontWeight: 800,
+            lineHeight: 1.2,
+            flexShrink: 0,
+          }}
+        >
+          <Mail size={11} strokeWidth={2.4} aria-hidden="true"/>
+          {envelopeCount > 99 ? "99+" : envelopeCount}
+        </span>
+      )}
+
       {/* Sliding chevron on active OR hover (not when a count badge is showing) */}
-      {countBadge === 0 && (active || hover) && (
+      {countBadge === 0 && envelopeCount === 0 && (active || hover) && (
         <ChevronRight
           size={13}
           style={{
@@ -1000,6 +1046,7 @@ function Sidebar({ activeView, onNav, onSwitchRole, collapsed = false, messagesU
                     accentMist={ab}
                     Icon={Ic}
                     onClick={() => handleClick(item)}
+                    envelopeCount={item.id === "messages" ? messagesUnread : 0}
                   />
                 );
               })}
@@ -1347,7 +1394,7 @@ function ActionItems({ pickupsToday, pickupsWeek, messages, drafts, onNav }) {
 }
 
 function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draftsCount, recap, upcomingPickups = 0, onNav, onShare }) {
-  const { isMobile } = useViewport();
+  const { isMobile, width: viewportWidth } = useViewport();
   // Both must format on the Drop's clock, not the viewer's. Without timeZone
   // the 8 a.m. Toronto opening renders as the local equivalent — "5:30 p.m."
   // in IST, "5 a.m." in Vancouver — and the weekday can slip a day as well.
@@ -1431,89 +1478,117 @@ function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draf
     );
   }
 
-  // ── Mid + late week: countdown-led, amber hero
+  // ── Mid + late week: the compact Next Drop banner. Used to be a tall amber
+  // hero (36px day line over a 58px countdown); now one row on desktop —
+  // calendar tile, NEXT DROP, the day, and a days/hours/minutes countdown on
+  // the left; Share + List more and the listing summary on the right — and a
+  // short stack on phones. Same data and actions as before.
+  // Stack below 640px only: a tablet (768px) has room for the one-row layout.
+  const stacked = viewportWidth < 640;
+  const msLeft = Math.max(0, nextDropAt.getTime() - now.getTime());
+  const parts = [
+    { value: Math.floor(msLeft / 86400000) + "d", label: "Days" },
+    { value: Math.floor((msLeft % 86400000) / 3600000) + "h", label: "Hrs" },
+    { value: Math.floor((msLeft % 3600000) / 60000) + "m", label: "Min" },
+  ];
+  const summary = (shelfCount > 0 && queuedCount > 0
+    ? shelfCount + " selling on the Shelf now · " + queuedCount + " queued for Saturday"
+    : shelfCount > 0
+    ? shelfCount + " selling on the Shelf now · joining the Drop on Saturday"
+    : queuedCount > 0
+    ? queuedCount + " queued for Saturday — list more on the Shelf to sell this week"
+    : "Nothing listed yet — list an item to get on the Shelf today")
+    + (draftsCount > 0 ? " · " + draftsCount + " draft" + (draftsCount === 1 ? "" : "s") + " to finish" : "");
+  const pill = { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, height: 44, padding: "0 22px", borderRadius: 999, cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em", whiteSpace: "nowrap" };
   return (
-    <section style={{
+    <section aria-label={"Next Drop " + dayLabel + " " + timeLabel + ", in " + countdown} style={{
       marginBottom: isMobile ? 16 : 24,
-      position: "relative", overflow: "hidden",
-      borderRadius: isMobile ? 18 : 24,
-      padding: isMobile ? "18px 16px" : "32px 36px",
-      background: "linear-gradient(135deg, " + C.amberMist + " 0%, " + C.paper + " 75%)",
-      border: "1px solid " + C.amber + "30",
-      boxShadow: _SH_MD + ", inset 0 1px 0 rgba(255,255,255,0.7)",
+      borderRadius: isMobile ? 16 : 18,
+      padding: stacked ? "14px 16px" : "18px 24px",
+      background: "linear-gradient(135deg, " + C.amberMist + "80 0%, " + C.paper + " 60%)",
+      border: "1px solid " + C.amber + "26",
+      boxShadow: _SH_SM,
+      display: "flex",
+      flexDirection: stacked ? "column" : "row",
+      alignItems: stacked ? "stretch" : "center",
+      gap: stacked ? 12 : 28,
     }}>
-      <div style={{ position: "absolute", top: -60, right: -30, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, " + C.amber + "1a 0%, transparent 70%)", pointerEvents: "none" }}/>
-      <div style={{ position: "absolute", bottom: -50, left: 40, width: 110, height: 110, borderRadius: "50%", background: "radial-gradient(circle, " + C.amber + "10 0%, transparent 70%)", pointerEvents: "none" }}/>
-      <div style={{ position: "relative", display: "flex", flexWrap: "wrap", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: isMobile ? 14 : 28 }}>
-        <div style={{ flex: 1, minWidth: isMobile ? "100%" : 280 }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", borderRadius: 999, background: C.amberDeep, marginBottom: 12, boxShadow: _SH_XS }}>
-            <Calendar size={11} style={{ color: "#fff" }} strokeWidth={2.5}/>
-            <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 900, color: "#fff", letterSpacing: "0.1em", textTransform: "uppercase" }}>Next Drop</span>
-          </div>
-          <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 20 : 36, fontWeight: 900, color: C.ink, letterSpacing: "-0.035em", lineHeight: 1, marginBottom: 4 }}>
+      {/* Left: when */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flex: "1 1 auto", minWidth: 0 }}>
+        <div aria-hidden="true" style={{ width: 44, height: 44, borderRadius: 12, background: C.amberMist, border: "1px solid " + C.amber + "30", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Calendar size={20} style={{ color: C.amberDeep }} strokeWidth={2.2}/>
+        </div>
+        <div style={{ minWidth: 0 }}>
+          <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.1em", textTransform: "uppercase", lineHeight: 1.2 }}>Next Drop</p>
+          <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 21 : 24, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.15, marginTop: 2 }}>
             {dayLabel} {timeLabel}
           </h2>
-          <p style={{ fontFamily: F.head, fontSize: isMobile ? 32 : 58, fontWeight: 900, color: C.amberDeep, letterSpacing: "-0.04em", lineHeight: 1, marginBottom: 10 }}>
-            {countdown}
-          </p>
-          <p style={{ fontFamily: F.body, fontSize: isMobile ? 12.5 : 14, fontWeight: 600, color: C.mink, lineHeight: 1.5 }}>
-            {shelfCount > 0 && queuedCount > 0
-              ? shelfCount + " selling on the Shelf now · " + queuedCount + " queued for Saturday"
-              : shelfCount > 0
-              ? shelfCount + " selling on the Shelf now · joining the Drop on Saturday"
-              : queuedCount > 0
-              ? queuedCount + " queued for Saturday — list more on the Shelf to sell this week"
-              : "Nothing listed yet — list an item to get on the Shelf today"}
-            {draftsCount > 0 && " · " + draftsCount + " draft" + (draftsCount === 1 ? "" : "s") + " to finish"}
-          </p>
-          {showRecapLine && (
-            <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.ash, marginTop: 8, paddingTop: 8, borderTop: "1px dashed " + C.amber + "30" }}>
-              Last Drop · {recap.sold} sold · ${recap.earned}
-              {recap.returnedCount > 0 && " · " + recap.returnedCount + " back on Shelf"}
-            </p>
-          )}
+          <div role="timer" aria-label={"Opens in " + parts.map((x) => x.value).join(" ")} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+            {parts.map((x, i) => (
+              <span key={x.label} style={{ display: "contents" }}>
+                {i > 0 && <span aria-hidden="true" style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.mink }}>:</span>}
+                <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", minWidth: 44, padding: "4px 8px", borderRadius: 8, background: C.greenMist, border: "1px solid " + C.green + "26" }}>
+                  <span style={{ fontFamily: F.head, fontSize: 15, fontWeight: 800, color: C.greenDeep, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>{x.value}</span>
+                  <span style={{ fontFamily: F.head, fontSize: 8.5, fontWeight: 700, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase", lineHeight: 1.2 }}>{x.label}</span>
+                </span>
+              </span>
+            ))}
+          </div>
         </div>
-        <div style={{
-          display: "flex",
-          flexDirection: isMobile ? "row" : "column",
-          gap: isMobile ? 8 : 10,
-          flexShrink: 0,
-          width: isMobile ? "100%" : "auto",
-          minWidth: isMobile ? 0 : 220,
-        }}>
+      </div>
+
+      {/* Divider: vertical beside, horizontal under on phones */}
+      <div aria-hidden="true" style={stacked
+        ? { height: 1, background: C.fawn }
+        : { width: 1, alignSelf: "stretch", background: C.fawn, margin: "4px 0", flexShrink: 0 }}/>
+
+      {/* Right: actions + what's listed */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: stacked ? "1 1 auto" : "0 1 auto", minWidth: 0 }}>
+        <div style={{ display: "flex", gap: stacked ? 8 : 10 }}>
           <button
             onClick={onShare}
             className="cta-primary"
             style={{
-              flex: isMobile ? 1 : "0 1 auto",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: isMobile ? "11px 14px" : "13px 22px",
-              borderRadius: 999, border: "none", cursor: "pointer",
-              fontFamily: F.head, fontSize: isMobile ? 12 : 13, fontWeight: 800, letterSpacing: "-0.005em",
+              ...pill,
+              flex: stacked ? 1 : "0 0 auto",
+              height: stacked ? 42 : pill.height,
+              padding: stacked ? "0 12px" : pill.padding,
+              fontSize: stacked ? 12.5 : 13,
+              border: "none",
               background: "linear-gradient(180deg, " + C.amber + " 0%, " + C.amberDeep + " 100%)",
               color: "#fff",
-              boxShadow: "0 2px 0 #8B4A00, " + _SH_SM,
-              whiteSpace: "nowrap",
+              boxShadow: _SH_SM,
             }}
           >
             <Share2 size={14} strokeWidth={2.4}/>
-            {isMobile ? "Share" : "Share what I’m bringing"}
+            {stacked ? "Share" : "Share what I’m bringing"}
           </button>
           <button
             onClick={() => onNav("add-manual")}
             style={{
-              flex: isMobile ? 1 : "0 1 auto",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: isMobile ? "11px 14px" : "12px 22px",
-              borderRadius: 999, border: "1.5px solid " + C.amber + "40",
-              cursor: "pointer", fontFamily: F.head, fontSize: isMobile ? 12 : 13, fontWeight: 800,
-              background: C.paper, color: C.amberDeep,
-              whiteSpace: "nowrap",
+              ...pill,
+              flex: stacked ? 1 : "0 0 auto",
+              height: stacked ? 42 : pill.height,
+              padding: stacked ? "0 12px" : "0 26px",
+              fontSize: stacked ? 12.5 : 13,
+              border: "1.5px solid " + C.amber + "55",
+              background: C.paper,
+              color: C.amberDeep,
             }}
           >
             <Plus size={13} strokeWidth={2.4}/> List more
           </button>
         </div>
+        <p style={{ display: "flex", alignItems: "flex-start", gap: 6, fontFamily: F.body, fontSize: 12.5, fontWeight: 600, color: C.mink, lineHeight: 1.45 }}>
+          <Tag size={13} strokeWidth={2.2} style={{ flexShrink: 0, marginTop: 2, color: C.amberDeep }} aria-hidden="true"/>
+          <span>{summary}</span>
+        </p>
+        {showRecapLine && (
+          <p style={{ fontFamily: F.body, fontSize: 11.5, fontWeight: 600, color: C.ash, lineHeight: 1.4 }}>
+            Last Drop · {recap.sold} sold · ${recap.earned}
+            {recap.returnedCount > 0 && " · " + recap.returnedCount + " back on Shelf"}
+          </p>
+        )}
       </div>
     </section>
   );
@@ -4605,7 +4680,7 @@ function ClosingTimeBanner({ counts, onDiscount }) {
   );
 }
 
-function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, sellerItemsLoading, accessToken }) {
+function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefresh = null, sellerItemsLoading, accessToken }) {
   const { isMobile, width } = useViewport();
   // The table's fixed tracks (photo, status, price, actions) need ~600px before
   // Item and Category get any room; beside the sidebar that's only there from
@@ -4762,6 +4837,12 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
     // check has to come BEFORE the plain draft check, which used to swallow
     // queued items and label them "Draft" — sending the seller back through
     // the Publish chooser for something they'd already committed.
+    //
+    // During a live Drop a queued draft reads as live on purpose: queuing
+    // attaches it to the CURRENT Drop, and the buyer feed promotes it
+    // (promoteItemsToLive on GET /api/items) the next time anyone browses.
+    // The stored status lags, but buyers already see it in the Drop.
+    // EditItemView applies the same rule.
     if (item.status === "draft" && item.isQueued) {
       return dropIsLive ? "live" : "queued";
     }
@@ -4892,13 +4973,42 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
   const [pickupItem, setPickupItem]   = useState(null);
   const [pickupStars, setPickupStars] = useState(0);
   const [pickupNote, setPickupNote]   = useState("");
+  const [pickupBusyId, setPickupBusyId] = useState(null);
 
-  function openRowPickup(item) {
-    setPickupItem(item);
-    setPickupStars(0);
-    setPickupNote("");
+  // The server marks it picked up first (markClaimPickedUp); the rating
+  // prompt opens only after that succeeds. A refused claim (cancelled since
+  // the list loaded, say) shows the server's reason and the list refetches.
+  async function openRowPickup(item) {
+    const claimId = item.activeClaimId;
+    // Standalone preview / demo rows: reflect it locally.
+    if (!accessToken || !claimId || (typeof item.id === "string" && item.id.startsWith("demo-"))) {
+      setItems(prev => prev.filter(i => i.id !== item.id));
+      flash("Pickup complete! " + item.t + " marked as picked up.");
+      setPickupItem(item); setPickupStars(0); setPickupNote("");
+      return;
+    }
+    if (pickupBusyId) return;
+    setPickupBusyId(item.id);
+    try {
+      await markClaimPickedUp(claimId, accessToken);
+    } catch (err) {
+      flash(pickupErrorText(err));
+      // Refetch so a claim the server refused (cancelled meanwhile) drops off.
+      if (onRefresh) onRefresh();
+      return;
+    } finally {
+      setPickupBusyId(null);
+    }
+    flash("Pickup complete! " + item.t + " marked as picked up.");
+    // Item is SOLD now — adaptItem drops it from My Items and it shows in
+    // History. Ask the parent to refetch rather than guessing locally.
+    // (onItemsChange is the parent's setter; called bare it blanked the list
+    // instead of refetching, so the sold item stayed until a reload.)
+    if (onRefresh) onRefresh();
+    setPickupItem(item); setPickupStars(0); setPickupNote("");
   }
 
+  // The pickup has already landed; this only sends the seller's rating.
   async function submitRowPickup({ skip = false } = {}) {
     const item  = pickupItem;
     const stars = pickupStars;
@@ -4906,26 +5016,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
     setPickupItem(null);
     if (!item) return;
     const claimId = item.activeClaimId;
-
-    // Standalone preview / demo rows: reflect it locally and stop.
-    if (!accessToken || !claimId || (typeof item.id === "string" && item.id.startsWith("demo-"))) {
-      setItems(prev => prev.filter(i => i.id !== item.id));
-      flash("Pickup complete! " + item.t + " marked as picked up.");
-      return;
-    }
-
-    try {
-      await apiRequest("/api/claims/" + encodeURIComponent(claimId) + "/picked-up", {
-        method: "PATCH", token: accessToken,
-      });
-    } catch (err) {
-      flash("Mark picked-up failed: " + (err?.message || "try again"));
-      return;
-    }
-    flash("Pickup complete! " + item.t + " marked as picked up.");
-    // Item is SOLD now — adaptItem drops it from My Items and it shows in
-    // History. Ask the parent to refetch rather than guessing locally.
-    if (onItemsChange) onItemsChange();
+    if (!accessToken || !claimId || (typeof item.id === "string" && item.id.startsWith("demo-"))) return;
 
     if (skip || stars < 1) return;
     try {
@@ -5091,7 +5182,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
           to the same grid tracks (Photo · Item · Category · Status · Price · Actions).
           Mobile skips the header row and stacks each item into a vertical card. */}
       {filtered.length > 0 && !compactList && (
-        <div style={{ display: "grid", gridTemplateColumns: "60px minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(140px, 0.9fr) 80px minmax(220px, auto)", gap: 14, padding: "8px 18px", marginBottom: 6, fontFamily: F.head, fontSize: 10, fontWeight: 900, color: C.ash, letterSpacing: "0.14em", textTransform: "uppercase" }}>
+        <div style={{ display: "grid", gridTemplateColumns: MY_ITEMS_COLUMNS, gap: 14, padding: "6px 16px", marginBottom: 4, fontFamily: F.head, fontSize: 11, fontWeight: 650, color: ROW.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>
           <span aria-hidden="true"/>
           <span>Item</span>
           <span>Category</span>
@@ -5110,13 +5201,13 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
           // accessible without horizontal scroll.
           if (compactList) {
             return (
-              <article key={item.id} style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: 14, border: "1.5px solid " + meta.border, background: C.paper }}>
+              <article key={item.id} style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: 14, border: "1px solid " + ROW.border, background: C.paper }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                   <button
                     type="button"
                     onClick={() => onView && onView(item)}
                     title="View details"
-                    style={{ width: 56, height: 56, borderRadius: 12, background: "linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")", border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", padding: 0, cursor: "pointer" }}
+                    style={{ width: 56, height: 56, borderRadius: 12, background: ROW.thumb, border: "1px solid " + ROW.border, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", padding: 0, cursor: "pointer" }}
                   >
                     {item.photos && item.photos.length > 0 ? (
                       <img src={item.photos[0]} alt={item.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
@@ -5128,15 +5219,15 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                     <button
                       type="button"
                       onClick={() => onView && onView(item)}
-                      style={{ fontFamily: F.head, fontSize: 14.5, fontWeight: 800, color: C.ink, background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.3 }}
+                      style={{ fontFamily: F.head, fontSize: 15, fontWeight: 700, color: ROW.ink, letterSpacing: "-0.01em", background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.3 }}
                     >
                       {item.t}
                     </button>
-                    <p style={{ marginTop: 3, fontFamily: F.body, fontSize: 11.5, fontWeight: 600, color: C.mink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <p style={{ marginTop: 3, fontFamily: F.body, fontSize: 12, fontWeight: 500, color: ROW.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {item.cat} · {item.cond}
                     </p>
                     <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 9, fontWeight: 900, padding: "3px 9px", borderRadius: 999, background: meta.bg, color: meta.color, letterSpacing: "0.04em", border: "1px solid " + meta.border }}>
+                      <span style={{ ...ROW_PILL, background: meta.bg, color: meta.color, border: "1px solid " + meta.border }}>
                         {meta.pulse && <span style={{ position: "relative", display: "inline-flex", width: 6, height: 6, flexShrink: 0 }}>
                           <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: meta.color, opacity: 0.4, animation: "pulseLive 1.8s ease-in-out infinite" }}/>
                           <span style={{ position: "relative", width: 6, height: 6, borderRadius: "50%", background: meta.color }}/>
@@ -5144,13 +5235,13 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                         {meta.label}
                       </span>
                       {item.isBundle && (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 9, fontWeight: 900, padding: "3px 9px", borderRadius: 999, background: C.tealMist, color: C.teal, letterSpacing: "0.04em", border: "1px solid " + C.teal + "30" }}>
-                          <Package size={9} strokeWidth={2.4}/> Bundle of {item.bundleCount || (item.bundleContents || []).length || 2}
+                        <span style={{ ...ROW_PILL, gap: 4, background: C.tealMist, color: C.teal, border: "1px solid " + C.teal + "30" }}>
+                          <Package size={11} strokeWidth={2.2}/> Bundle of {item.bundleCount || (item.bundleContents || []).length || 2}
                         </span>
                       )}
                       {item.isFree && (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 9, fontWeight: 900, padding: "3px 9px", borderRadius: 999, background: C.claret, color: "#fff", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                          <Heart size={9} strokeWidth={2.4}/> Free pile
+                        <span style={{ ...ROW_PILL, gap: 4, background: C.claret, color: "#fff", border: "1px solid " + C.claret }}>
+                          <Heart size={11} strokeWidth={2.2}/> Free pile
                         </span>
                       )}
                     </div>
@@ -5165,7 +5256,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                           style={{ width: 56, padding: "2px 6px", borderRadius: 6, border: "1.5px solid " + C.green, fontFamily: F.head, fontSize: 14, fontWeight: 900, color: C.green, outline: "none", background: C.paper, textAlign: "center" }}/>
                       </div>
                     ) : (
-                      <p style={{ fontFamily: F.head, fontSize: 17, fontWeight: 900, color: item.isFree ? C.claret : C.green, letterSpacing: "-0.01em" }}>
+                      <p style={{ fontFamily: F.head, fontSize: 17, fontWeight: 750, color: item.isFree ? C.claret : C.green, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums" }}>
                         {item.isFree ? "FREE" : (
                           typeof item.soldPrice === "number" && item.soldPrice !== item.price ? (
                             <>
@@ -5176,11 +5267,11 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                         )}
                       </p>
                     )}
-                    {(item.views > 0 || item.saves > 0 || (lc === "shelf" && item.shelfDays)) && (
-                      <p style={{ marginTop: 4, fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.mink, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    {(item.views > 0 || item.saves > 0 || (lc === "shelf" && item.shelfDays > 0)) && (
+                      <p style={{ marginTop: 4, fontFamily: F.body, fontSize: 11, fontWeight: 500, color: ROW.muted, display: "inline-flex", alignItems: "center", gap: 6 }}>
                         {item.views > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><Eye size={9}/> {item.views}</span>}
                         {item.saves > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><Heart size={9}/> {item.saves}</span>}
-                        {lc === "shelf" && item.shelfDays && <span>{item.shelfDays}d</span>}
+                        {lc === "shelf" && item.shelfDays > 0 && <span>{item.shelfDays}d</span>}
                       </p>
                     )}
                   </div>
@@ -5189,7 +5280,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                 {/* Mobile twin of the same label, removed for the same
                     reason — a Shelf item is not queued for the Drop. */}
 
-                <div style={{ display: "flex", gap: 6, alignItems: "center", paddingTop: 10, borderTop: "1px dashed " + C.fawn }}>
+                <div style={{ display: "flex", gap: 6, alignItems: "center", paddingTop: 10, borderTop: "1px solid " + ROW.border }}>
                   {/* Share — the table row's button, same allow-list. The card
                       layout never had it, so phones (and now tablets, which
                       use cards too) couldn't share a listing. */}
@@ -5250,7 +5341,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                   )}
                   {lc === "claimed" && (
                     item.activeClaimId ? (
-                      <button onClick={() => openRowPickup(item)} className="cta-primary" style={{ ...actionBtnSolid(C.green, C.greenDeep), flex: 1 }}>
+                      <button onClick={() => openRowPickup(item)} disabled={pickupBusyId === item.id} className="cta-primary" style={{ ...actionBtnSolid(C.green, C.greenDeep), flex: 1 }}>
                         <Check size={12} strokeWidth={3}/> Mark as Picked Up
                       </button>
                     ) : (
@@ -5262,13 +5353,13 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
             );
           }
           return (
-            <article key={item.id} style={{ display: "grid", gridTemplateColumns: "60px minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(140px, 0.9fr) 80px minmax(220px, auto)", alignItems: "center", gap: 14, padding: "12px 18px", borderRadius: 16, border: "1.5px solid " + meta.border, background: C.paper, transition: "all 150ms" }}>
+            <article key={item.id} style={{ display: "grid", gridTemplateColumns: MY_ITEMS_COLUMNS, alignItems: "center", gap: 14, padding: "12px 16px", borderRadius: 14, border: "1px solid " + ROW.border, background: C.paper, transition: "border-color 150ms" }}>
               {/* Col 1 — Photo */}
               <button
                 type="button"
                 onClick={() => onView && onView(item)}
                 title="View details"
-                style={{ width: 60, height: 60, borderRadius: 14, background: "linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")", border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", padding: 0, cursor: "pointer" }}
+                style={{ width: 60, height: 60, borderRadius: 12, background: ROW.thumb, border: "1px solid " + ROW.border, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", padding: 0, cursor: "pointer" }}
               >
                 {item.photos && item.photos.length > 0 ? (
                   <img src={item.photos[0]} alt={item.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
@@ -5283,9 +5374,9 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                   type="button"
                   onClick={() => onView && onView(item)}
                   title="View details"
-                  style={{ fontFamily: F.head, fontSize: 15, fontWeight: 800, color: C.ink, background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  style={{ fontFamily: F.head, fontSize: 15, fontWeight: 700, color: ROW.ink, letterSpacing: "-0.01em", lineHeight: 1.3, background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
                   onMouseEnter={e => { e.currentTarget.style.color = C.green; e.currentTarget.style.textDecoration = "underline"; e.currentTarget.style.textUnderlineOffset = "3px"; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = C.ink; e.currentTarget.style.textDecoration = "none"; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = ROW.ink; e.currentTarget.style.textDecoration = "none"; }}
                 >
                   {item.t}
                 </button>
@@ -5296,24 +5387,24 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                     are not queued for the Drop, so the label misreported the
                     placement the seller had chosen. The Queued-for-Drop items
                     carry their own "Queued for Saturday" status already. */}
-                {(item.views > 0 || item.saves > 0 || (lc === "shelf" && item.shelfDays)) && (
-                  <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 10, fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink }}>
+                {(item.views > 0 || item.saves > 0 || (lc === "shelf" && item.shelfDays > 0)) && (
+                  <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 10, fontFamily: F.body, fontSize: 12, fontWeight: 500, color: ROW.muted }}>
                     {item.views > 0 && (<span style={{ display: "flex", alignItems: "center", gap: 3 }}><Eye size={10}/> {item.views}</span>)}
                     {item.saves > 0 && (<span style={{ display: "flex", alignItems: "center", gap: 3 }}><Heart size={10}/> {item.saves}</span>)}
-                    {lc === "shelf" && item.shelfDays && (<span>{item.shelfDays}d on Shelf</span>)}
+                    {lc === "shelf" && item.shelfDays > 0 && (<span>{item.shelfDays}d on Shelf</span>)}
                   </div>
                 )}
               </div>
 
               {/* Col 3 — Category (with condition underneath) */}
               <div style={{ minWidth: 0 }}>
-                <p style={{ fontFamily: F.body, fontSize: 12.5, fontWeight: 700, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.cat}</p>
-                <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.mink, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.cond}</p>
+                <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: ROW.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.cat}</p>
+                <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 450, color: ROW.muted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.cond}</p>
               </div>
 
               {/* Col 4 — Status pill (+ Free pile pill underneath when active) */}
               <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 10, fontWeight: 900, padding: "3px 10px", borderRadius: 999, background: meta.bg, color: meta.color, letterSpacing: "0.04em", border: "1px solid " + meta.border, maxWidth: "100%" }}>
+                <span style={{ ...ROW_PILL, background: meta.bg, color: meta.color, border: "1px solid " + meta.border }}>
                   {meta.pulse && <span style={{ position: "relative", display: "inline-flex", width: 6, height: 6, flexShrink: 0 }}>
                     <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: meta.color, opacity: 0.4, animation: "pulseLive 1.8s ease-in-out infinite" }}/>
                     <span style={{ position: "relative", width: 6, height: 6, borderRadius: "50%", background: meta.color }}/>
@@ -5321,13 +5412,13 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meta.label}</span>
                 </span>
                 {item.isBundle && (
-                  <span title={(item.bundleContents || []).join(" · ")} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 9, fontWeight: 900, padding: "3px 9px", borderRadius: 999, background: C.tealMist || C.greenMist, color: C.teal || C.greenDeep, letterSpacing: "0.04em", border: "1px solid " + (C.teal || C.greenDeep) + "30" }}>
-                    <Package size={9} strokeWidth={2.4}/> Bundle of {item.bundleCount || (item.bundleContents || []).length || 2}
+                  <span title={(item.bundleContents || []).join(" · ")} style={{ ...ROW_PILL, gap: 4, background: C.tealMist || C.greenMist, color: C.teal || C.greenDeep, border: "1px solid " + (C.teal || C.greenDeep) + "30" }}>
+                    <Package size={11} strokeWidth={2.2}/> Bundle of {item.bundleCount || (item.bundleContents || []).length || 2}
                   </span>
                 )}
                 {item.isFree && (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 9, fontWeight: 900, padding: "3px 9px", borderRadius: 999, background: C.claret, color: "#fff", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                    <Heart size={9} strokeWidth={2.4}/> Free pile
+                  <span style={{ ...ROW_PILL, gap: 4, background: C.claret, color: "#fff", border: "1px solid " + C.claret }}>
+                    <Heart size={11} strokeWidth={2.2}/> Free pile
                   </span>
                 )}
               </div>
@@ -5343,7 +5434,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                       style={{ width: 64, padding: "2px 6px", borderRadius: 6, border: "1.5px solid " + C.green, fontFamily: F.head, fontSize: 16, fontWeight: 900, color: C.green, outline: "none", background: C.paper, textAlign: "center" }}/>
                   </div>
                 ) : (
-                  <p style={{ fontFamily: F.head, fontSize: 19, fontWeight: 900, color: item.isFree ? C.claret : C.green, letterSpacing: "-0.01em" }}>
+                  <p style={{ fontFamily: F.head, fontSize: 18, fontWeight: 750, color: item.isFree ? C.claret : C.green, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums" }}>
                     {item.isFree ? "FREE" : (
                       typeof item.soldPrice === "number" && item.soldPrice !== item.price ? (
                         <>
@@ -5423,6 +5514,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
                   item.activeClaimId ? (
                     <button
                       onClick={() => openRowPickup(item)}
+                      disabled={pickupBusyId === item.id}
                       className="cta-primary"
                       title={"Mark picked up by " + item.activeClaimBuyer}
                       style={actionBtnSolid(C.green, C.greenDeep)}
@@ -5446,8 +5538,8 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
           the review. */}
       {pickupItem && (
         <RateBuyerModal
-          title="Mark as picked up"
-          subtitle={pickupItem.t + " — handed over to " + pickupItem.activeClaimBuyer}
+          title="Item Picked Up!"
+          subtitle={pickupItem.t + " — picked up by " + pickupItem.activeClaimBuyer}
           buyerName={pickupItem.activeClaimBuyer}
           stars={pickupStars} setStars={setPickupStars}
           note={pickupNote} setNote={setPickupNote}
@@ -5709,6 +5801,25 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, seller
 
 }
 
+// My Items rows share the buyer item card's finish (CARD in the buyer
+// dashboard): a neutral hairline border instead of a tinted 1.5px one, the
+// card's near-black ink and muted grey, lighter weights (600–750, not
+// 800–900), and flat buttons. The status pill alone carries the status colour.
+const ROW = {
+  border: "#E7E3DD",
+  ink:    "#111827",
+  muted:  "#74777D",
+  thumb:  "#F4F5F3",
+};
+// Header and rows share these tracks. Each row is its own grid, so the
+// actions column has to be a fixed width: as "auto" it sized to each row's
+// buttons ("Move to Shelf" vs "Lower price"…) and pushed the price column
+// left or right row by row. 256px fits the widest set (Share · Lower price ·
+// Edit · ×, 251px).
+const MY_ITEMS_COLUMNS = "60px minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(140px, 0.9fr) 80px 256px";
+// One pill size for status, bundle and free-pile labels.
+const ROW_PILL = { display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 11, fontWeight: 650, lineHeight: 1.2, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap", maxWidth: "100%" };
+
 // Reusable button style helpers — defined at module scope for clarity
 /* Action-row button system — ALL buttons share a fixed height of 34px and the same border radius,
    so the row reads as a unified horizontal rhythm regardless of label length.  */
@@ -5725,30 +5836,31 @@ const ACTION_BTN_BASE = {
   whiteSpace: "nowrap",
   boxSizing: "border-box",
 };
-function actionBtnSolid(bg, shadow) {
+// Flat, like the buyer card's CTA: no 2px underglow. Call sites still pass
+// the old shadow colour as a second argument; it's simply unused now.
+function actionBtnSolid(bg) {
   return {
     ...ACTION_BTN_BASE,
     padding: "0 14px",
     border: "none",
-    fontWeight: 800,
+    fontWeight: 700,
     color: "#fff",
     background: bg,
-    boxShadow: "0 2px 0 " + shadow,
   };
 }
 const actionBtnOutlined = {
   ...ACTION_BTN_BASE,
   padding: "0 14px",
-  border: "1.5px solid " + C.fawn,
-  fontWeight: 700,
-  color: C.mink,
+  border: "1px solid " + ROW.border,
+  fontWeight: 600,
+  color: ROW.ink,
   background: C.paper,
 };
 const actionBtnIcon = {
   ...ACTION_BTN_BASE,
   width: 34,
   padding: 0,
-  border: "1.5px solid " + C.claret + "30",
+  border: "1px solid " + ROW.border,
   background: C.paper,
   color: C.claret,
 };
@@ -6551,9 +6663,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   async function chatMarkPickedUp(claim) {
     setChatBusyClaimId(claim.id);
     try {
-      await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/picked-up", {
-        method: "PATCH", token: accessToken,
-      });
+      await markClaimPickedUp(claim.id, accessToken);
       chatFlashOk("Pickup complete. Item marked as sold.");
       setPendingClaimTick(t => t + 1);
       // Ask for the buyer rating straight away. The claim is PICKED_UP now,
@@ -6561,7 +6671,12 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       setRateClaim(claim);
       setRateStars(0);
       setRateNote("");
-    } catch (err) { chatFlashErr("mark picked up", err); }
+    } catch (err) {
+      chatFlashErr("mark picked up", err);
+      // Refused (cancelled since this loaded, say): refetch so the stale
+      // Mark picked up banner goes away.
+      setPendingClaimTick(t => t + 1);
+    }
     finally { setChatBusyClaimId(null); }
   }
 
@@ -7732,41 +7847,40 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
   const todayCount = pickups.filter(p => p.isToday).length;
   const upcomingCount = pickups.filter(p => !p.isToday).length;
 
-  function handlePickedUp(item) {
+  // The server marks it picked up first (markClaimPickedUp); the rating
+  // prompt opens only after that succeeds. This used to open the rating
+  // straight away and send the PATCH once it closed, so a claim cancelled
+  // since the list loaded still got a rating window. A refusal now shows the
+  // server's reason and refetches, which drops the stale row.
+  async function handlePickedUp(item) {
+    if (busyId) return;
+    if (!(await commitPickedUp(item))) return;
     setRatingItem(item);
     setRatingStars(0);
     setRatingNote("");
   }
 
-  // Backend call after the rating modal closes. Standalone preview (demo IDs
-  // or no token) just removes the row locally. Returns whether the claim
-  // actually reached PICKED_UP on the server — submitRating needs to know,
-  // because POST /review is rejected on anything that isn't PICKED_UP.
+  // Marks the pickup on the server before any rating window opens. Standalone
+  // preview (demo IDs or no token) just removes the row locally. Returns
+  // whether the pickup went through — the rating window only opens if so.
   async function commitPickedUp(item) {
     if (!accessToken || (typeof item.id === "string" && item.id.startsWith("demo-"))) {
       setPickups(prev => prev.filter(p => p.id !== item.id));
       setSuccessMsg("Pickup complete! " + item.t + " marked as picked up.");
       setTimeout(() => setSuccessMsg(null), 4000);
-      return false;
+      return true;
     }
     setBusyId(item.id);
-    const snapshot = pickups;
-    setPickups(prev => prev.filter(p => p.id !== item.id));
     // Hard 20s timeout — same defensive measure we added to the offer / claim
-    // flows. Without it, if the network or auto-refresh path stalls, the
-    // optimistic row stays gone, busyId never clears, and the seller can't
-    // mark any more pickups until they refresh the page.
+    // flows. Without it, if the network or auto-refresh path stalls, busyId
+    // never clears and the seller can't mark any more pickups until they
+    // refresh the page.
     const pickupTimeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error("Request timed out. Please try again.")), 20000)
     );
     try {
-      await Promise.race([
-        apiRequest("/api/claims/" + encodeURIComponent(item.id) + "/picked-up", {
-          method: "PATCH",
-          token:  accessToken,
-        }),
-        pickupTimeout,
-      ]);
+      await Promise.race([markClaimPickedUp(item.id, accessToken), pickupTimeout]);
+      setPickups(prev => prev.filter(p => p.id !== item.id));
       setSuccessMsg("Pickup complete! " + item.t + " marked as picked up.");
       setTimeout(() => setSuccessMsg(null), 4000);
       // Item flipped to SOLD server-side — refresh the parent's items list.
@@ -7775,29 +7889,26 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
     } catch (err) {
       // eslint-disable-next-line no-console
       if (typeof console !== "undefined") console.error("[PickupsView] picked-up failed:", err);
-      setPickups(snapshot);
-      setErrorMsg("Mark picked-up failed: " + (err?.message || "try again"));
+      setErrorMsg(pickupErrorText(err));
       setTimeout(() => setErrorMsg(null), 4500);
+      reloadPickups();
       return false;
     } finally {
       setBusyId(null);
     }
   }
 
-  // Close the modal, mark the pickup, then persist the seller's rating of the
-  // buyer. The stars used to be collected and dropped on the floor — both
-  // buttons ran the same handler and neither posted a review, so the rating a
-  // seller gave here never reached the buyer's profile. Order matters: the
-  // backend only accepts a review on a PICKED_UP claim, so the PATCH has to
-  // land first.
+  // Close the modal and persist the seller's rating of the buyer. The pickup
+  // already landed in handlePickedUp — the backend only accepts a review on
+  // a PICKED_UP claim, and the window doesn't open until it is one.
   async function submitRating({ skip = false } = {}) {
     const item  = ratingItem;
     const stars = ratingStars;
     const note  = ratingNote.trim();
     setRatingItem(null);
     if (!item) return;
-    const marked = await commitPickedUp(item);
-    if (skip || stars < 1 || !marked) return;
+    if (!accessToken || (typeof item.id === "string" && item.id.startsWith("demo-"))) return;
+    if (skip || stars < 1) return;
     try {
       await apiRequest("/api/claims/" + encodeURIComponent(item.id) + "/review", {
         method: "POST",
@@ -7843,6 +7954,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
         // eslint-disable-next-line no-console
         if (typeof console !== "undefined") console.error("[PickupsView] no-show failed:", err);
         setPickups(snapshot);
+        reloadPickups();
         setSuccessMsg("Couldn't mark as no-show: " + (err?.message || "try again"));
         setTimeout(() => setSuccessMsg(null), 4000);
         return;
@@ -7872,6 +7984,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
         // eslint-disable-next-line no-console
         if (typeof console !== "undefined") console.error("[PickupsView] release failed:", err);
         setPickups(snapshot);
+        reloadPickups();
         setSuccessMsg("Couldn't release the claim: " + (err?.message || "try again"));
         setTimeout(() => setSuccessMsg(null), 4000);
         return;
@@ -8009,7 +8122,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
                 <button onClick={() => handlePickedUp(p)} disabled={isBusy} className="cta-primary" style={{ minHeight: 44, padding: "8px 14px", borderRadius: 10, border: "none", cursor: isBusy ? "not-allowed" : "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 800, background: C.green, color: "#fff", boxShadow: "0 2px 0 " + C.greenDeep, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flex: isMobile ? 1 : "0 0 auto" }}>
                   <Check size={12} strokeWidth={2.8}/> Picked up
                 </button>
-                {showLegacyActions && (
+                {showLegacyActions && !p.buyerConfirmedReceipt && (
                   <>
                     <button onClick={() => handleRelease(p)} title="Buyer came, inspected, declined — release immediately" style={{ minHeight: 44, padding: "8px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, cursor: "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 700, background: C.paper, color: C.mink, flex: isMobile ? 1 : "0 0 auto" }}>
                       Release
@@ -8734,7 +8847,7 @@ function ItemDetailView({ item, onBack, onEdit, accessToken: _accessToken }) {
                 <DetailRow label="Days" value={item.raw.pickupDays.join(", ")}/>
               )}
               {Array.isArray(item.raw?.pickupWindows) && item.raw.pickupWindows.length > 0 && (
-                <DetailRow label="Windows" value={item.raw.pickupWindows.join(", ")}/>
+                <DetailRow label="Windows" value={selectedPickupWindows(item.raw.pickupWindows).map((w) => w.label + " (" + w.time + ")").join(", ") || item.raw.pickupWindows.join(", ")}/>
               )}
               {Array.isArray(item.raw?.pickupCustomDates) && item.raw.pickupCustomDates.length > 0 && (
                 <DetailRow label="Dates" value={item.raw.pickupCustomDates.map(formatPickupDateLong).join(", ")}/>
@@ -8886,21 +8999,29 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
 
   const MAX_PHOTOS = 5;
 
-  // ── Lifecycle pill + advisory note (preserve from old EditItemView) ──
-  const dropIsLive = false;
+  // ── Lifecycle pill + advisory note, read the way the inventory reads it ──
+  // "Queued" is a backend DRAFT with queuedAt set (isQueued) — the BUG-093
+  // rule. It used to be read off the placement alone (publishedTo === "drop",
+  // with dropIsLive pinned to false), so an item already LIVE in the Drop was
+  // labelled queued while a genuinely queued one showed "Draft".
+  // While the Drop is live (or closing) a queued draft is already in it — the
+  // buyer feed promotes it on the next browse — so, as in MyItemsView's
+  // lifecycleOf, it gets no queued message then. Same phase source as there.
+  // A live, reserved or sold Drop listing shows no status message.
+  const dropCycle = useDropCycle();
+  const dropNow = dropCycle.effectiveNow || new Date();
+  const dropPhase = toSellerOverviewPhase(dropCycle, dropNow);
+  const dropIsLive = dropPhase === "live" || dropPhase === "closing";
   const lifecycle =
-    item.status === "draft" ? "draft" :
-    item.publishedTo === "drop"  && !dropIsLive ? "queued" :
-    item.publishedTo === "drop"  &&  dropIsLive ? "live"   :
-    item.publishedTo === "shelf" &&  dropIsLive ? "live"   :
-    item.publishedTo === "shelf" && !dropIsLive ? "shelf"  : "draft";
+    item.status === "draft" ? (item.isQueued ? (dropIsLive ? null : "queued") : "draft") :
+    item.publishedTo === "shelf" ? "shelf" :
+    null;
   const lcMeta = {
     draft:  { label: "Draft",                      color: C.ash,       bg: C.sand,      border: C.fawn,         note: null },
     queued: { label: "Queued for Saturday's Drop", color: C.amberDeep, bg: C.amberMist, border: C.amber + "30", note: "This item is queued — edits apply before it goes live Saturday." },
-    live:   { label: "Live in Drop",               color: C.greenDeep, bg: C.greenMist, border: C.green + "40", note: "This item is live right now. Changes take effect immediately — price changes apply at the next Drop reset." },
     shelf:  { label: "On the Shelf",               color: C.ink,       bg: C.sand,      border: C.smoke,        note: "This item is on the Shelf. Changes take effect immediately." },
   };
-  const meta = lcMeta[lifecycle];
+  const meta = lifecycle ? lcMeta[lifecycle] : null;
 
   // ── Photo uploader (identical to ManualItemForm) ──────────────
   function openFilePicker() {
@@ -9116,13 +9237,15 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
       </button>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
         <h2 style={{ fontSize: 24, fontWeight: 800, color: C.ink, fontFamily: F.head }}>Edit Item</h2>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: F.head, fontSize: 10, fontWeight: 900, padding: "5px 12px", borderRadius: 999, background: meta.bg, color: meta.color, letterSpacing: "0.06em", border: "1px solid " + meta.border }}>
-          {meta.label}
-        </span>
+        {meta && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: F.head, fontSize: 10, fontWeight: 900, padding: "5px 12px", borderRadius: 999, background: meta.bg, color: meta.color, letterSpacing: "0.06em", border: "1px solid " + meta.border }}>
+            {meta.label}
+          </span>
+        )}
       </div>
 
-      {meta.note && (
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 16px", borderRadius: 14, background: lifecycle === "live" ? C.greenMist : meta.bg, border: "1px solid " + meta.border, marginBottom: 16 }}>
+      {meta?.note && (
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 16px", borderRadius: 14, background: meta.bg, border: "1px solid " + meta.border, marginBottom: 16 }}>
           <Info size={14} style={{ color: meta.color, flexShrink: 0, marginTop: 2 }}/>
           <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.55 }}>{meta.note}</p>
         </div>
@@ -9552,7 +9675,7 @@ function formatPickupSummary(aiSettings) {
     else daySummary = allDays.filter(d => days.includes(d)).join(" · ");
   }
 
-  const winLabels = { morning: "Mornings", afternoon: "Afternoons", evening: "Evenings" };
+  const winLabels = Object.fromEntries(PICKUP_WINDOWS.map((w) => [w.id, w.label]));
   const winSummary = windows.length === 3 ? "Anytime" : windows.map(w => winLabels[w]).join(" · ");
   return { days: daySummary, windows: winSummary };
 }
@@ -11699,7 +11822,7 @@ export default function DropYardSellerDashboard({
           <Sidebar activeView={view} onNav={safeNav} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount} questionsPending={questionsPending}/>
           <main className={"dy-seller-main" + (view === "messages" ? " dy-seller-main--flush" : "")}>
             {view === "overview" && <Overview onNav={safeNav} user={user} sellerItems={sellerItems} accessToken={accessToken}/>}
-            {view === "items" && <MyItemsView onNav={safeNav} onEdit={goToEdit} onView={goToView} sellerItems={sellerItems} onItemsChange={onItemsChange} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
+            {view === "items" && <MyItemsView onNav={safeNav} onEdit={goToEdit} onView={goToView} sellerItems={sellerItems} onItemsChange={onItemsChange} onRefresh={onItemCreated} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
             {view === "questions" && <QuestionsView onNav={safeNav} accessToken={accessToken} onQuestionsChanged={onQuestionsChanged}/>}
             {view === "item-detail" && <ItemDetailView item={editingItem} onBack={() => setView("items")} onEdit={() => setView("edit-item")} accessToken={accessToken}/>}
             {view === "orders" && <OrdersView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated}/>}
