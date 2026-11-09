@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
+import ItemGallery from "@/components/item/ItemGallery";
+import { UserAvatar } from "@/components/UserAvatar";
+import { shortName, type ResolvedAvatar } from "@/lib/avatar";
+import { categoryLabel } from "@/lib/categories";
 
 /**
  * BUG-085 — public per-item page.
@@ -21,15 +26,6 @@ import { notFound } from "next/navigation";
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://dropyard.app";
 
-const CATEGORY_LABEL: Record<string, string> = {
-  FURNITURE: "Furniture",
-  ELECTRONICS: "Electronics",
-  SPORTS: "Sports & Outdoor",
-  HOME: "Home",
-  CLOTHING: "Clothing & Accessories",
-  BOOKS: "Books, Games & Hobbies",
-  OTHER: "Other",
-};
 const CONDITION_LABEL: Record<string, string> = {
   EXCELLENT: "New",
   LIKE_NEW: "Used - Like New",
@@ -48,7 +44,7 @@ interface PublicItem {
   photos: string[];
   status: string;
   placement: string;
-  seller?: { id: string; name: string; neighborhood: string | null; zone: string | null } | null;
+  seller?: { id: string; name: string; neighborhood: string | null; zone: string | null; avatar?: ResolvedAvatar | null } | null;
 }
 
 async function fetchItem(id: string): Promise<PublicItem | null> {
@@ -117,46 +113,31 @@ export default async function PublicItemPage({ params }: { params: Promise<{ id:
   const isSold = item.status === "SOLD";
   const isTaken = isSold || item.status === "CLAIMED" || item.status === "RESERVED";
   const photos = Array.isArray(item.photos) ? item.photos.filter(Boolean) : [];
-  const hero = photos[0];
-  const sellerName = item.seller?.name || "A neighbour";
+  // Public page (and the target of shared links): "First L.", never a full
+  // surname, beside the seller's chosen profile picture.
+  const sellerName = shortName(item.seller?.name);
   const hood = item.seller?.neighborhood || item.seller?.zone;
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
+    // Extra bottom padding: room between the Claim button / seller box and the
+    // footer's top border.
+    <main className="mx-auto w-full max-w-5xl px-4 pb-12 pt-8 sm:px-6 sm:pb-16 sm:pt-12">
+      {/* Back to the homepage, as a pale-green pill: reads as a control rather
+          than a caption, but stays quieter than the filled Claim button.
+          h-11 keeps the whole pill a 44px tap target. */}
       <Link
         href="/"
-        className="mb-6 inline-flex items-center gap-2 text-[13px] font-semibold text-slate-500 transition hover:text-slate-800"
+        className="dy-focus group mb-6 inline-flex h-11 items-center gap-2 rounded-full bg-dy-pale px-4 text-[14px] font-semibold text-dy-mid ring-1 ring-dy-line transition-colors hover:bg-emerald-100 hover:text-dy-forest sm:text-[15px]"
       >
-        ← DropYard
+        <ArrowLeft size={16} strokeWidth={2.25} aria-hidden className="transition-transform group-hover:-translate-x-0.5" />
+        DropYard
       </Link>
 
       <div className="grid gap-8 lg:grid-cols-2">
-        {/* Photos */}
-        <div>
-          <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-            {hero ? (
-              // Plain <img>: these are remote S3 URLs and next/image would need
-              // every bucket registered in next.config remotePatterns.
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={hero} alt={item.title} className="h-full max-h-[420px] w-full object-cover" />
-            ) : (
-              <div className="flex h-64 items-center justify-center text-5xl">📦</div>
-            )}
-            {isTaken && (
-              <span className="absolute left-4 top-4 rounded-full bg-slate-900/85 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-white">
-                {isSold ? "Sold" : "Claimed"}
-              </span>
-            )}
-          </div>
-          {photos.length > 1 && (
-            <div className="mt-3 grid grid-cols-4 gap-2">
-              {photos.slice(1, 5).map((p) => (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img key={p} src={p} alt="" className="h-20 w-full rounded-lg border border-slate-200 object-cover" />
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Photos — every uploaded photo, with arrows, thumbnails, swipe and a
+            full-screen zoomable viewer. A client island: the rest of the page
+            (and its Open Graph tags for shared links) stays server-rendered. */}
+        <ItemGallery photos={photos} title={item.title} badge={isTaken ? (isSold ? "Sold" : "Claimed") : null} />
 
         {/* Details */}
         <div>
@@ -179,7 +160,7 @@ export default async function PublicItemPage({ params }: { params: Promise<{ id:
 
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[12px] font-semibold text-slate-600">
-              {CATEGORY_LABEL[item.category] || "Other"}
+              {categoryLabel(item.category)}
             </span>
             <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[12px] font-semibold text-slate-600">
               {CONDITION_LABEL[item.condition] || "Used"}
@@ -192,8 +173,13 @@ export default async function PublicItemPage({ params }: { params: Promise<{ id:
 
           <div className="mt-6 rounded-xl border border-slate-200 bg-white p-4">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Seller</p>
-            <p className="mt-1 text-[15px] font-semibold text-slate-900">{sellerName}</p>
-            {hood && <p className="text-[13px] text-slate-500">{hood}</p>}
+            <div className="mt-2 flex items-center gap-3">
+              <UserAvatar avatar={item.seller?.avatar} name={sellerName} size={44} decorative />
+              <div className="min-w-0">
+                <p className="truncate text-[15px] font-semibold text-slate-900">{sellerName}</p>
+                {hood && <p className="text-[13px] text-slate-500">{hood}</p>}
+              </div>
+            </div>
           </div>
 
           {/* CTA — /buyer gates signed-out visitors to /join, and carries the

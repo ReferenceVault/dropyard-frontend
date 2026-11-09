@@ -6,6 +6,7 @@ import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { formatPickupDateList } from "@/lib/pickupDates";
 import { pickupWindowsShort } from "@/lib/pickupWindows";
+import { shortName, type ResolvedAvatar } from "@/lib/avatar";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -21,7 +22,7 @@ interface ApiItem {
   pickupDays?: string[];
   pickupCustomDates?: string[];
   pickupWindows?: string[];
-  seller?: { id?: string; neighborhood?: string | null } | null;
+  seller?: { id?: string; name?: string | null; neighborhood?: string | null; avatar?: ResolvedAvatar | null } | null;
   _count?: { watchlist?: number };
 }
 
@@ -35,6 +36,9 @@ export interface HomeItem {
   /** "Evenings · 4 PM–7 PM"; null when the seller set no window. */
   pickupHours: string | null;
   sellerId: string | null;
+  /** "First L." — the homepage is public, so never a full surname. */
+  sellerName: string;
+  sellerAvatar: ResolvedAvatar | null;
 }
 
 export interface DropStats {
@@ -71,6 +75,8 @@ function toHomeItem(api: ApiItem): HomeItem {
     pickup:        pickupLabel(api),
     pickupHours:   pickupWindowsShort(api.pickupWindows),
     sellerId:      api.seller?.id ?? null,
+    sellerName:    shortName(api.seller?.name),
+    sellerAvatar:  api.seller?.avatar ?? null,
   };
 }
 

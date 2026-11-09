@@ -37,8 +37,20 @@ export function ShelfSection({ items, state, savedIds, onToggleSaved }: {
     const card = el?.firstElementChild as HTMLElement | null;
     if (!el || !card) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollBy({ left: direction * (card.offsetWidth + 30), behavior: reduced ? "auto" : "smooth" });
+    const gap = parseFloat(getComputedStyle(el).columnGap) || 30; // the gap is responsive
+    el.scrollBy({ left: direction * (card.offsetWidth + gap), behavior: reduced ? "auto" : "smooth" });
   };
+
+  // Scroll-edge fade: a soft mask on whichever side has more cards beyond it,
+  // so it's obvious the row continues. A mask (not an overlay) works over any
+  // background and never covers a clickable card.
+  const edgeFade = canPrev && canNext
+    ? "linear-gradient(to right, transparent 0, #000 7%, #000 82%, transparent 100%)"
+    : canNext
+      ? "linear-gradient(to right, #000 0, #000 80%, transparent 100%)"
+      : canPrev
+        ? "linear-gradient(to right, transparent 0, #000 9%, #000 100%)"
+        : undefined;
 
   const arrowClass = "dy-focus flex h-[clamp(44px,3.15vw,60px)] w-[clamp(44px,3.15vw,60px)] items-center justify-center rounded-full border-2 border-dy-green-strong text-dy-green-strong transition-colors hover:bg-dy-pale disabled:cursor-default disabled:border-dy-line disabled:text-dy-line disabled:hover:bg-transparent";
 
@@ -48,10 +60,10 @@ export function ShelfSection({ items, state, savedIds, onToggleSaved }: {
         <div className="pr-[clamp(16px,5.2vw,100px)] lg:pr-0">
           <p className="dy-eyebrow">The Shelf</p>
           <h2 id="shelf-heading" className="dy-h2 mt-4">
-            Missed the <span className="text-dy-orange lg:block">Drop?</span>
+            Missed the <span className="text-dy-accent lg:block">Drop?</span>
           </h2>
           <p className="mt-5 text-[clamp(16px,1.3vw,25px)] font-medium text-dy-green-strong">The Shelf is always open. Browse items available between Drops.</p>
-          <p className="dy-body mt-4">A few things your neighbours are putting up for grabs.</p>
+          <p className="dy-body mt-4">No waiting for Saturday. Claim and pick up anytime.</p>
           {items.length > 1 && (
             <div className="mt-[clamp(20px,2vw,40px)] flex gap-[30px]">
               <button type="button" onClick={() => page(-1)} disabled={!canPrev} aria-label="Previous items" className={arrowClass}>
@@ -86,7 +98,9 @@ export function ShelfSection({ items, state, savedIds, onToggleSaved }: {
               onScroll={syncArrows}
               tabIndex={0}
               aria-label="Items on the Shelf"
-              className="dy-no-scrollbar dy-focus -mt-2 flex snap-x gap-[30px] overflow-x-auto pr-[clamp(16px,2.6vw,50px)] pt-2"
+              style={edgeFade ? { maskImage: edgeFade, WebkitMaskImage: edgeFade } : undefined}
+              // pb-6: room for the cards' shadow, which the scroller would clip.
+              className="dy-no-scrollbar dy-focus -mt-2 flex snap-x gap-[clamp(16px,1.6vw,30px)] overflow-x-auto pb-6 pr-[clamp(16px,2.6vw,50px)] pt-2"
             >
               {items.map((item) => (
                 <li key={item.id} className="w-[min(78vw,clamp(260px,21.2vw,408px))] shrink-0 snap-start">

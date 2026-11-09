@@ -18,6 +18,7 @@ import BuyingStepsSection from "@/components/BuyingStepsSection";
 import ShopWaysSection from "@/components/ShopWaysSection";
 import BuyerPerksSection from "@/components/BuyerPerksSection";
 import { apiRequest } from "@/lib/api";
+import { categoryEmoji, categoryLabel } from "@/lib/categories";
 
 // Backend item shape for the public /api/items response (subset we use).
 type ApiItem = {
@@ -37,23 +38,9 @@ type ApiItem = {
 type DropCard  = { id: string | number; t: string; p: number; op: number | null; img: string; cat: string };
 type ShelfCard = { id: string | number; t: string; p: number; op: number | null; img: string; days: number; pd: boolean };
 
-// Category emoji fallback for items without a photo.
-const CATEGORY_EMOJI_FOR_BUYERS: Record<string, string> = {
-  FURNITURE:   "\u{1F6CB}\u{FE0F}",
-  ELECTRONICS: "\u{1F4F1}",
-  CLOTHING:    "\u{1F455}",
-  KITCHEN:     "\u{1F373}",
-  KIDS:        "\u{1F9F8}",
-  SPORTS:      "\u{1F3BE}",
-  BOOKS:       "\u{1F4DA}",
-  HOME:        "\u{1F3E0}",
-  TOOLS:       "\u{1F527}",
-  OTHER:       "\u{1F4E6}",
-};
-function categoryLabel(cat?: string): string {
-  if (!cat) return "Other";
-  return cat.charAt(0) + cat.slice(1).toLowerCase();
-}
+// Category labels and the no-photo emoji come from lib/categories.ts. The
+// local versions here keyed values that don't exist (KITCHEN, KIDS, TOOLS)
+// and title-cased the raw value ("HOME_DECOR" → "Home_decor").
 
 const C = {
   gLightBg: "#F3F8F3", gSoft: "#E2EFE0", gAccent: "#9CC896",
@@ -124,7 +111,7 @@ export default function ForBuyersPage() {
         const list = Array.isArray(items) ? items : [];
         const photoOrEmoji = (it: ApiItem): string => {
           const photos = Array.isArray(it.photos) ? it.photos.filter(Boolean) : [];
-          return photos[0] || CATEGORY_EMOJI_FOR_BUYERS[(it.category as string) || "OTHER"] || "\u{1F4E6}";
+          return photos[0] || categoryEmoji(it.category);
         };
         const drops = list
           .filter((i) => i.placement === "DROP" && i.status === "LIVE")

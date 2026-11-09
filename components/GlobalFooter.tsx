@@ -50,7 +50,10 @@ const linkClass = "dy-focus rounded underline-offset-4 transition-colors hover:t
 
 export function GlobalFooter() {
   return (
-    <footer className="bg-white font-dy text-[clamp(15px,1.15vw,22px)] text-dy-muted">
+    // Pale-green band with a hairline on top, so the footer reads as its own
+    // section rather than a continuation of a white page above it. Same token
+    // and weight as the copyright divider below.
+    <footer className="border-t border-dy-line bg-dy-pale font-dy text-[clamp(15px,1.15vw,22px)] text-dy-muted">
       <div className="dy-wrap pb-8 pt-[clamp(48px,6vw,115px)]">
         <div className="grid gap-x-[clamp(32px,5.2vw,100px)] gap-y-10 sm:grid-cols-2 lg:grid-cols-[1fr_repeat(4,auto)]">
           <div className="sm:col-span-2 lg:col-span-1">

@@ -7,7 +7,7 @@ import DropYardBuyerDashboard from "@/components/previews/DropYard_BuyerDashboar
 import { EmailVerifyBanner } from "@/components/EmailVerifyBanner";
 import { DashboardProvider, useDashboard } from "@/context/DashboardContext";
 import { DropCycleProvider } from "@/context/DropCycleContext";
-import { useAuth } from "@/context/AuthContext";
+import { useAuth, type AuthUser } from "@/context/AuthContext";
 import { useSocketEvent } from "@/context/SocketContext";
 import { apiRequest } from "@/lib/api";
 
@@ -100,7 +100,13 @@ function AuthedBuyerContent() {
     window.history.replaceState(null, "", url.pathname + url.search);
   }, []);
 
-  const { user, signout, accessToken, refreshUser } = useAuth();
+  const { user, signout, accessToken, refreshUser, setUser } = useAuth();
+  // Profile changes made in another tab or on another device (the API sends
+  // `user:updated` to this user's own room only) — the header follows along
+  // without a reload. The tab that made the change has already updated.
+  useSocketEvent<{ user?: AuthUser }>("user:updated", (payload) => {
+    if (payload?.user) setUser(payload.user);
+  });
   const {
     mode,
     setMode,

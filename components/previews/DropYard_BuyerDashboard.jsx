@@ -16,6 +16,11 @@ import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { ModalA11y } from "@/components/ModalA11y";
 import DeleteAccountSection from "@/components/settings/DeleteAccountSection";
+import ProfilePictureSection from "@/components/settings/ProfilePictureSection";
+import { UserAvatar } from "@/components/UserAvatar";
+import { sellerLocationText } from "@/lib/sellerLocation";
+import { CategoryPicker } from "@/components/CategorySelect";
+import { CATEGORIES, QUICK_PICK_VALUES, categoryFor, categoryLabel, categoryEmoji, categoryValueFromLabel, matchesCategory } from "@/lib/categories";
 import { useAuth } from "@/context/AuthContext";
 import {
   dropOpenHour, dropOpenHourCompact, dropOpenHourBadge,
@@ -104,6 +109,7 @@ function adaptBuyerConversation(api, myId) {
     seller: {
       name:   api.otherUser?.name || "Seller",
       hood:   api.otherUser?.neighborhood || "—",
+      avatar: api.otherUser?.avatar || null,
       usesAI: false,
     },
     // How far the seller has read. Any message I sent at or before this
@@ -221,28 +227,15 @@ function listedAgoLabel(item) {
 
 // Backend ItemCategory enum -> emoji shown on inbox row when the item has no
 // photo. Matches the seller dashboard table.
-const CATEGORY_EMOJI = {
-  FURNITURE:   "🛋️",
-  ELECTRONICS: "📱",
-  SPORTS:      "⚽",
-  HOME:        "🏠",
-  CLOTHING:    "👕",
-  BOOKS:       "📚",
-  OTHER:       "📦",
-};
+const CATEGORY_EMOJI = Object.fromEntries(
+  [...CATEGORIES.map(c => [c.value, c.emoji]), ["HOME", categoryEmoji("HOME")]],
+);
 
-// Reverse category labels (backend enum -> UI label) — the buyer-side Discover
-// filter uses the long human labels so we collapse the backend's narrower
-// enum across the closest UI bucket.
-const BUYER_ENUM_TO_CATEGORY = {
-  FURNITURE:   "Furniture",
-  ELECTRONICS: "Electronics",
-  SPORTS:      "Sports & Outdoor",
-  HOME:        "Appliances & Kitchen",
-  CLOTHING:    "Clothing & Accessories",
-  BOOKS:       "Books, Games & Hobbies",
-  OTHER:       "Other",
-};
+// Stored category -> UI label (lib/categories.ts). One stored value per
+// category; legacy HOME reads as Appliances & Kitchen.
+const BUYER_ENUM_TO_CATEGORY = Object.fromEntries(
+  [...CATEGORIES.map(c => [c.value, c.label]), ["HOME", categoryLabel("HOME")]],
+);
 const BUYER_ENUM_TO_CONDITION = {
   EXCELLENT: "New",
   LIKE_NEW:  "Used - Like New",
@@ -294,6 +287,7 @@ function adaptBuyerClaim(api) {
     price:         (typeof api.amount === "number" ? api.amount : api.item?.price) ?? 0,
     listedPrice:   api.item?.price ?? null,
     seller:        api.seller?.name || "Seller",
+    sellerAvatar:  api.seller?.avatar || null,
     status:        uiStatus,
     date:          isToday ? "Today" : (day || null),
     time:          time || null,
@@ -335,6 +329,7 @@ function adaptBuyerHistory(api) {
     img:       photos[0] || CATEGORY_EMOJI[api.item.category] || "📦",
     cat:       BUYER_ENUM_TO_CATEGORY[api.item.category] || "Other",
     seller:    api.seller?.name || "Seller",
+    sellerAvatar: api.seller?.avatar || null,
     hood:      api.seller?.neighborhood || "—",
     date:      api.pickedUpAt || api.updatedAt || api.createdAt,
     layer:     api.item.placement === "SHELF" ? "shelf" : "drop",
@@ -358,8 +353,12 @@ function adaptBuyerItem(api) {
     op:            api.originalPrice && api.originalPrice > api.price ? api.originalPrice : null,
     cond:          BUYER_ENUM_TO_CONDITION[api.condition] || "Used - Good",
     cat:           BUYER_ENUM_TO_CATEGORY[api.category]   || "Other",
+    // The stored value the category filter compares (HOME → APPLIANCES_KITCHEN).
+    catValue:      categoryFor(api.category).value,
     seller:        api.seller?.name || "Neighbour",
     sellerId:      api.seller?.id || null,
+    // Photo / DropYard avatar / initials, resolved by the API.
+    sellerAvatar:  api.seller?.avatar || null,
     sellerHood:    api.seller?.neighborhood || null,
     // Average of the ratings buyers left this seller, computed server-side.
     // null until someone has actually rated them — the card then shows no
@@ -507,7 +506,13 @@ const BANNER_LIVE_SRC = "/banner-live-drop.jpg";
 /* ============================================================
    DATA
    ============================================================ */
-const categories = ["All","Furniture","Electronics","Appliances & Kitchen","Clothing & Accessories","Kids & Baby","Sports & Outdoor","Tools & Garden","Home Decor","Books, Games & Hobbies","Collectibles & Antiques","Other"];
+// Category filter values: "All" or a stored category value, shown by label.
+// The filter used to compare labels against a list that had drifted from the
+// item labels ("Home Decor", "Kids & Baby"…), so several options matched
+// nothing. Phones show "All" + the six popular categories, with the rest a
+// search away ("More categories…").
+const POPULAR_CATEGORIES = ["All", ...QUICK_PICK_VALUES];
+const catFilterLabel = (v) => (v === "All" ? "All" : categoryLabel(v));
 // The condition filter's options. Fixed, unlike the neighbourhood list, which
 // is built from whoever is actually selling — these are the four values the
 // backend enum can produce, in the order a buyer would rank them.
@@ -524,7 +529,7 @@ const allItems = [
   {id:12, t:"Samsung Galaxy Tab A7",       p:65,  op:80,   cond:"Used - Fair",     cat:"Electronics",              seller:"Mike T.",               dist:"2.0 km", saves:4,  img:"📲",  layer:"shelf",     timeLeft:null,     status:"live",    ded:null,     sellerId:null, days:10, priceDrop:true  , paymentMethod:"either" },
   {id:13, t:"Standing Desk",               p:140, op:175,  cond:"Used - Good",     cat:"Furniture",                seller:"David N.",              dist:"2.4 km", saves:11, img:"🖥",    layer:"shelf",     timeLeft:null,     status:"live",    ded:null,     sellerId:null, days:12, priceDrop:true  , paymentMethod:"cash" },
   {id:14, t:"Winter Jacket - Mens L",      p:20,  op:null, cond:"Used - Like New", cat:"Clothing & Accessories",   seller:"Omar H.",               dist:"1.1 km", saves:5,  img:"🧥",    layer:"shelf",     timeLeft:null,     status:"live",    ded:null,     sellerId:null, days:7,  priceDrop:false , paymentMethod:"etransfer" },
-  {id:15, t:"Yoga Mat + Bands",            p:15,  op:null, cond:"New",             cat:"Sports & Outdoor",         seller:"Chloe D.",              dist:"0.6 km", saves:3,  img:"🧘",    layer:"shelf",     timeLeft:null,     status:"live",    ded:null,     sellerId:null, days:5,  priceDrop:false , paymentMethod:"either" },
+  {id:15, t:"Yoga Mat + Bands",            p:15,  op:null, cond:"New",             cat:"Fitness & Exercise Equipment",         seller:"Chloe D.",              dist:"0.6 km", saves:3,  img:"🧘",    layer:"shelf",     timeLeft:null,     status:"live",    ded:null,     sellerId:null, days:5,  priceDrop:false , paymentMethod:"either" },
   {id:16, t:"Kitchen Utensils Box",        p:10,  op:null, cond:"Used - Good",     cat:"Appliances & Kitchen",     seller:"Raj P.",                dist:"0.9 km", saves:2,  img:"🍽",  layer:"shelf",     timeLeft:null,     status:"live",    ded:null,     sellerId:null, days:3,  priceDrop:false , paymentMethod:"cash" },
   {id:101, t:"IKEA Malm Dresser (6-drawer)", p:150, op:null, cond:"Used - Good",     cat:"Furniture",                seller:"Jane D.",               dist:"1.8 km", saves:9,  img:"🗄️",   layer:"drop",      timeLeft:"19h 49m",status:"live",    ded:null,     sellerId:null, paymentMethod:"cash",      fromPeek:true },
   {id:102, t:"Cuisinart Coffee Grinder",     p:35,  op:null, cond:"Used - Like New", cat:"Appliances & Kitchen",     seller:"Sarah L.",              dist:"0.6 km", saves:4,  img:"☕",    layer:"drop",      timeLeft:"19h 49m",status:"live",    ded:null,     sellerId:null, paymentMethod:"etransfer", fromPeek:true },
@@ -542,11 +547,11 @@ const previewSellers = [
 
 const sneakPeekItems = [
   { id: 101, t: "IKEA Malm Dresser (6-drawer)",     estPrice: 150, img: "\uD83D\uDDC4\uFE0F",  cat: "Furniture",       seller: "Jane D.",  hood: "Bridlewood",      dist: "1.8 km" },
-  { id: 102, t: "Cuisinart Coffee Grinder",         estPrice: 35,  img: "\u2615",  cat: "Appliances",      seller: "Sarah L.", hood: "Barrhaven East",  dist: "0.6 km" },
+  { id: 102, t: "Cuisinart Coffee Grinder",         estPrice: 35,  img: "\u2615",  cat: "Appliances & Kitchen",      seller: "Sarah L.", hood: "Barrhaven East",  dist: "0.6 km" },
   { id: 103, t: "Standing Desk (electric)",         estPrice: 180, img: "\uD83D\uDDA5\uFE0F",  cat: "Furniture",       seller: "Mike T.",  hood: "Barrhaven",       dist: "1.1 km" },
   { id: 104, t: "Kids Balance Bike",                estPrice: 30,  img: "\uD83D\uDEB4",  cat: "Kids & Baby",     seller: "Tom R.",   hood: "Stonebridge",     dist: "0.8 km" },
   { id: 105, t: "Vintage Turntable",                estPrice: 220, img: "\uD83C\uDFB5",  cat: "Electronics",     seller: "Alex K.",  hood: "Half Moon Bay",   dist: "3.2 km" },
-  { id: 106, t: "KitchenAid Stand Mixer",           estPrice: 240, img: "\uD83E\uDDC1",  cat: "Appliances",      seller: "Anna W.",  hood: "Barrhaven East",  dist: "1.4 km" },
+  { id: 106, t: "KitchenAid Stand Mixer",           estPrice: 240, img: "\uD83E\uDDC1",  cat: "Appliances & Kitchen",      seller: "Anna W.",  hood: "Barrhaven East",  dist: "1.4 km" },
   { id: 107, t: "Mountain Bike (adult, M frame)",   estPrice: 280, img: "\uD83D\uDEB2",  cat: "Sports & Outdoor", seller: "Raj P.",   hood: "Barrhaven",       dist: "0.9 km" },
   { id: 108, t: "Leather Couch (3-seater)",         estPrice: 320, img: "\uD83D\uDECB\uFE0F",  cat: "Furniture",       seller: "Priya M.", hood: "Barrhaven South", dist: "1.5 km" },
 ];
@@ -557,11 +562,15 @@ function avatarBg() {
   return C.green;
 }
 
-function initialsOf(name) {
-  const parts = name.split(" ").filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
-  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+
+// Distinct sellers of a list of adapted items, for the Discover banners.
+function uniqueSellers(items) {
+  const byKey = new Map();
+  for (const i of items) {
+    const key = i.sellerId || (i.seller ? "name:" + i.seller : null);
+    if (key && !byKey.has(key)) byKey.set(key, { id: key, name: i.seller, avatar: i.sellerAvatar || null });
+  }
+  return Array.from(byKey.values());
 }
 
 /* ============================================================
@@ -654,29 +663,38 @@ function computeDropState(now = new Date()) {
   return getDropCycleInfo(now).phase === "LIVE" ? "live" : "between";
 }
 
-// Avatar with dropdown menu - real user initials and sign-out.
-// Click outside (the invisible overlay) to close.
+// Avatar with dropdown menu - the user's profile picture (photo, avatar or
+// initials) and sign-out. Click outside (the invisible overlay) to close.
 function UserMenu({ user, onSignout, onOpenSettings, dropState }) {
   const [open, setOpen] = useState(false);
-  const initials = user?.name ? initialsOf(user.name) : "?";
   return (
     <div style={{ position: "relative" }}>
       <button
         onClick={() => setOpen(o => !o)}
         title={user?.name || "Account"}
+        aria-label={"Account menu" + (user?.name ? " for " + user.name : "")}
+        aria-expanded={open}
         style={{
           width: 38, height: 38, borderRadius: "50%",
-          // The buyer's own avatar alone keeps the Drop colours (Point 2): brown
-          // between Drops, green while one is live, like the active tab. Every
-          // other profile avatar is avatarBg()'s brand green.
-          background: dropState === "live" ? C.green : C.amberDeep,
           display: "flex", alignItems: "center", justifyContent: "center",
-          color: "#fff", fontFamily: F.head, fontWeight: 800, fontSize: 14,
+          background: "transparent",
           border: "2px solid " + C.paper, boxShadow: "0 0 0 1.5px " + C.greenMist,
-          cursor: "pointer", padding: 0,
+          cursor: "pointer", padding: 0, overflow: "hidden",
         }}
       >
-        {initials}
+        {/* The buyer's own initials keep the Drop colours (Point 2): brown
+            between Drops, green while one is live, like the active tab. A
+            photo or avatar shows as-is. Updates the moment Settings saves. */}
+        <UserAvatar
+          avatar={user?.avatar}
+          name={user?.name}
+          size={34}
+          decorative
+          eager
+          initialsBg={dropState === "live" ? C.green : C.amberDeep}
+          fontFamily={F.head}
+          fontSize={14}
+        />
       </button>
       {open && (
         <>
@@ -1262,7 +1280,7 @@ function DropReminderModal({ view, accessToken, onClose, onSaved }) {
   );
 }
 
-function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerNames = null }) {
+function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = null }) {
   // Real countdown to the next drop-open moment (Saturday 8 AM by default).
   // `now` starts null on first render so SSR + initial client hydration produce
   // identical "0d 0h 0m 0s" markup; useEffect seeds the real value after mount
@@ -1297,8 +1315,10 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
     { name: "Jane D." },
     { name: "Alex K." },
   ];
-  const neighbours = (Array.isArray(sellerNames) && sellerNames.length > 0)
-    ? sellerNames.slice(0, 5).map(n => ({ name: n }))
+  // `sellers` are { id, name, avatar }, one per seller (deduped by id
+  // upstream), so each shows their own profile picture.
+  const neighbours = (Array.isArray(sellers) && sellers.length > 0)
+    ? sellers.slice(0, 5)
     : fallbackNeighbours;
   // Display count: prefer the real queued seller count when provided; fall
   // back to the demo's "47 neighbours" only when no prop was passed (i.e.
@@ -1370,11 +1390,10 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellerName
               items. The "+N" pill computes overflow from displayCount instead
               of the hardcoded "+42". */}
           {displayCount > 0 && (
-            <div style={{ display: "flex", alignItems: "center" }}>
+            <div role="img" aria-label="Neighbours with items in this Drop" style={{ display: "flex", alignItems: "center" }}>
               {neighbours.map((n, i) => (
-                <div key={i} style={{ width: 32, height: 32, borderRadius: "50%", background: avatarBg(n.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid #FFF4E0", marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i }}>
-                  {initialsOf(n.name)}
-                </div>
+                <UserAvatar key={n.id || i} avatar={n.avatar} name={n.name} size={32} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={10}
+                  style={{ border: "2px solid #FFF4E0", marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i, position: "relative" }}/>
               ))}
               {displayCount > neighbours.length && (
                 <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.amberDeep, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid #FFF4E0", marginLeft: -8 }}>
@@ -1528,7 +1547,7 @@ function DropCloseDial({ t, pad, remainingSec }) {
    Deep ink/charcoal hero. LIVE NOW pill, headline with amber
    underline on "Barrhaven", avatar stack, countdown dial.
    ============================================================ */
-function WelcomeBand({ itemsCount = null, sellerNames = null }) {
+function WelcomeBand({ itemsCount = null, sellers = null }) {
   // Countdown to Drop close (Sunday 8 PM by default), read from the shared
   // Drop clock rather than a private `new Date()` tick. Two reasons: the band
   // now draws an arc of the window remaining, which is nonsense if it
@@ -1563,8 +1582,8 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
   ];
   // A real array always wins over the demo names, even when it's empty —
   // otherwise an empty Drop would render five invented neighbours.
-  const neighbours = Array.isArray(sellerNames)
-    ? sellerNames.slice(0, 5).map(n => ({ name: n }))
+  const neighbours = Array.isArray(sellers)
+    ? sellers.slice(0, 5)
     : fallbackNeighbours;
   // Claimable items in this Drop. Null = not known (no prop passed) — the
   // copy then drops the number entirely rather than inventing one. This used
@@ -1573,8 +1592,8 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
   // The "+N" pill counts NEIGHBOURS past the five avatars — not items. The
   // old hardcoded "+89" just repeated the item count, which is a different
   // quantity entirely.
-  const overflowCount = Array.isArray(sellerNames)
-    ? Math.max(0, sellerNames.length - neighbours.length)
+  const overflowCount = Array.isArray(sellers)
+    ? Math.max(0, sellers.length - neighbours.length)
     : 0;
 
   return (
@@ -1659,11 +1678,10 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
           </p>
           {/* Avatar stack */}
           {neighbours.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center" }}>
+            <div role="img" aria-label="Neighbours selling in this Drop" style={{ display: "flex", alignItems: "center" }}>
               {neighbours.map((n, i) => (
-                <div key={i} style={{ width: 32, height: 32, borderRadius: "50%", background: avatarBg(n.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + C.ink, marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i }}>
-                  {initialsOf(n.name)}
-                </div>
+                <UserAvatar key={n.id || i} avatar={n.avatar} name={n.name} size={32} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={10}
+                  style={{ border: "2px solid " + C.ink, marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i, position: "relative" }}/>
               ))}
               {overflowCount > 0 && (
                 <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.green, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + C.ink, marginLeft: -8 }}>
@@ -1690,6 +1708,8 @@ function WelcomeBand({ itemsCount = null, sellerNames = null }) {
 // applicable. Activated by the parent (DiscoverPage) via useViewport().
 function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, hood, setHood, cond, setCond, sort, setSort, state, accent, chipFill, sorts, hoods = [], activeFilterCount, onReset }) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  // The full, searchable category list, expanded inside the filter sheet.
+  const [moreCats, setMoreCats] = useState(false);
   const accentDeep = accent === C.green ? C.greenDeep : C.amberDeep;
   const accentMist = accent === C.green ? C.greenMist : C.amberMist;
   // Selected chips use the rail's chipFill so the sheet matches the desktop
@@ -1799,20 +1819,31 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, ho
             <div style={{ marginBottom: 22 }}>
               <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 10 }}>Category</p>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {categories.map(c => {
+                {/* The chosen category stays visible even when it isn't one of the popular ones. */}
+                {(POPULAR_CATEGORIES.includes(cat) ? POPULAR_CATEGORIES : [...POPULAR_CATEGORIES, cat]).map(c => {
                   const active = cat === c;
                   return (
-                    <button key={c} onClick={() => setCat(c)} style={{
+                    <button key={c} onClick={() => { setCat(c); setMoreCats(false); }} aria-pressed={active} style={{
                       padding: "9px 14px", borderRadius: 999,
                       border: "1.5px solid " + (active ? selected : C.fawn),
                       background: active ? selected : C.paper,
                       color: active ? "#fff" : C.mink,
                       fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700,
                       cursor: "pointer", transition: "all 150ms",
-                    }}>{c}</button>
+                    }}>{catFilterLabel(c)}</button>
                   );
                 })}
+                <button onClick={() => setMoreCats(m => !m)} aria-expanded={moreCats} style={{
+                  padding: "9px 14px", borderRadius: 999, border: "1.5px dashed " + C.smoke, background: C.paper,
+                  color: C.ink, fontFamily: F.head, fontSize: 13, fontWeight: 800, cursor: "pointer",
+                }}>{moreCats ? "Fewer categories" : "More categories…"}</button>
               </div>
+              {moreCats && (
+                <div style={{ marginTop: 12 }}>
+                  <CategoryPicker value={cat} allowAll accent={selected} autoFocus listMaxHeight={300}
+                    onSelect={(v) => { setCat(v); setMoreCats(false); }} onEscape={() => setMoreCats(false)}/>
+                </div>
+              )}
             </div>
 
             {hoods.length > 0 && (
@@ -2054,7 +2085,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
             </span>
             {(cat !== "All" || hood !== "All" || cond !== "All" || sort !== "newest") && (
               <span style={{ fontSize: 13, fontWeight: 500, color: C.mink, whiteSpace: "nowrap" }}>
-                · {cat !== "All" ? cat : hood !== "All" ? hood : cond !== "All" ? cond : sortShort}
+                · {cat !== "All" ? categoryLabel(cat) : hood !== "All" ? hood : cond !== "All" ? cond : sortShort}
               </span>
             )}
           </div>
@@ -2103,7 +2134,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
           onMouseLeave={() => setHoveredSegment(null)}
           style={segStyle("category")}
         >
-          {segBody({ icon: LayoutGrid, label: "Category", value: cat === "All" ? "Any category" : cat, filled: cat !== "All" })}
+          {segBody({ icon: LayoutGrid, label: "Category", value: cat === "All" ? "Any category" : categoryLabel(cat), filled: cat !== "All" })}
         </button>
 
         {/* Divider */}
@@ -2199,7 +2230,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
           )}
           {cat !== "All" && (
             <button onClick={() => setCat("All")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 999, background: chipMist, border: "none", color: chipText, fontSize: 12, fontFamily: F.head, fontWeight: 700, cursor: "pointer" }}>
-              {cat} <X size={12}/>
+              {categoryLabel(cat)} <X size={12}/>
             </button>
           )}
           {hood !== "All" && (
@@ -2237,13 +2268,10 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
           {activeSegment === "category" && (
             <div>
               <label style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 12, display: "block" }}>Choose a category</label>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {categories.map(c => {
-                  const active = cat === c;
-                  return (
-                    <button key={c} onClick={() => { setCat(c); if (c === "All") setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + (active ? chipFill : C.fawn), background: active ? chipFill : C.paper, color: active ? "#fff" : C.mink, fontFamily: F.head, fontSize: 13, fontWeight: active ? 800 : 700, cursor: "pointer", transition: "all 150ms" }}>{c}</button>
-                  );
-                })}
+              {/* 24 categories: a searchable list instead of a wall of pills. */}
+              <div style={{ maxWidth: 560 }}>
+                <CategoryPicker value={cat} allowAll quickPicks accent={chipFill} autoFocus listMaxHeight={320}
+                  onSelect={(v) => { setCat(v); setActiveSegment(null); }} onEscape={() => setActiveSegment(null)}/>
               </div>
             </div>
           )}
@@ -2626,7 +2654,7 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             the handoff lays it out. The distance used to sit far right on its
             own; it belongs with the seller, since it's their distance. */}
         <div style={{ paddingTop: 12, borderTop: "1px solid " + CARD.border, display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <div style={{ width: 32, height: 32, flexShrink: 0, borderRadius: "50%", background: avatarBg(item.seller), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: CARD.font, fontSize: 14, fontWeight: 700 }}>{item.seller.charAt(0)}</div>
+          <UserAvatar avatar={item.sellerAvatar} name={item.seller} size={32} decorative initialsBg={avatarBg(item.seller)} fontFamily={CARD.font} fontWeight={700} fontSize={12}/>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: CARD.font, fontSize: 14, fontWeight: 650, color: CARD.ink, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.seller}</div>
             <div style={{ fontFamily: CARD.font, fontSize: 12, fontWeight: 450, color: CARD.muted, lineHeight: 1.4, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
@@ -2857,8 +2885,9 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
             <div>
               <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.12em", textTransform: "uppercase", display: "inline-block", marginBottom: 8 }}>Sneak Peek</span>
               <h1 style={{ fontFamily: F.head, fontSize: 26, fontWeight: 900, color: C.ink, letterSpacing: "-0.022em", lineHeight: 1.15, marginBottom: 8 }}>{item.t}</h1>
-              <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.mink, marginBottom: 14 }}>
-                Listed by <b style={{ color: C.ink, fontWeight: 800 }}>{item.seller}</b>
+              <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.mink, marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
+                <UserAvatar avatar={item.sellerAvatar} name={item.seller} size={24} decorative initialsBg={avatarBg(item.seller)} fontFamily={F.head} fontSize={9}/>
+                <span>Listed by <b style={{ color: C.ink, fontWeight: 800 }}>{item.seller}</b></span>
               </p>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
                 <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 700, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase" }}>Around</span>
@@ -3105,7 +3134,8 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
                 <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", flex: 1 }}>
                   <span style={{ ...type.category, alignSelf: "flex-start", marginBottom: 8 }}>{item.cat}</span>
                   <h3 style={type.title}>{item.t}</h3>
-                  <p style={type.sellerRow}>
+                  <p style={{ ...type.sellerRow, display: "flex", alignItems: "center", gap: 6 }}>
+                    <UserAvatar avatar={item.sellerAvatar} name={item.seller} size={22} decorative initialsBg={avatarBg(item.seller)} fontFamily={CARD.font} fontWeight={700} fontSize={9}/>
                     <span style={type.seller}>{item.seller.split(" ")[0]}</span>
                     <span style={type.place}>· {item.dist}</span>
                   </p>
@@ -3238,7 +3268,8 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
 
                 <h3 style={type.title}>{item.t}</h3>
 
-                <p style={type.sellerRow}>
+                <p style={{ ...type.sellerRow, display: "flex", alignItems: "center", gap: 6 }}>
+                  <UserAvatar avatar={item.sellerAvatar} name={item.seller} size={22} decorative initialsBg={avatarBg(item.seller)} fontFamily={CARD.font} fontWeight={700} fontSize={9}/>
                   <span style={type.seller}>{item.seller.split(" ")[0]}</span>
                   <span style={type.place}>· {item.dist}</span>
                 </p>
@@ -4025,6 +4056,7 @@ function toDetailItem(item) {
       : "This " + item.t + " is in " + (item.cond || "good") + " condition. Message the seller for more details and photos.",
     seller: {
       name:         item.seller,
+      avatar:       item.sellerAvatar || null,
       neighbourhood: item.sellerHood || null,
       dist:         item.dist,
       items:        null,
@@ -4319,6 +4351,11 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
   }, [hasMultiplePhotos, goPrev, goNext, showClaim, showAsk]);
 
   const seller = item.seller;
+  // The seller row's place line: the neighbourhood once, plus the distance
+  // only when it adds something ("Barrhaven", "Stonebridge · ~3.0 km away").
+  // It used to join neighbourhood + distanceLabel, and the label's fallback
+  // is "In <neighbourhood>", so it read "Barrhaven · In Barrhaven".
+  const sellerLocation = sellerLocationText(seller.neighbourhood, seller.dist);
   const isShelf = item.layer === "shelf";
   // While the Drop is running the two pools are one. A Shelf item is
   // claimable right now, alongside everything in the Drop, so it wears the
@@ -4659,9 +4696,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                     <div key={qa.id} style={{ padding: 16, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn }}>
                       {/* Question */}
                       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
-                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: avatarBg(askerName), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: D.font, fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
-                          {askerName.charAt(0)}
-                        </div>
+                        <UserAvatar avatar={qa.askerAvatar} name={askerName} size={28} decorative initialsBg={avatarBg(askerName)} fontFamily={D.font} fontWeight={600} fontSize={10}/>
                         <div style={{ flex: 1 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
                             <span style={{ fontFamily: D.font, fontSize: 12, fontWeight: 700, color: C.ink }}>{askerName}</span>
@@ -4733,13 +4768,18 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
           <button onClick={() => onViewSeller && onViewSeller(seller.name)} style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12, padding: "16px 0", borderRadius: 0, border: "none", borderTop: D.border, borderBottom: D.border, background: "transparent", cursor: "pointer", marginBottom: 20 }}
             onMouseEnter={e => { e.currentTarget.style.background = C.sand; }}
             onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-            <div style={{ width: 44, height: 44, borderRadius: "50%", background: avatarBg(seller.name), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: D.font, fontSize: 15, fontWeight: 600, flexShrink: 0 }}>
-              {initialsOf(seller.name)}
-            </div>
+            <UserAvatar avatar={seller.avatar} name={seller.name} size={44} decorative initialsBg={avatarBg(seller.name)} fontFamily={D.font} fontWeight={600} fontSize={15}/>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p style={{ fontFamily: D.font, fontSize: 14, fontWeight: 600, color: C.ink }}>{seller.name}</p>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
-                <span style={{ fontFamily: D.font, fontSize: 11, fontWeight: 700, color: C.mink, display: "flex", alignItems: "center", gap: 3 }}><MapPin size={10}/> {seller.neighbourhood} · {seller.dist}</span>
+                {sellerLocation && (
+                  // One line: a long neighbourhood truncates with an ellipsis
+                  // (full text in the tooltip) instead of wrapping.
+                  <span title={sellerLocation} style={{ fontFamily: D.font, fontSize: 11, fontWeight: 700, color: C.mink, display: "flex", alignItems: "center", gap: 3, minWidth: 0, maxWidth: "100%" }}>
+                    <MapPin size={10} style={{ flexShrink: 0 }}/>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sellerLocation}</span>
+                  </span>
+                )}
                 {seller.rating && <span style={{ fontFamily: D.font, fontSize: 11, fontWeight: 700, color: C.amberDeep, display: "flex", alignItems: "center", gap: 3 }}><Star size={10} fill={C.amber} strokeWidth={0}/> {seller.rating}</span>}
               </div>
             </div>
@@ -4879,9 +4919,9 @@ function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedI
 
       <div style={{ padding: "32px 34px", borderRadius: 24, background: "linear-gradient(135deg, " + C.greenMist + " 0%, " + C.sand + " 100%)", border: "1.5px solid " + C.fawn, marginBottom: 28 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 24 }}>
-          <div style={{ width: 90, height: 90, borderRadius: "50%", background: avatarBg(sellerName), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 32, fontWeight: 900, border: "3px solid " + C.paper, boxShadow: "0 0 0 1.5px " + C.fawn, flexShrink: 0 }}>
-            {initialsOf(sellerName)}
-          </div>
+          {/* The profile is opened by name; the avatar comes from their listings. */}
+          <UserAvatar avatar={items.find(i => i.sellerAvatar)?.sellerAvatar} name={sellerName} size={90} decorative initialsBg={avatarBg(sellerName)} fontFamily={F.head} fontWeight={900} fontSize={32}
+            style={{ border: "3px solid " + C.paper, boxShadow: "0 0 0 1.5px " + C.fawn }}/>
           <div style={{ flex: 1 }}>
             <h1 style={{ fontFamily: F.head, fontSize: 32, fontWeight: 900, color: C.ink, letterSpacing: "-0.025em", lineHeight: 1.1, marginBottom: 4 }}>{sellerName}</h1>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -5252,7 +5292,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                     <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                       <span style={{ fontFamily: F.head, fontSize: isMobile ? 24 : 28, fontWeight: 900, color: priceColor(c.price, C.green), letterSpacing: "-0.02em" }}>{priceText(c.price)}</span>
                       <span style={{ fontFamily: F.head, fontSize: 15, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 5 }}>
-                        <User size={14}/> {c.seller}
+                        <UserAvatar avatar={c.sellerAvatar} name={c.seller} size={20} decorative initialsBg={avatarBg(c.seller)} fontFamily={F.head} fontSize={8}/> {c.seller}
                       </span>
                     </div>
                     {!urgent && (c.date || c.time) && c.status !== "offer-pending" && (
@@ -6283,7 +6323,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
             <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.ash, flexShrink: 0 }}>{c.lastTime}</span>
           </div>
           <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
-            <User size={10}/> {c.seller.name}
+            <UserAvatar avatar={c.seller.avatar} name={c.seller.name} size={18} decorative initialsBg={avatarBg(c.seller.name)} fontFamily={F.head} fontSize={7}/> {c.seller.name}
             {c.seller.usesAI && <span style={{ fontFamily: F.head, fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: 4, background: C.aiMist, color: C.ai, letterSpacing: "0.05em", marginLeft: 2 }}>AI</span>}
           </p>
           <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: c.unread ? 700 : 500, color: c.unread ? C.ink : C.mink, marginBottom: muted ? 0 : 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.lastMsg}</p>
@@ -6367,7 +6407,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
           <div style={{ maxWidth: "72%" }}>
             {m.from === "seller" && (
               <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4, marginLeft: 2 }}>
-                <User size={10} style={{ color: C.mink }}/>
+                <UserAvatar avatar={active?.seller?.avatar} name={active?.seller?.name} size={16} decorative initialsBg={avatarBg(active?.seller?.name)} fontFamily={F.head} fontSize={7}/>
                 <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.mink }}>{active?.seller?.name}</span>
               </div>
             )}
@@ -6408,7 +6448,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
           )}
           {m.from === "seller" && (
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4, marginLeft: 2 }}>
-              <User size={10} style={{ color: C.mink }}/>
+              <UserAvatar avatar={active?.seller?.avatar} name={active?.seller?.name} size={16} decorative initialsBg={avatarBg(active?.seller?.name)} fontFamily={F.head} fontSize={7}/>
               <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.05em" }}>SELLER</span>
             </div>
           )}
@@ -6658,7 +6698,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 3, flexWrap: "wrap" }}>
                   <span style={{ fontFamily: F.head, fontSize: isMobile ? 18 : 22, fontWeight: 900, color: priceColor(active.item.price, C.green), letterSpacing: "-0.02em" }}>{priceText(active.item.price)}</span>
                   <span style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 5 }}>
-                    <User size={13}/> {active.seller.name} · {active.seller.hood}
+                    <UserAvatar avatar={active.seller.avatar} name={active.seller.name} size={22} decorative initialsBg={avatarBg(active.seller.name)} fontFamily={F.head} fontSize={9}/> {active.seller.name} · {active.seller.hood}
                   </span>
                 </div>
               </div>
@@ -7064,12 +7104,12 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
   const transactions = Array.isArray(liveTxs) ? liveTxs : [
     { id: "t1",  title: "Solid Oak Dining Table", price: 350, origPrice: 900, img: "\uD83E\uDEB5",       cat: "Furniture",              seller: "Jane D.",          hood: "Bridlewood",     date: "2026-04-13", layer: "drop",      rated: false, rating: null },
     { id: "t2",  title: "Kids Bicycle",           price: 30,  origPrice: null, img: "\uD83D\uDEB2",       cat: "Sports & Outdoor",       seller: "Tom R.",           hood: "Barrhaven",      date: "2026-04-13", layer: "drop",      rated: false, rating: null },
-    { id: "t3",  title: "Yoga Mat + Bands",       price: 15,  origPrice: null, img: "\uD83E\uDDD8",       cat: "Sports & Outdoor",       seller: "Chloe D.",         hood: "Barrhaven",      date: "2026-04-08", layer: "shelf",     rated: true,  rating: 5 },
+    { id: "t3",  title: "Yoga Mat + Bands",       price: 15,  origPrice: null, img: "\uD83E\uDDD8",       cat: "Fitness & Exercise Equipment",       seller: "Chloe D.",         hood: "Barrhaven",      date: "2026-04-08", layer: "shelf",     rated: true,  rating: 5 },
     { id: "t5",  title: "IKEA KALLAX Shelf",      price: 35,  origPrice: null, img: "\uD83D\uDCDA",       cat: "Furniture",              seller: "Mike T.",          hood: "Barrhaven",      date: "2026-03-29", layer: "drop",      rated: true,  rating: 4 },
-    { id: "t6",  title: "Winter Boots",           price: 25,  origPrice: 60,  img: "\uD83E\uDD7E",       cat: "Clothing & Accessories", seller: "Raj P.",           hood: "Barrhaven",      date: "2026-03-22", layer: "drop",      rated: true,  rating: 5 },
+    { id: "t6",  title: "Winter Boots",           price: 25,  origPrice: 60,  img: "\uD83E\uDD7E",       cat: "Shoes & Footwear", seller: "Raj P.",           hood: "Barrhaven",      date: "2026-03-22", layer: "drop",      rated: true,  rating: 5 },
     { id: "t7",  title: "Cuisinart Coffee Maker", price: 20,  origPrice: 25,  img: "\u2615",              cat: "Appliances & Kitchen",   seller: "Sarah L.",         hood: "Barrhaven",      date: "2026-03-15", layer: "drop",      rated: true,  rating: 4 },
     { id: "t8",  title: "Standing Desk",          price: 140, origPrice: 175, img: "\uD83D\uDDA5\uFE0F",  cat: "Furniture",              seller: "David N.",         hood: "Barrhaven",      date: "2026-02-22", layer: "shelf",     rated: true,  rating: 5 },
-    { id: "t9",  title: "Christmas Tree 7ft",     price: 40,  origPrice: 120, img: "\uD83C\uDF84",       cat: "Other",                  seller: "Linda M.",         hood: "Barrhaven",      date: "2025-12-14", layer: "drop",      rated: true,  rating: 5 },
+    { id: "t9",  title: "Christmas Tree 7ft",     price: 40,  origPrice: 120, img: "\uD83C\uDF84",       cat: "Seasonal & Holiday Items",                  seller: "Linda M.",         hood: "Barrhaven",      date: "2025-12-14", layer: "drop",      rated: true,  rating: 5 },
     { id: "t10", title: "Snow Blower",            price: 95,  origPrice: 200, img: "\u2744\uFE0F",        cat: "Tools & Garden",         seller: "Paul F.",          hood: "Half Moon Bay",  date: "2025-11-22", layer: "drop",      rated: true,  rating: 4 },
   ];
 
@@ -7184,7 +7224,7 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
               <p style={{ fontFamily: F.head, fontSize: __isMobile ? 16 : 19, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em" }}>{tx.title}</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", fontFamily: F.body, fontSize: 13.5, fontWeight: 600, color: C.mink }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><User size={13}/> {tx.seller}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><UserAvatar avatar={tx.sellerAvatar} name={tx.seller} size={20} decorative initialsBg={avatarBg(tx.seller)} fontFamily={F.head} fontSize={8}/> {tx.seller}</span>
               <span style={{ display: "flex", alignItems: "center", gap: 5 }}><MapPin size={13}/> {tx.hood}</span>
               <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Calendar size={13}/> {new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
             </div>
@@ -7516,8 +7556,11 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   // Unique-seller count for the AnticipationBand "X neighbours have items
   // lined up" line. Null when no source was passed (i.e. preview routes) so
   // AnticipationBand can keep its own demo fallback.
-  const queuedSellerCount = Array.isArray(sneakPeekSource) ? new Set(sneakPeekSource.map(i => i.seller).filter(Boolean)).size : null;
-  const queuedSellerNames = Array.isArray(sneakPeekSource) ? Array.from(new Set(sneakPeekSource.map(i => i.seller).filter(Boolean))) : null;
+  // One entry per seller, keyed by id — two neighbours who share a name are
+  // two people (and two avatars); the name is only a fallback key for demo
+  // items without an id.
+  const queuedSellers = Array.isArray(sneakPeekSource) ? uniqueSellers(sneakPeekSource) : null;
+  const queuedSellerCount = queuedSellers ? queuedSellers.length : null;
   const dropOpenCountdown = useDropOpenCountdownString();
 
   // WelcomeBand's "N items" headline. Counted off the WHOLE pool, not the
@@ -7527,7 +7570,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   // no source was passed (preview routes) so the band keeps its demo numbers.
   const liveClaimable = Array.isArray(itemsSource) ? itemsSource.filter(i => i.status === "live") : null;
   const liveItemsCount = liveClaimable ? liveClaimable.length : null;
-  const liveSellerNames = liveClaimable ? Array.from(new Set(liveClaimable.map(i => i.seller).filter(Boolean))) : null;
+  const liveSellers = liveClaimable ? uniqueSellers(liveClaimable) : null;
 
   // (The hero's backdrop used to be built here — a flattened list of the
   // feed's own listing photos, tiled across the band by HeroPhotoMosaic.
@@ -7539,8 +7582,8 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   if (itemsLoading) {
     return (
       <>
-        {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellerNames={queuedSellerNames}/>}
-        {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellerNames={liveSellerNames}/>}
+        {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellers={queuedSellers}/>}
+        {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellers={liveSellers}/>}
         <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} hood={hood} setHood={setHood} cond={cond} setCond={setCond} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state} hoods={hoods}/>
         <DiscoverSkeleton/>
       </>
@@ -7557,7 +7600,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   const isLive = state === "live";
   if (filter === "shelf" && !isLive) items = items.filter(i => i.layer === "shelf");
 
-  if (cat !== "All") items = items.filter(i => i.cat === cat);
+  if (cat !== "All") items = items.filter(i => matchesCategory(i.catValue || categoryValueFromLabel(i.cat), cat));
   if (hood !== "All") items = items.filter(i => i.sellerHood === hood);
   if (cond !== "All") items = items.filter(i => i.cond === cond);
   if (search) {
@@ -7585,8 +7628,8 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
 
   return (
     <>
-      {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellerNames={queuedSellerNames}/>}
-      {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellerNames={liveSellerNames}/>}
+      {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellers={queuedSellers}/>}
+      {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellers={liveSellers}/>}
 
       <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} hood={hood} setHood={setHood} cond={cond} setCond={setCond} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state} hoods={hoods}/>
 
@@ -7923,6 +7966,11 @@ function BuyerProfileContent({ user, onSuccess }) {
 
   return (
     <div style={{ maxWidth: 1160, margin: "0 auto", display: "grid", gridTemplateColumns: __isMobile ? "minmax(0, 1fr)" : "repeat(2, minmax(0, 1fr))", gap: 20 }}>
+      {/* Profile picture — full width above the two cards. The preview's
+          initials use the header's Drop colour so they match. */}
+      <div style={{ gridColumn: "1 / -1" }}>
+        <ProfilePictureSection initialsBg={computeDropState() === "live" ? C.green : C.amberDeep} onSuccess={onSuccess}/>
+      </div>
       {/* Profile information */}
       <form onSubmit={submitProfile} style={{ background: C.paper, border: "1px solid " + C.fawn, borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
         <h2 style={{ fontFamily: F.head, fontSize: 16, fontWeight: 800, color: C.ink, letterSpacing: "-0.01em" }}>Profile information</h2>

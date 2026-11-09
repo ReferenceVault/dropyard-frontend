@@ -31,6 +31,8 @@ import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
 import { AdminToolbar } from "@/components/admin/AdminToolbar";
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { AvatarChip } from "@/components/admin/AvatarChip";
+import { UserAvatar } from "@/components/UserAvatar";
+import { normaliseAvatar, type ResolvedAvatar } from "@/lib/avatar";
 import { StatusPill, type StatusTone } from "@/components/admin/StatusPill";
 import { RelativeDateBadge, relativeTime } from "@/components/admin/RelativeDateBadge";
 
@@ -57,6 +59,8 @@ type AdminUser = {
   sellerOnboardingDone: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Profile picture choice, resolved by the API. */
+  avatar?: ResolvedAvatar;
   _count: {
     items: number;
     claimsAsBuyer: number;
@@ -258,6 +262,11 @@ export default function AdminUsersPage() {
           token={accessToken ?? ""}
           onClose={() => setSelectedId(null)}
           onAction={(action) => setModal({ user: selectedUser, action })}
+          onAvatarReset={() => {
+            setToast(`Profile photo removed for ${selectedUser.name || selectedUser.email}.`);
+            setTimeout(() => setToast(""), 3000);
+            setRefreshKey((k) => k + 1);
+          }}
         />
       )}
 
@@ -368,7 +377,7 @@ function UserRow({
       {/* User: avatar + name + email + phone */}
       <div className="flex items-start lg:items-center gap-2.5 min-w-0">
         <div className="relative flex-shrink-0">
-          <AvatarChip name={user.name} seed={user.id} size="md" />
+          <AvatarChip name={user.name} avatar={user.avatar} seed={user.id} size="md" />
           {user.role === "ADMIN" && (
             <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-white ring-1 ring-slate-200">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -642,12 +651,14 @@ function UserDetailPanel({
   token,
   onClose,
   onAction,
+  onAvatarReset,
 }: {
   user: AdminUser;
   currentAdminId: string | null;
   token: string;
   onClose: () => void;
   onAction: (action: ModalAction) => void;
+  onAvatarReset: () => void;
 }) {
   const isSelf = user.id === currentAdminId;
   const isAdmin = user.role === "ADMIN";
@@ -659,6 +670,8 @@ function UserDetailPanel({
   // Audit log fetch — runs whenever the user changes.
   const [history, setHistory] = useState<AuditEntry[] | null>(null);
   const [historyError, setHistoryError] = useState("");
+  // Bumped after an action taken from inside the panel, so its new audit row shows.
+  const [historyTick, setHistoryTick] = useState(0);
 
   useEffect(() => {
     if (!token) return;
@@ -674,7 +687,7 @@ function UserDetailPanel({
         if (!cancelled) setHistoryError(err instanceof Error ? err.message : "Failed to load history");
       });
     return () => { cancelled = true; };
-  }, [user.id, token]);
+  }, [user.id, token, historyTick]);
 
   // ESC closes
   useEffect(() => {
@@ -701,7 +714,7 @@ function UserDetailPanel({
       <aside className="relative w-full max-w-md sm:max-w-lg bg-white shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}
         <header className="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
-          <AvatarChip name={user.name} seed={user.id} size="lg" />
+          <AvatarChip name={user.name} avatar={user.avatar} seed={user.id} size="lg" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
               <StatusPill label={roleMeta.label} tone={roleMeta.tone} withDot />
@@ -777,6 +790,14 @@ function UserDetailPanel({
               />
             </ul>
           </section>
+
+          <ProfilePictureModeration
+            user={user}
+            token={token}
+            // Same rail as the API: other admins' accounts are out of scope.
+            canModerate={!isAdmin || isSelf}
+            onReset={() => { setHistoryTick((t) => t + 1); onAvatarReset(); }}
+          />
 
           {/* Current moderation reason */}
           {user.status !== "ACTIVE" && (
@@ -887,6 +908,111 @@ function UserDetailPanel({
   );
 }
 
+// ─── Profile picture moderation ───────────────────────────────────────────
+// Shows the user's current picture. An uploaded photo can be removed (e.g. an
+// inappropriate image): the API resets them to initials, deletes the file and
+// writes a USER_AVATAR_RESET audit row with the reason given here. DropYard's
+// own gallery avatars aren't moderated, so only photos get the action.
+function ProfilePictureModeration({
+  user,
+  token,
+  canModerate,
+  onReset,
+}: {
+  user: AdminUser;
+  token: string;
+  canModerate: boolean;
+  onReset: () => void;
+}) {
+  const avatar = normaliseAvatar(user.avatar);
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  // A different user (or a fresh picture) closes any half-filled form.
+  useEffect(() => { setOpen(false); setReason(""); setError(""); }, [user.id, avatar.type]);
+
+  const label = avatar.type === "PHOTO" ? "Uploaded photo"
+    : avatar.type === "PRESET" ? `DropYard avatar · ${avatar.label}`
+    : "Initials";
+
+  async function remove() {
+    if (!reason.trim()) { setError("Add a reason — it's saved in the moderation history."); return; }
+    setSaving(true);
+    setError("");
+    try {
+      await apiRequest(`/api/admin/users/${encodeURIComponent(user.id)}/avatar/reset`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      setOpen(false);
+      setReason("");
+      onReset();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't remove the photo.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section>
+      <SectionHeader label="Profile picture" />
+      <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3 flex items-center gap-3">
+        <UserAvatar avatar={avatar} name={user.name} size={56} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[12.5px] font-semibold text-slate-800 truncate">{label}</p>
+          <p className="text-[11.5px] text-slate-500">
+            {avatar.type === "PHOTO"
+              ? "Shown on their listings, messages and claims."
+              : "Nothing to moderate: no uploaded photo."}
+          </p>
+        </div>
+        {avatar.type === "PHOTO" && canModerate && !open && (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="flex-shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-rose-700 hover:bg-rose-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+          >
+            Remove photo…
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3 space-y-2">
+          <label htmlFor="avatar-reset-reason" className="block text-[11.5px] font-semibold text-rose-900">
+            Reason (saved in the moderation history)
+          </label>
+          <textarea
+            id="avatar-reset-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={2}
+            maxLength={500}
+            placeholder="e.g. Photo isn't appropriate for a neighbourhood marketplace"
+            className="w-full rounded-lg border border-rose-200 bg-white px-3 py-2 text-[12.5px] text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+          />
+          <p className="text-[11.5px] text-rose-900/80">They&apos;ll be switched to their initials and the photo file is deleted. They can choose a new picture any time.</p>
+          {error && <p role="alert" className="text-[12px] font-medium text-rose-700">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => { setOpen(false); setError(""); }} disabled={saving}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-slate-50">
+              Cancel
+            </button>
+            <button type="button" onClick={remove} disabled={saving}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-rose-700 disabled:opacity-60">
+              {saving && <Loader2 size={12} className="animate-spin" />}
+              Remove photo
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SectionHeader({ label }: { label: string }) {
   return (
     <h4 className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">
@@ -973,6 +1099,7 @@ function PanelActionButton({
 
 const AUDIT_LABEL: Record<string, string> = {
   USER_STATUS_CHANGED:       "Status changed",
+  USER_AVATAR_RESET:         "Profile photo removed",
   USER_ROLE_CHANGED:         "Role changed",
   ITEM_HIDDEN:               "Item hidden",
   ITEM_UNHIDDEN:             "Item un-hidden",
@@ -1131,7 +1258,7 @@ function StatusChangeModal({
         <div className="p-5 space-y-4">
           {/* Target user summary */}
           <div className="rounded-xl bg-slate-50 border border-slate-100 px-3.5 py-3 flex items-center gap-3">
-            <AvatarChip name={user.name} seed={user.id} size="md" />
+            <AvatarChip name={user.name} avatar={user.avatar} seed={user.id} size="md" />
             <div className="min-w-0">
               <p className="text-[13px] font-bold text-slate-900 truncate">{user.name}</p>
               <p className="text-[11.5px] text-slate-500 truncate">{user.email}</p>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="An orange sun">
+  <rect width="256" height="256" fill="#FFE4C4"/>
+  <g stroke="#F99605" stroke-width="12" stroke-linecap="round">
+    <path d="M128 34v22M128 200v22M34 128h22M200 128h22M61.5 61.5l15.6 15.6M178.9 178.9l15.6 15.6M61.5 194.5l15.6-15.6M178.9 77.1l15.6-15.6"/>
+  </g>
+  <circle cx="128" cy="128" r="50" fill="#F99605"/>
+  <circle cx="128" cy="128" r="50" fill="none" stroke="#A35C00" stroke-opacity=".18" stroke-width="6"/>
+  <path d="M104 116a26 26 0 0 1 20-18" fill="none" stroke="#FFF7ED" stroke-width="7" stroke-linecap="round" stroke-opacity=".8"/>
+</svg>

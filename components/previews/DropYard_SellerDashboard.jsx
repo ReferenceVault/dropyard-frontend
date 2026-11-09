@@ -8,6 +8,10 @@ import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { ModalA11y } from "@/components/ModalA11y";
 import DeleteAccountSection from "@/components/settings/DeleteAccountSection";
+import ProfilePictureSection from "@/components/settings/ProfilePictureSection";
+import { UserAvatar } from "@/components/UserAvatar";
+import { CategorySelect } from "@/components/CategorySelect";
+import { CATEGORIES, categoryFor, categoryLabel, categoryEmoji, categoryValueFromLabel } from "@/lib/categories";
 import { useAuth } from "@/context/AuthContext";
 import { useDropCycle } from "@/context/DropCycleContext";
 import { formatPickupDateList, formatPickupDateLong } from "@/lib/pickupDates";
@@ -158,19 +162,9 @@ const LOGO_SRC = "/logo-wordmark.png";
    When the schema gains more categories/conditions later, just
    widen these maps - no other call site changes.
    ============================================================ */
-const CATEGORY_TO_ENUM = {
-  "Furniture":                "FURNITURE",
-  "Electronics":              "ELECTRONICS",
-  "Appliances & Kitchen":     "HOME",
-  "Clothing & Accessories":   "CLOTHING",
-  "Kids & Baby":              "OTHER",
-  "Sports & Outdoor":         "SPORTS",
-  "Tools & Garden":           "HOME",
-  "Home Décor":               "HOME",
-  "Books, Games & Hobbies":   "BOOKS",
-  "Collectibles & Antiques":  "OTHER",
-  "Other":                    "OTHER",
-};
+// Categories: the forms now hold the stored value itself (e.g. "TOYS_GAMES"),
+// so nothing is collapsed on the way to the API. The list, labels and emoji
+// come from lib/categories.ts (mirror of the backend registry).
 const CONDITION_TO_ENUM = {
   "New":             "EXCELLENT",
   "Used - Like New": "LIKE_NEW",
@@ -190,22 +184,12 @@ const PLACEMENT_TO_ENUM = {
   "shelf": "SHELF",
 };
 
-// Reverse maps - backend enum -> UI label. Used when reading items from the
-// API to render in My Items / Edit form.
-//
-// Backend ItemCategory is narrower than the form's UI labels (we collapsed
-// "Appliances & Kitchen", "Tools & Garden" and "Home Décor" all onto HOME),
-// so we lose granularity on the way back. Best we can do is show the closest
-// generic label. If we ever widen the enum, just expand this map.
-const ENUM_TO_CATEGORY_LABEL = {
-  FURNITURE:   "Furniture",
-  ELECTRONICS: "Electronics",
-  SPORTS:      "Sports & Outdoor",
-  HOME:        "Home",
-  CLOTHING:    "Clothing & Accessories",
-  BOOKS:       "Books, Games & Hobbies",
-  OTHER:       "Other",
-};
+// Reverse map - stored category -> UI label, for My Items / Edit form. One
+// stored value per category now, so nothing is lost on the way back; legacy
+// HOME reads as Appliances & Kitchen.
+const ENUM_TO_CATEGORY_LABEL = Object.fromEntries(
+  [...CATEGORIES.map(c => [c.value, c.label]), ["HOME", categoryLabel("HOME")]],
+);
 const ENUM_TO_CONDITION_LABEL = {
   EXCELLENT: "New",
   LIKE_NEW:  "Used - Like New",
@@ -235,15 +219,9 @@ const ENUM_TO_PLACEMENT_LABEL = {
 
 // Category -> default emoji shown in the My Items list when the item has no
 // uploaded photo to lean on. Picked to be category-recognisable at a glance.
-const CATEGORY_EMOJI = {
-  FURNITURE:   "🛋️",     // couch
-  ELECTRONICS: "📱",            // phone
-  SPORTS:      "⚽",                  // soccer ball
-  HOME:        "🏠",            // house
-  CLOTHING:    "👕",            // t-shirt
-  BOOKS:       "📚",            // books
-  OTHER:       "📦",            // package
-};
+const CATEGORY_EMOJI = Object.fromEntries(
+  [...CATEGORIES.map(c => [c.value, c.emoji]), ["HOME", categoryEmoji("HOME")]],
+);
 
 /* Avatar helpers */
 // Every profile-initial avatar is the brand green (the Seller button's), with
@@ -267,13 +245,6 @@ async function markClaimPickedUp(claimId, token) {
 }
 // Same wording as the Messages banner's error.
 const pickupErrorText = (err) => "Couldn't mark picked up: " + (err?.message || "try again");
-
-function initialsOf(name) {
-  if (!name) return "?";
-  const parts = name.split(/\s+/).filter(Boolean);
-  if (parts.length === 1) return parts[0].charAt(0).toUpperCase();
-  return (parts[0].charAt(0) + parts[parts.length-1].charAt(0)).toUpperCase();
-}
 
 /* Global CSS injection — animations, hover behaviours */
 function GlobalStyle() {
@@ -1061,22 +1032,34 @@ function Sidebar({ activeView, onNav, onSwitchRole, collapsed = false, messagesU
 // Avatar with dropdown menu - real user initials and sign-out.
 function SellerUserMenu({ user, onSignout, onOpenSettings }) {
   const [open, setOpen] = useState(false);
-  const initials = user?.name ? initialsOf(user.name) : "?";
   const displayName = user?.name || "Guest";
   return (
     <div style={{ position: "relative" }}>
       <button
         onClick={() => setOpen(o => !o)}
         title={displayName}
+        aria-label={"Account menu" + (user?.name ? " for " + user.name : "")}
+        aria-expanded={open}
         style={{
           width: 36, height: 36, borderRadius: "50%",
-          background: avatarBg(displayName),
-          color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-          fontWeight: 900, fontSize: 12, fontFamily: F.head,
-          border: "none", cursor: "pointer", padding: 0,
+          background: "transparent",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          border: "none", cursor: "pointer", padding: 0, overflow: "hidden",
         }}
       >
-        {initials}
+        {/* Photo, DropYard avatar or initials — updates the moment Settings
+            saves (AuthContext) or another tab does (user:updated). */}
+        <UserAvatar
+          avatar={user?.avatar}
+          name={user?.name}
+          size={36}
+          decorative
+          eager
+          initialsBg={avatarBg(displayName)}
+          fontFamily={F.head}
+          fontWeight={900}
+          fontSize={12}
+        />
       </button>
       {open && (
         <>
@@ -1858,15 +1841,8 @@ function LiveActivity({ events, onNav }) {
             padding: "13px 16px",
             borderBottom: i < events.length - 1 ? "1px solid " + C.fawn : "none",
           }}>
-            <div style={{
-              width: 34, height: 34, borderRadius: "50%",
-              background: avatarBg(e.who), color: "#fff",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontFamily: F.head, fontSize: 11, fontWeight: 900, flexShrink: 0,
-              boxShadow: _SH_XS,
-            }}>
-              {initialsOf(e.who)}
-            </div>
+            <UserAvatar avatar={e.avatar} name={e.who} size={34} decorative initialsBg={avatarBg(e.who)} fontFamily={F.head} fontWeight={900} fontSize={11}
+              style={{ boxShadow: _SH_XS }}/>
             <p style={{ flex: 1, minWidth: 0, fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               <span style={{ fontWeight: 800 }}>{e.who}</span>{" "}
               <span style={{ color: toneColor[e.tone] || C.mink }}>{e.what}</span>
@@ -2481,6 +2457,7 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
         events.push({
           when:  c.requestedAt || c.createdAt,
           who:   c.buyer?.name || "Buyer",
+          avatar: c.buyer?.avatar || null,
           what:  `claimed your ${c.item?.title || "item"}`,
           tone:  "claim",
         });
@@ -2490,6 +2467,7 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
         events.push({
           when:  c.confirmedAt || c.updatedAt || c.createdAt,
           who:   c.buyer?.name || "Buyer",
+          avatar: c.buyer?.avatar || null,
           what:  `is picking up your ${c.item?.title || "item"}`,
           tone:  "confirmed",
         });
@@ -2516,6 +2494,7 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
         events.push({
           when:  c.completedAt || c.updatedAt || c.createdAt,
           who:   c.buyer?.name || "Buyer",
+          avatar: c.buyer?.avatar || null,
           what:  `picked up your ${c.item?.title || "item"} for $${c.item?.price ?? 0}`,
           tone:  "soldout",
         });
@@ -2533,7 +2512,8 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
       buyerWaiting.forEach((c) => {
         events.push({
           when:  c.lastMessage?.createdAt || c.lastMessageAt,
-          who:   c.buyer?.name || "Buyer",
+          who:   c.otherUser?.name || "Buyer", // conversations carry the other party as otherUser, not buyer
+          avatar: c.otherUser?.avatar || null,
           what:  `asked about ${c.item?.title || "an item"}`,
           tone:  "msg",
         });
@@ -2543,6 +2523,7 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
       setActivityEvents(
         events.slice(0, 6).map((e) => ({
           who:  e.who,
+          avatar: e.avatar || null,
           what: e.what,
           tone: e.tone,
           when: relativeWhen(e.when),
@@ -3483,7 +3464,6 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
     otherSellers == null || otherSellers === 0 ? ""
     : otherSellers === 1                       ? " alongside 1 other seller"
     :                                            ` alongside ${otherSellers} other sellers`;
-  const cats = ["Furniture", "Electronics", "Appliances & Kitchen", "Clothing & Accessories", "Kids & Baby", "Sports & Outdoor", "Tools & Garden", "Home Décor", "Books, Games & Hobbies", "Collectibles & Antiques", "Other"];
   const conds = ["New", "Used - Like New", "Used - Good", "Used - Fair"];
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
@@ -3632,7 +3612,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
     // Client-side validation matching backend Zod rules
     if (!title || title.trim().length < 2) return setSubmitError("Title must be at least 2 characters.");
     if (!desc || desc.trim().length < 10) return setSubmitError("Description must be at least 10 characters.");
-    if (!cat) return setSubmitError("Pick a category.");
+    if (!cat) { document.getElementById(fieldId + "-cat-field")?.focus(); return setSubmitError("Pick a category."); }
     if (!cond) return setSubmitError("Pick a condition.");
     // Accept 0 — sellers list "Free pile" giveaways at $0. The empty-string
     // case still needs to be caught, so we parse explicitly first.
@@ -3672,7 +3652,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
         body: JSON.stringify({
           title:         title.trim(),
           description:   desc.trim(),
-          category:      CATEGORY_TO_ENUM[cat] || "OTHER",
+          category:      cat || "OTHER",
           condition:     CONDITION_TO_ENUM[cond] || "GOOD",
           price:         numericPrice,
           photos:        photoKeys.length > 0 ? photoKeys : undefined,
@@ -3895,11 +3875,19 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, marginBottom: 16 }}>
             <div>
               <p id={fieldId + "-cat"} style={FORM_LABEL}>Category *</p>
-              <div role="group" aria-labelledby={fieldId + "-cat"} style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {cats.map(c => (
-                  <button key={c} type="button" aria-pressed={cat === c} onClick={() => setCat(c)} style={formChip(cat === c)}>{c}</button>
-                ))}
-              </div>
+              {/* Compact, searchable selector (feedback point 3): one field that
+                  opens a searchable list — a bottom sheet on phones. */}
+              <CategorySelect
+                id={fieldId + "-cat-field"}
+                labelId={fieldId + "-cat"}
+                value={cat || null}
+                onChange={(v) => { setCat(v); if (submitError === "Pick a category.") setSubmitError(""); }}
+                invalid={!cat && submitError === "Pick a category."}
+                errorId={fieldId + "-cat-error"}
+              />
+              {!cat && submitError === "Pick a category." && (
+                <p id={fieldId + "-cat-error"} style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.claret, marginTop: 6 }}>Pick a category.</p>
+              )}
             </div>
             <div>
               <p id={fieldId + "-cond"} style={FORM_LABEL}>Condition *</p>
@@ -4513,9 +4501,7 @@ function QuestionsView({ onNav, accessToken = null, onQuestionsChanged = null })
 
                   {/* The question */}
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 13 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: avatarBg(q.askerName), color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 11, fontWeight: 800, flexShrink: 0 }}>
-                      {(q.askerName || "B").charAt(0)}
-                    </div>
+                    <UserAvatar avatar={q.askerAvatar} name={q.askerName || "Buyer"} size={28} decorative initialsBg={avatarBg(q.askerName || "Buyer")} fontFamily={F.head} fontSize={10}/>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
                         <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.ink }}>{q.askerName || "Buyer"}</span>
@@ -4747,6 +4733,8 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       e:           CATEGORY_EMOJI[api.category] || "📦",
       t:           api.title,
       cat:         ENUM_TO_CATEGORY_LABEL[api.category] || "Other",
+      // The stored value, for the Edit form's selector (HOME → APPLIANCES_KITCHEN).
+      catValue:    categoryFor(api.category).value,
       cond:        ENUM_TO_CONDITION_LABEL[api.condition] || "Used - Good",
       price:       api.price,
       // Agreed sale amount when a claim is active (BUG-055 — was activeClaim.price,
@@ -5995,6 +5983,7 @@ function adaptSellerConversation(api, myId) {
     buyer: {
       name:   api.otherUser?.name || "Buyer",
       hood:   api.otherUser?.neighborhood || "—",
+      avatar: api.otherUser?.avatar || null,
       rating: 0,
       previousPurchases: typeof api.otherUser?.previousPurchases === "number"
         ? api.otherUser.previousPurchases
@@ -6062,6 +6051,7 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
       listed:   api.item?.price ?? 0,
       offered,
       buyer:    api.buyer?.name || api.buyer?.email || "Buyer",
+      buyerAvatar: api.buyer?.avatar || null,
       time:     relativeTimeShort(api.proposedAt || api.createdAt),
       // BUG-055.1 — whose turn is it? GET /incoming only returns claims
       // where I'm the seller, so lastAmountBy === sellerId means I made the
@@ -6268,7 +6258,7 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
                 <div style={{ flex: 1, minWidth: isMobile ? "60%" : 0 }}>
                   <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.head, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{claim.t}</p>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, fontSize: 12, color: C.mink, fontFamily: F.body }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}><User size={11} /> {claim.buyer}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 5 }}><UserAvatar avatar={claim.buyerAvatar} name={claim.buyer} size={20} decorative initialsBg={avatarBg(claim.buyer)} fontFamily={F.head} fontSize={8}/> {claim.buyer}</span>
                   </div>
                 </div>
 
@@ -7097,7 +7087,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.ash, flexShrink: 0 }}>{c.lastTime}</span>
           </div>
           <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
-            <User size={10}/> {c.buyer.name}
+            <UserAvatar avatar={c.buyer.avatar} name={c.buyer.name} size={18} decorative initialsBg={avatarBg(c.buyer.name)} fontFamily={F.head} fontSize={7}/> {c.buyer.name}
             <Star size={10} style={{ color: C.amber, marginLeft: 4 }} fill={C.amber}/> {c.buyer.rating.toFixed(1)}
           </p>
           <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: c.unread ? 700 : 500, color: c.unread ? C.ink : C.mink, marginBottom: muted ? 0 : 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.lastMsg}</p>
@@ -7211,7 +7201,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
           )}
           {isBuyer && (
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4, marginLeft: 2 }}>
-              <User size={10} style={{ color: C.mink }}/>
+              <UserAvatar avatar={active.buyer.avatar} name={active.buyer.name} size={16} decorative initialsBg={avatarBg(active.buyer.name)} fontFamily={F.head} fontSize={7}/>
               <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.05em" }}>{active.buyer.name.toUpperCase()}</span>
             </div>
           )}
@@ -7419,7 +7409,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                 <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, marginTop: 2, flexWrap: "wrap" }}>
                   <span style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 16, fontWeight: 900, color: priceColor(active.item.price, C.green) }}>{priceText(active.item.price)}</span>
                   <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4 }}>
-                    <User size={11}/> {active.buyer.name}{!isMobile && active.buyer.hood && (" · " + active.buyer.hood)}
+                    <UserAvatar avatar={active.buyer.avatar} name={active.buyer.name} size={22} decorative initialsBg={avatarBg(active.buyer.name)} fontFamily={F.head} fontSize={9}/> {active.buyer.name}{!isMobile && active.buyer.hood && (" · " + active.buyer.hood)}
                   </span>
                   {(() => {
                     // Buyer-tier badge based on prior PICKED_UP claims between us.
@@ -7801,6 +7791,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
       t:       api.item?.title || "Item",
       price:   (typeof api.amount === "number" ? api.amount : api.item?.price) ?? 0,
       buyer:   api.buyer?.name || api.buyer?.email || "Buyer",
+      buyerAvatar: api.buyer?.avatar || null,
       date:    isToday ? "Today" : (slot.split(/\s+/)[0] || slot),
       time:    isToday ? slot.replace(/^\S+\s*/, "") : slot.replace(/^\S+\s*/, ""),
       isToday,
@@ -8112,7 +8103,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
               <div style={{ flex: 1, minWidth: isMobile ? "60%" : 0 }}>
                 <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.head, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.t}</p>
                 <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: 12, color: C.mink, fontFamily: F.body, flexWrap: "wrap" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><User size={11} /> {p.buyer}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}><UserAvatar avatar={p.buyerAvatar} name={p.buyer} size={20} decorative initialsBg={avatarBg(p.buyer)} fontFamily={F.head} fontSize={8}/> {p.buyer}</span>
                   <span style={{ fontWeight: 700, color: C.gPrimary }}>${p.price}</span>
                   {!p.isToday && <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Calendar size={11} /> {p.date}</span>}
                   {!p.isToday && <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> {p.time}</span>}
@@ -8269,7 +8260,7 @@ function HistoryTxRow({ tx, idx, isMobile = false, isOpen = false, onToggle = nu
             <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 5, background: layerBadge.bg, color: layerBadge.color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{layerBadge.label}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: F.body, fontSize: isMobile ? 11 : 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 3 }}><User size={11}/> {tx.buyer}</span>
+            <span style={{ fontFamily: F.body, fontSize: isMobile ? 11 : 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 5 }}><UserAvatar avatar={tx.buyerAvatar} name={tx.buyer} size={20} decorative initialsBg={avatarBg(tx.buyer)} fontFamily={F.head} fontSize={8}/> {tx.buyer}</span>
             {!isMobile && (
               <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 3 }}><MapPin size={10}/> {tx.hood}</span>
             )}
@@ -8351,13 +8342,13 @@ function HistoryTxRow({ tx, idx, isMobile = false, isOpen = false, onToggle = nu
 const DEMO_HISTORY_TX = [
     { id: "h1", title: "Solid Wood Coffee Table", price: 80,  asking: 95, img: "\uD83E\uDE91", cat: "Furniture",               buyer: "Hassan M.",   hood: "Barrhaven",      date: "2026-04-13", layer: "drop",      rating: 5, review: "Easy meet-up, table was even nicer in person." },
     { id: "h2", title: "Baby Stroller (Graco)",   price: 45,  asking: 45, img: "\uD83D\uDC76", cat: "Kids & Baby",             buyer: "Lindsay P.",  hood: "Bridlewood",     date: "2026-04-13", layer: "drop",      rating: 5, review: "Porch pickup worked great, thanks!" },
-    { id: "h3", title: "Yoga Mat Set",            price: 15,  asking: 15, img: "\uD83E\uDDD8", cat: "Sports & Outdoor",        buyer: "Mark T.",     hood: "Barrhaven",      date: "2026-04-06", layer: "shelf",     rating: 4 },
+    { id: "h3", title: "Yoga Mat Set",            price: 15,  asking: 15, img: "\uD83E\uDDD8", cat: "Fitness & Exercise Equipment",        buyer: "Mark T.",     hood: "Barrhaven",      date: "2026-04-06", layer: "shelf",     rating: 4 },
     { id: "h4", title: "Kitchen Mixer",           price: 65,  asking: 80, img: "\uD83E\uDDC1", cat: "Appliances & Kitchen",    buyer: "Jess B.",     hood: "Half Moon Bay",  date: "2026-04-06", layer: "drop",      rating: 5, review: "Works beautifully, super friendly seller." },
     { id: "h5", title: "Garden Tools Lot",        price: 40,  asking: 40, img: "\uD83C\uDF31", cat: "Tools & Garden",          buyer: "Omar K.",     hood: "Stonebridge",    date: "2026-03-22", layer: "drop",      rating: 5 },
     { id: "h6", title: "Bookshelf Pine 5-tier",   price: 35,  asking: 50, img: "\uD83D\uDCDA", cat: "Furniture",               buyer: "Claire Y.",   hood: "Barrhaven",      date: "2026-03-15", layer: "shelf",     rating: 4 },
     { id: "h7", title: "Winter Coats Bundle",     price: 30,  asking: 30, img: "\uD83E\uDDE5", cat: "Clothing & Accessories",  buyer: "Nina S.",     hood: "Barrhaven East", date: "2026-02-22", layer: "drop",      rating: 5, review: "Coats are perfect for my kids, thank you!" },
-    { id: "h8", title: "Kids Toy Kitchen Set",    price: 55,  asking: 55, img: "\uD83C\uDF73", cat: "Kids & Baby",             buyer: "Ada R.",      hood: "Barrhaven",      date: "2025-12-14", layer: "drop",      rating: 5 },
-    { id: "h9", title: "Christmas Decor Lot",     price: 25,  asking: 25, img: "\uD83C\uDF84", cat: "Other",                   buyer: "Mia L.",      hood: "Bridlewood",     date: "2025-12-14", layer: "drop",      rating: 4 },
+    { id: "h8", title: "Kids Toy Kitchen Set",    price: 55,  asking: 55, img: "\uD83C\uDF73", cat: "Toys & Games",             buyer: "Ada R.",      hood: "Barrhaven",      date: "2025-12-14", layer: "drop",      rating: 5 },
+    { id: "h9", title: "Christmas Decor Lot",     price: 25,  asking: 25, img: "\uD83C\uDF84", cat: "Seasonal & Holiday Items",                   buyer: "Mia L.",      hood: "Bridlewood",     date: "2025-12-14", layer: "drop",      rating: 4 },
 ];
 
 function SellerHistoryView({ embedded = false, accessToken = null }) {
@@ -8422,6 +8413,7 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
       img:    CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
       cat:    ENUM_TO_CATEGORY_LABEL[api.item?.category] || "Other",
       buyer:  api.buyer?.name || api.buyer?.email || "Buyer",
+      buyerAvatar: api.buyer?.avatar || null,
       hood:   api.buyer?.neighborhood || "—",
       date:   api.pickedUpAt || api.updatedAt || api.createdAt,
       layer:  placementUi === "shelf" ? "shelf" : "drop",
@@ -8909,13 +8901,13 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
     raw: { paymentMethod: "EITHER" },
   };
 
-  const cats  = ["Furniture", "Electronics", "Appliances & Kitchen", "Clothing & Accessories", "Kids & Baby", "Sports & Outdoor", "Tools & Garden", "Home Décor", "Books, Games & Hobbies", "Collectibles & Antiques", "Other"];
   const conds = ["New", "Used - Like New", "Used - Good", "Used - Fair"];
 
   // ── State (initialised from the editing item) ─────────────────
   const [title, setTitle] = useState(item.t || "");
   const [desc, setDesc] = useState(item.description || item.desc || "");
-  const [cat, setCat] = useState(item.cat || "");
+  // The stored value; older items and demo rows carry only a label.
+  const [cat, setCat] = useState(item.catValue || categoryValueFromLabel(item.cat) || "");
   const [cond, setCond] = useState(item.cond || "");
   const [price, setPrice] = useState(item.price ?? "");
   const initialPayment = (() => {
@@ -9093,7 +9085,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
 
     if (!title || String(title).trim().length < 2) return setSubmitError("Title must be at least 2 characters.");
     if (!desc  || String(desc).trim().length < 10) return setSubmitError("Description must be at least 10 characters.");
-    if (!cat)  return setSubmitError("Pick a category.");
+    if (!cat)  { document.getElementById(fieldId + "-cat-field")?.focus(); return setSubmitError("Pick a category."); }
     if (!cond) return setSubmitError("Pick a condition.");
     // Accept 0 — sellers list "Free pile" giveaways at $0. The empty-string
     // case still needs to be caught, so we parse explicitly first.
@@ -9138,7 +9130,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
         body: JSON.stringify({
           title:         String(title).trim(),
           description:   String(desc).trim(),
-          category:      CATEGORY_TO_ENUM[cat] || "OTHER",
+          category:      cat || "OTHER",
           condition:     CONDITION_TO_ENUM[cond] || "GOOD",
           price:         numericPrice,
           photos:        photoKeys.length > 0 ? photoKeys : undefined,
@@ -9153,7 +9145,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
           ? { ...p,
               title:         String(title).trim(),
               description:   String(desc).trim(),
-              category:      CATEGORY_TO_ENUM[cat] || p.category,
+              category:      cat || p.category,
               condition:     CONDITION_TO_ENUM[cond] || p.condition,
               price:         numericPrice,
               // Prefer the server-resolved URLs over our raw key list. Fall
@@ -9347,11 +9339,19 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, marginBottom: 16 }}>
             <div>
               <p id={fieldId + "-cat"} style={FORM_LABEL}>Category *</p>
-              <div role="group" aria-labelledby={fieldId + "-cat"} style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {cats.map(c => (
-                  <button key={c} type="button" aria-pressed={cat === c} onClick={() => setCat(c)} style={formChip(cat === c)}>{c}</button>
-                ))}
-              </div>
+              {/* Compact, searchable selector (feedback point 3): one field that
+                  opens a searchable list — a bottom sheet on phones. */}
+              <CategorySelect
+                id={fieldId + "-cat-field"}
+                labelId={fieldId + "-cat"}
+                value={cat || null}
+                onChange={(v) => { setCat(v); if (submitError === "Pick a category.") setSubmitError(""); }}
+                invalid={!cat && submitError === "Pick a category."}
+                errorId={fieldId + "-cat-error"}
+              />
+              {!cat && submitError === "Pick a category." && (
+                <p id={fieldId + "-cat-error"} style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.claret, marginTop: 6 }}>Pick a category.</p>
+              )}
             </div>
             <div>
               <p id={fieldId + "-cond"} style={FORM_LABEL}>Condition *</p>
@@ -9697,7 +9697,7 @@ function AIListingEditModal({ item, onClose, onSave, aiSettings = {} }) {
   const [paymentMethod, setPaymentMethod] = useState(item.paymentMethod || aiSettings.paymentMethod || "either");
 
   const conditions = ["New", "Used - Like New", "Used - Good", "Used - Fair"];
-  const categories = ["Furniture", "Appliances & Kitchen", "Electronics", "Kids & Baby", "Tools & Garden", "Clothing & Accessories", "Sports & Outdoor", "Home Décor", "Other"];
+  const categories = CATEGORIES.map(c => c.label);
 
   function handleSave() {
     onSave({ ...item, t: title, longDesc, d: longDesc.slice(0, 80), price, floor: floor ? Number(floor) : item.floor, retail: retail ? Number(retail) : item.retail, cond, cat, paymentMethod });
@@ -10541,6 +10541,11 @@ function ProfileTab({ user, onSuccess }) {
 
   return (
     <div style={{ maxWidth: 1160, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 20 }}>
+      {/* Profile picture — full width above the two cards. Same account as
+          buyer mode, so the same choice shows in both. */}
+      <div style={{ gridColumn: "1 / -1" }}>
+        <ProfilePictureSection initialsBg={avatarBg(user?.name || "")} onSuccess={onSuccess}/>
+      </div>
       {/* Profile information */}
       <form onSubmit={submitProfile} style={{ background: C.paper, border: "1px solid " + C.fawn, borderRadius: 16, padding: 24, display: "flex", flexDirection: "column", gap: 18 }}>
         <h2 style={{ fontFamily: F.head, fontSize: 16, fontWeight: 800, color: C.ink, letterSpacing: "-0.01em" }}>Profile information</h2>

@@ -5,6 +5,7 @@ import { Search, Bell, Menu, ChevronDown, LogOut } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { ADMIN_NAV } from "./navItems";
 import type { AuthUser } from "@/context/AuthContext";
+import { UserAvatar } from "@/components/UserAvatar";
 
 export function AdminTopBar({
   user,
@@ -20,13 +21,6 @@ export function AdminTopBar({
   const allItems = ADMIN_NAV.flatMap((s) => s.items);
   const current = allItems.find((i) => i.href === pathname) ?? allItems[0];
 
-  const initials = (user.name ?? user.email)
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase() || "DA";
 
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -103,9 +97,8 @@ export function AdminTopBar({
           aria-haspopup="menu"
           aria-expanded={menuOpen}
         >
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-dy-green-strong text-white text-[12px] font-bold ring-2 ring-white shadow-sm">
-            {initials}
-          </span>
+          <UserAvatar avatar={user.avatar} name={user.name || user.email} size={36} decorative eager fontSize={12} fontWeight={700}
+            style={{ boxShadow: "0 0 0 2px #fff, 0 1px 2px rgba(15, 23, 42, 0.08)" }} />
           <div className="hidden sm:flex flex-col leading-tight text-left">
             <span className="text-[13px] font-semibold text-slate-900 truncate max-w-[160px]">
               {user.name}
