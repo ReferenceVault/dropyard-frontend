@@ -8,6 +8,7 @@ import React, {
   useCallback,
 } from "react";
 import { apiRequest } from "@/lib/api";
+import type { ResolvedAvatar } from "@/lib/avatar";
 
 export interface AuthUser {
   id: string;
@@ -32,6 +33,9 @@ export interface AuthUser {
   // between "Set password" and "Change password".
   hasPassword?: boolean;
   createdAt?: string;
+  /** Profile picture choice, resolved by the API: photo, DropYard avatar or
+   *  initials. Absent on older payloads — treated as initials. */
+  avatar?: ResolvedAvatar;
 }
 
 interface AuthState {
@@ -57,6 +61,10 @@ interface AuthContextValue extends AuthState {
    *  signin succeeded but the user shouldn't actually be kept logged in
    *  (e.g. non-admin user submitting the admin login form). */
   clearAuth: () => void;
+  /** Replace the signed-in user with a fresh copy the API just returned
+   *  (e.g. after a profile-picture change), so every component reading
+   *  `user` — the dashboard headers included — updates without a refetch. */
+  setUser: (user: AuthUser) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -187,8 +195,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setState({ user: null, accessToken: null, loading: false });
   }, []);
 
+  const setUser = useCallback((user: AuthUser) => {
+    // Only ever the same person: a payload for someone else (a stale socket
+    // event after switching accounts) is ignored.
+    setState(s => (s.user && s.user.id === user.id ? { ...s, user: { ...s.user, ...user } } : s));
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ ...state, signup, signin, signInWithGoogle, signout, refreshUser, clearAuth }}>
+    <AuthContext.Provider value={{ ...state, signup, signin, signInWithGoogle, signout, refreshUser, clearAuth, setUser }}>
       {children}
     </AuthContext.Provider>
   );

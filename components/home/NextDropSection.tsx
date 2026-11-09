@@ -12,26 +12,31 @@ const pad = (n: number) => String(n).padStart(2, "0");
 
 export const FEATURED_SECTION_ID = "worth-a-closer-look";
 const CTA_CLASS = "dy-btn dy-btn--primary dy-focus mt-[clamp(20px,2.2vw,42px)] w-full text-center";
-const CARD_CLASS = "dy-card rounded-xl bg-white p-[clamp(20px,2.6vw,50px)] shadow-[var(--shadow-panel)]";
+// 16px corners like every other card; dy-glow adds the slow breathing ring
+// (motion-allowed only — see globals.css).
+const CARD_CLASS = "dy-card dy-glow rounded-2xl bg-white p-[clamp(20px,2.6vw,50px)] shadow-(--shadow-panel) ring-1 ring-dy-line/60";
 
-/** Countdown: light figures with colon separators. Stats: bold figures with thin
- *  dividers. Both run edge to edge, the outer columns flush with the card text. */
+/** Each figure sits in its own pale tile. Countdown: tiles separated by a pair
+ *  of small dots. Stats: tiles side by side, no separator needed. */
 function Figures({ cells, variant }: { cells: Array<{ value: string; label: string }>; variant: "countdown" | "stats" }) {
   const stats = variant === "stats";
   return (
-    <ul className={`mt-[clamp(20px,2.4vw,46px)] grid items-start grid-cols-[auto_1fr_auto_1fr_auto]`}>
+    <ul className="mt-[clamp(20px,2.4vw,46px)] grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-x-[clamp(4px,0.6vw,12px)]">
       {cells.map((cell, i) => (
         <Fragment key={cell.label}>
           {i > 0 && (
             stats ? (
-              <li aria-hidden className="mx-auto h-[clamp(40px,3.6vw,68px)] w-[3px] rounded-full bg-dy-line" />
+              <li aria-hidden className="w-0" />
             ) : (
-              <li aria-hidden className="mt-[0.1em] text-center text-[clamp(36px,3.75vw,72px)] font-light leading-none text-dy-forest">:</li>
+              <li aria-hidden className="flex flex-col gap-[clamp(6px,0.6vw,12px)]">
+                <span className="h-[clamp(5px,0.42vw,8px)] w-[clamp(5px,0.42vw,8px)] rounded-full bg-dy-green/60" />
+                <span className="h-[clamp(5px,0.42vw,8px)] w-[clamp(5px,0.42vw,8px)] rounded-full bg-dy-green/60" />
+              </li>
             )
           )}
-          <li className="flex min-w-0 flex-col-reverse items-center">
+          <li className="flex min-w-0 flex-col-reverse items-center rounded-xl bg-dy-pale px-1 py-[clamp(12px,1.3vw,24px)] ring-1 ring-dy-line/60">
             <span className="mt-2 text-[clamp(13px,1.3vw,25px)] text-dy-muted">{cell.label}</span>
-            <span data-figure className={`text-[clamp(38px,3.75vw,72px)] leading-none tracking-[0.06em] text-dy-forest tabular-nums ${stats ? "font-bold" : "font-medium"}`}>
+            <span data-figure className={`text-[clamp(34px,3.4vw,66px)] leading-none tracking-[0.04em] text-dy-forest tabular-nums ${stats ? "font-bold" : "font-semibold"}`}>
               {/* Keyed by value, so it replays only when the number changes. */}
               <span key={cell.value} className="dy-tick">{cell.value}</span>
             </span>
@@ -53,8 +58,9 @@ function DropTitle() {
 
 function LiveNow() {
   return (
-    <span className="flex shrink-0 items-center gap-2 text-[clamp(16px,1.5vw,29px)] text-dy-forest">
-      <span aria-hidden className="h-2 w-2 rounded-full bg-red-600" />
+    <span className="flex shrink-0 items-center gap-2 text-[clamp(16px,1.5vw,29px)] font-semibold text-dy-forest">
+      {/* Pulses while motion is allowed; a plain dot otherwise. */}
+      <span aria-hidden className="dy-live-dot" />
       Live Now
     </span>
   );
@@ -78,13 +84,17 @@ function scrollToFeatured() {
  * until Saturday 8 AM Toronto time, the live card until Sunday 8 PM, then the
  * countdown to the next Drop. Both buttons scroll to "Worth a closer look".
  */
-export function NextDropSection({ upcomingOnly = false, live, onDropOpened }: {
+export function NextDropSection({ upcomingOnly = false, live, onDropOpened, neighbourCount = null }: {
   /** Always show the countdown, for the page that has no live state. */
   upcomingOnly?: boolean;
   /** The homepage feed's state, to spot a feed loaded before the Drop opened. */
   live?: Pick<LiveDropData, "state" | "feedPhase">;
   /** Called if the clock opens the Drop after the items were loaded. */
   onDropOpened?: () => void;
+  /** Real early-access sign-up count from useNeighbourCount(): a number only
+   *  when the backend says it's worth showing (showProof), otherwise null —
+   *  including while loading and after a failed fetch. */
+  neighbourCount?: number | null;
 }) {
   const { ready, status, now, opensAt, simulated, liveStats } = useDropSchedule();
   const isLive = ready && status === "LIVE" && !upcomingOnly;
@@ -158,21 +168,26 @@ export function NextDropSection({ upcomingOnly = false, live, onDropOpened }: {
       <p className="dy-body mt-4">
         {hasEnded ? (
           `This Drop has closed. The next one opens ${dropOpenDay()} at ${dropOpenHourLong()} ${dropZoneLabel()}.`
+        ) : neighbourCount ? (
+          // The real early-access count, worded for what it counts: people
+          // who signed up. Never a made-up figure (this used to read "1,200+").
+          <><span className="font-semibold text-dy-orange-strong">{neighbourCount.toLocaleString("en-CA")}</span> neighbours have signed up in {LIVE_NEIGHBOURHOOD}</>
         ) : (
-          <>Join <span className="font-semibold text-dy-orange-strong">1,200+</span> neighbours in {LIVE_NEIGHBOURHOOD}</>
+          // Loading, fetch failed, or too few sign-ups to show yet.
+          `Open to every neighbour in ${LIVE_NEIGHBOURHOOD}.`
         )}
       </p>
     </div>
   );
 
   return (
-    <section aria-labelledby="next-drop-heading" className="bg-dy-pale">
+    <section aria-labelledby="next-drop-heading" className="dy-texture-dots bg-dy-pale">
       <div className="dy-wrap dy-section grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,38%)]">
         <div>
           <p className="dy-eyebrow">The Next Drop</p>
           <Heading id="next-drop-heading" className="dy-h2 mt-4">
             {dropOpenDay()},<br />
-            everyone&apos;s <span className="text-dy-orange">invited.</span>
+            everyone&apos;s <span className="text-dy-accent">invited.</span>
           </Heading>
           <p className="mt-4 text-[clamp(17px,1.4vw,27px)] font-semibold text-dy-orange-strong">A new neighbourhood yard sale, every {dropOpenDay()}.</p>
           <p className="dy-body mt-3 max-w-[660px]">

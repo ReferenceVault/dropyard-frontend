@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="A green leaf">
+  <rect width="256" height="256" fill="#E2EFE0"/>
+  <circle cx="128" cy="128" r="88" fill="#D4E8D1"/>
+  <path d="M74 186c-6-58 20-104 112-118 6 60-18 118-112 118z" fill="#33802B"/>
+  <path d="M186 68c-38 18-80 60-112 118" fill="none" stroke="#2C6126" stroke-width="7" stroke-linecap="round"/>
+  <path d="M106 146c10 2 22 2 34-2M124 118c10 2 20 1 30-3M90 168c8 3 18 4 28 2" fill="none" stroke="#8CC383" stroke-width="5" stroke-linecap="round"/>
+  <path d="M74 186l-14 14" stroke="#2C6126" stroke-width="7" stroke-linecap="round"/>
+</svg>

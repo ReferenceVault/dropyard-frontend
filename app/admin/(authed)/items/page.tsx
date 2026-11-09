@@ -23,6 +23,7 @@ import { AdminPagination } from "@/components/admin/AdminPagination";
 import { AvatarChip } from "@/components/admin/AvatarChip";
 import { StatusPill, type StatusTone } from "@/components/admin/StatusPill";
 import { RelativeDateBadge, relativeTime } from "@/components/admin/RelativeDateBadge";
+import { categoryLabel } from "@/lib/categories";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ type AdminItem = {
   postalCode: string | null;
   createdAt: string;
   updatedAt: string;
-  seller: { id: string; name: string; email: string; status: string; neighborhood: string | null } | null;
+  seller: { id: string; name: string; email: string; status: string; neighborhood: string | null; avatar?: unknown } | null;
   activeClaims: number;
   moderation: Moderation | null;
   _count: { claims: number; watchlist: number; questions: number; conversations: number };
@@ -89,15 +90,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "ARCHIVED", label: "Taken down" },
 ];
 
-const CATEGORY_LABEL: Record<string, string> = {
-  FURNITURE: "Furniture",
-  ELECTRONICS: "Electronics",
-  SPORTS: "Sports & Outdoor",
-  HOME: "Home",
-  CLOTHING: "Clothing",
-  BOOKS: "Books & Games",
-  OTHER: "Other",
-};
 
 function priceLabel(v: number) {
   return v === 0 ? "Free" : `$${v}`;
@@ -312,7 +304,7 @@ export default function AdminItemsPage() {
                         )}
                       </div>
                       <p className="mt-0.5 truncate text-[12px] text-slate-500">
-                        {CATEGORY_LABEL[it.category] ?? it.category} · {it.placement === "SHELF" ? "Shelf" : "Drop"}
+                        {categoryLabel(it.category)} · {it.placement === "SHELF" ? "Shelf" : "Drop"}
                       </p>
                     </div>
                   </div>
@@ -321,7 +313,7 @@ export default function AdminItemsPage() {
                   <div className="flex min-w-0 items-center gap-2">
                     {it.seller ? (
                       <>
-                        <AvatarChip name={it.seller.name} seed={it.seller.id} size="sm" />
+                        <AvatarChip name={it.seller.name} avatar={it.seller.avatar} seed={it.seller.id} size="sm" />
                         <div className="min-w-0">
                           <p className="truncate text-[13px] font-medium text-slate-800">{it.seller.name}</p>
                           <p className="truncate text-[11px] text-slate-500">{it.seller.email}</p>

@@ -6,6 +6,8 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const ACCESS_TOKEN_KEY = "dy_access_token";
 
+export const NETWORK_ERROR = "We couldn't reach DropYard. Check your connection and try again.";
+
 export type SubmissionType =
   | "CONTACT_GENERAL"
   | "CONTACT_REPORT"
@@ -40,14 +42,21 @@ export async function submitSubmission(
       ? localStorage.getItem(ACCESS_TOKEN_KEY)
       : null;
 
-  const res = await fetch(`${BASE_URL}/api/submissions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(input),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/api/submissions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(input),
+    });
+  } catch {
+    // Offline / server unreachable: fetch throws a bare "Failed to fetch",
+    // which every form would otherwise show verbatim.
+    throw new Error(NETWORK_ERROR);
+  }
 
   if (!res.ok) {
     let message = "Something went wrong. Please try again.";

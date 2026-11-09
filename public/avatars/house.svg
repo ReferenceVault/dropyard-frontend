@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="A small house with a green roof">
+  <rect width="256" height="256" fill="#FDF3E4"/>
+  <circle cx="128" cy="138" r="86" fill="#F6E3C6"/>
+  <path d="M58 196h140" stroke="#2C6126" stroke-width="8" stroke-linecap="round"/>
+  <rect x="80" y="118" width="96" height="78" rx="6" fill="#FFFFFF"/>
+  <path d="M68 124 128 72l60 52" fill="none" stroke="#33802B" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M74 120 128 76l54 44v6H74z" fill="#33802B"/>
+  <rect x="150" y="80" width="14" height="28" rx="3" fill="#2C6126"/>
+  <rect x="114" y="150" width="28" height="46" rx="14" fill="#F99605"/>
+  <circle cx="135" cy="174" r="2.5" fill="#A35C00"/>
+  <rect x="90" y="136" width="18" height="18" rx="4" fill="#E2EFE0"/>
+  <rect x="148" y="136" width="18" height="18" rx="4" fill="#E2EFE0"/>
+</svg>

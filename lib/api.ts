@@ -171,17 +171,15 @@ export async function apiRequest<T = unknown>(
   return data as T;
 }
 
-// ─── S3 photo upload helper ─────────────────────────────────────────────────
-// Multipart upload doesn't go through apiRequest (different content-type),
-// so it gets its own auth + CSRF wiring. Cookies travel automatically via
-// credentials:'include'; the legacy token path is preserved as a fallback.
-async function doUpload(file: File, token: string | null, csrfToken: string | null): Promise<Response> {
-  const form = new FormData();
-  form.append('file', file);
+// ─── Multipart uploads ─────────────────────────────────────────────────────
+// Multipart bodies don't go through apiRequest (the browser must set the
+// multipart content-type with its boundary), so they get their own auth +
+// CSRF wiring here. Cookies travel via credentials:'include'. Same 401
+// posture as apiRequest: refresh only on TOKEN_EXPIRED, otherwise sign out.
+async function doMultipart(path: string, form: FormData, csrfToken: string | null): Promise<Response> {
   const headers: Record<string, string> = {};
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  if (csrfToken && !token) headers['X-CSRF-Token'] = csrfToken;
-  return fetch(`${BASE_URL}/api/uploads/s3`, {
+  if (csrfToken) headers['X-CSRF-Token'] = csrfToken;
+  return fetch(`${BASE_URL}${path}`, {
     method:      'POST',
     credentials: 'include',
     headers,
@@ -189,13 +187,8 @@ async function doUpload(file: File, token: string | null, csrfToken: string | nu
   });
 }
 
-export async function uploadItemPhoto(
-  file: File
-): Promise<{ key: string; publicUrl: string; maxFilesPerItem: number }> {
-  // BUG-059 — same cookie-only posture as apiRequest. No automatic Bearer
-  // attach; cookies handle auth. Only refresh on TOKEN_EXPIRED.
-  const csrfToken = await getCsrfToken();
-  let res = await doUpload(file, null, csrfToken);
+async function postMultipart<T>(path: string, makeForm: () => FormData, fallbackError: string): Promise<T> {
+  let res = await doMultipart(path, makeForm(), await getCsrfToken());
 
   if (res.status === 401 && typeof window !== 'undefined') {
     const peek = await res.clone().json().catch(() => ({} as { code?: string }));
@@ -209,7 +202,7 @@ export async function uploadItemPhoto(
         body:        '{}',
       });
       if (refreshRes.ok) {
-        res = await doUpload(file, null, await getCsrfToken());
+        res = await doMultipart(path, makeForm(), await getCsrfToken());
       } else {
         clearUserStorage();
         window.location.href = sessionExpiredRedirect();
@@ -224,7 +217,31 @@ export async function uploadItemPhoto(
 
   const data = (await res.json().catch(() => ({}))) as { error?: string };
   if (!res.ok) {
-    throw new Error(typeof data.error === 'string' ? data.error : 'Upload failed');
+    throw new Error(typeof data.error === 'string' ? data.error : fallbackError);
   }
-  return data as { key: string; publicUrl: string; maxFilesPerItem: number };
+  return data as T;
+}
+
+// ─── S3 photo upload helper ─────────────────────────────────────────────────
+export async function uploadItemPhoto(
+  file: File
+): Promise<{ key: string; publicUrl: string; maxFilesPerItem: number }> {
+  return postMultipart('/api/uploads/s3', () => {
+    const form = new FormData();
+    form.append('file', file);
+    return form;
+  }, 'Upload failed');
+}
+
+// ─── Profile photo upload ───────────────────────────────────────────────────
+// The blob is the cropped 512×512 re-encode from the cropper, never the
+// original file, so no camera metadata leaves the device. The server checks
+// the bytes and strips metadata again regardless.
+export async function uploadAvatarPhoto<T = unknown>(blob: Blob): Promise<T> {
+  const ext = blob.type === 'image/webp' ? 'webp' : blob.type === 'image/png' ? 'png' : 'jpg';
+  return postMultipart<T>('/api/auth/me/avatar/photo', () => {
+    const form = new FormData();
+    form.append('file', blob, `profile.${ext}`);
+    return form;
+  }, 'Could not save your profile picture.');
 }

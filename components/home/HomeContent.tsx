@@ -41,31 +41,48 @@ function Hero() {
         fill
         priority
         sizes="100vw"
-        className="-z-20 object-cover object-[62%_center] lg:object-[center_45%]"
+        className="dy-hero-drift -z-20 object-cover object-[62%_center] lg:object-[center_45%]"
       />
       <div aria-hidden className="absolute inset-0 -z-10 bg-black/50 lg:bg-transparent lg:bg-gradient-to-r lg:from-black/45 lg:via-black/25 lg:to-transparent" />
+      {/* Softens the hard line where the photo meets the trust strip. */}
+      <div aria-hidden className="absolute inset-x-0 bottom-0 -z-10 h-28 bg-linear-to-b from-transparent to-black/35" />
       <div className="dy-wrap dy-rise py-12">
-        <p className="text-[clamp(13px,1.1vw,21px)] font-semibold tracking-[0.1em] text-white">Neighbourhood Marketplace</p>
-        <h1 id="hero-heading" className="dy-h1 mt-3 !text-[clamp(38px,3.95vw,76px)] !text-white">
+        <p className="dy-eyebrow dy-eyebrow--on-dark">Neighbourhood Marketplace</p>
+        <h1 id="hero-heading" className="dy-h1 mt-4 !text-[clamp(38px,3.95vw,76px)] !text-white">
           Your neighbourhood<br />
-          yard sale. <span className="text-dy-orange">Online.</span>
+          yard sale. <AccentSwoosh>Online.</AccentSwoosh>
         </h1>
         <p className="mt-[clamp(14px,1.05vw,20px)] text-[clamp(17px,1.2vw,23px)] font-semibold text-white">Things already sitting in your home could find another home nearby.</p>
         <p className="mt-[clamp(8px,0.65vw,12px)] max-w-[29em] text-[clamp(16px,1.1vw,21px)] leading-[1.32] text-white/95">
           Discover great finds from people nearby. Buy locally, pick up close to home, and give good things another life.
         </p>
         <div className="mt-[clamp(22px,1.9vw,36px)] flex flex-wrap gap-[clamp(12px,0.85vw,16px)]">
-          <Link href="/buyer" className={`dy-btn dy-btn--primary dy-focus ${buttonSize}`}>
+          {/* Full width and equal on phones, where the two would otherwise
+              stack at different widths. */}
+          <Link href="/buyer" className={`dy-btn dy-btn--primary dy-focus w-full sm:w-auto ${buttonSize}`}>
             {/* 1.25em with the button's gap trimmed by the same 0.25em: the
                 pin's size and spacing from the reference design, while the
                 button keeps exactly its old width. */}
             <HeroPinIcon className="h-[1.25em] w-[1.25em] -mr-[0.25em] shrink-0" />
             Browsing {LIVE_NEIGHBOURHOOD}
           </Link>
-          <Link href={SELL_HREF} className={`dy-btn dy-btn--light dy-focus ${buttonSize}`}>Sell Something</Link>
+          <Link href={SELL_HREF} className={`dy-btn dy-btn--light dy-focus w-full sm:w-auto ${buttonSize}`}>Sell Something</Link>
         </div>
       </div>
     </section>
+  );
+}
+
+/** An orange accent word with the brand's brush-stroke underline — the same
+ *  traced stroke as "to another." in Early Access. Decorative only. */
+function AccentSwoosh({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="relative inline-block text-dy-accent">
+      {children}
+      <svg aria-hidden viewBox="0 0 65 8" preserveAspectRatio="none" className="absolute left-0 top-[calc(100%-0.16em)] h-[0.32em] w-full overflow-visible">
+        <path fill="currentColor" d="M0.6 3.9 C12 2 26 0.6 40 0.6 C52 0.6 60 1.4 64.8 2.2 Q65.4 2.6 64.7 2.8 C60 2.1 52 2.5 40 2.6 C26 2.6 12 4 1 6.2 Q-0.4 5.2 0.6 3.9 Z" />
+      </svg>
+    </span>
   );
 }
 
@@ -79,12 +96,18 @@ export function TrustStrip() {
   return (
     <ul className="grid text-white md:grid-cols-3">
       {TRUST_ITEMS.map(({ icon: Icon, title, text, bg }) => (
-        <li key={title} className={`${bg} flex items-center gap-[clamp(14px,2vw,38px)] px-[clamp(16px,5.2vw,100px)] py-[clamp(18px,2.3vw,44px)] md:pl-[clamp(16px,3.4vw,66px)] md:pr-4 md:first:pl-[clamp(16px,5.2vw,100px)]`}>
-          <Icon className="h-[clamp(40px,4.6vw,88px)] w-[clamp(40px,4.6vw,88px)] shrink-0" strokeWidth={1.4} aria-hidden />
-          <div>
-            <p className="text-[clamp(19px,1.6vw,31px)] font-semibold">{title}</p>
-            <p className="text-[clamp(15px,1.3vw,25px)]">{text}</p>
-          </div>
+        // Phones: one compact row per point (title and text share a line) —
+        // three stacked full-height blocks took ~260px for three short lines.
+        // Tablet up: unchanged three-column strip.
+        <li key={title} className={`${bg} flex items-center gap-3 px-4 py-2.5 md:gap-[clamp(14px,2vw,38px)] md:py-[clamp(18px,2.3vw,44px)] md:pl-[clamp(16px,3.4vw,66px)] md:pr-4 md:first:pl-[clamp(16px,5.2vw,100px)]`}>
+          {/* Icon tile: a translucent disc gives the line icon a surface. */}
+          <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/12 ring-1 ring-white/25 md:h-[clamp(56px,5.4vw,104px)] md:w-[clamp(56px,5.4vw,104px)]">
+            <Icon className="h-[55%] w-[55%]" strokeWidth={1.75} />
+          </span>
+          <p className="flex flex-wrap items-baseline gap-x-2 md:block">
+            <span className="text-[16px] font-semibold md:block md:text-[clamp(19px,1.6vw,31px)]">{title}</span>
+            <span className="text-[14px] md:block md:text-[clamp(15px,1.3vw,25px)]">{text}</span>
+          </p>
         </li>
       ))}
     </ul>
@@ -103,7 +126,7 @@ function FeaturedSection({ items, state, savedIds, onToggleSaved }: {
         <div className="flex flex-wrap items-center justify-between gap-5">
           <div>
             <p className="dy-eyebrow">This Week&apos;s Find</p>
-            <h2 id="featured-heading" className="dy-h2 mt-3">Worth a closer <span className="text-dy-orange">look.</span></h2>
+            <h2 id="featured-heading" className="dy-h2 mt-3">Worth a closer <span className="text-dy-accent">look.</span></h2>
             <p className="dy-body mt-3">A few things your neighbours are putting up for grabs.</p>
           </div>
           <Link href="/buyer" className="dy-btn dy-btn--primary dy-focus">Browse All Items</Link>
@@ -116,12 +139,14 @@ function FeaturedSection({ items, state, savedIds, onToggleSaved }: {
               action={<Link href={SELL_HREF} className="dy-btn dy-btn--primary dy-focus">Sell Something</Link>}
             />
           ) : (
-            <ul className="grid grid-cols-1 gap-x-[clamp(14px,1.55vw,30px)] gap-y-8 min-[420px]:grid-cols-2 lg:grid-cols-4">
+            // Two columns from the smallest phone: one full-width card per row
+            // made this section ~2,450px tall at 390px.
+            <ul className="grid grid-cols-2 gap-x-3 gap-y-5 sm:gap-x-[clamp(14px,1.55vw,30px)] sm:gap-y-8 lg:grid-cols-4">
               {state === "loading"
-                ? [0, 1, 2, 3].map((i) => <li key={i}><ItemCardSkeleton /></li>)
+                ? [0, 1, 2, 3].map((i) => <li key={i} className="min-w-0"><ItemCardSkeleton /></li>)
                 : items.map((item) => (
-                    <li key={item.id}>
-                      <ItemCard item={item} ribbon="New" saved={savedIds.has(item.id)} onToggleSaved={onToggleSaved} />
+                    <li key={item.id} className="min-w-0">
+                      <ItemCard tight item={item} ribbon="New" saved={savedIds.has(item.id)} onToggleSaved={onToggleSaved} />
                     </li>
                   ))}
             </ul>
@@ -143,11 +168,15 @@ function DropFeature() {
           sizes="(min-width: 1024px) 65vw, 100vw"
           className="object-cover object-center"
         />
+        {/* Melts the photo's edge into the green panel instead of a hard
+            seam: the right edge side by side, the bottom edge when stacked. */}
+        <div aria-hidden className="absolute inset-x-0 bottom-0 h-1/4 bg-linear-to-b from-transparent to-dy-forest/70 lg:hidden" />
+        <div aria-hidden className="absolute inset-y-0 right-0 hidden w-1/5 bg-linear-to-r from-transparent to-dy-forest/80 lg:block" />
       </div>
       <div className="flex flex-col justify-center px-[clamp(16px,5.2vw,100px)] py-12 text-white lg:px-[clamp(32px,5.2vw,100px)]">
-        <p className="dy-eyebrow !text-white">This Week&apos;s Find</p>
+        <p className="dy-eyebrow dy-eyebrow--on-dark">The Weekly Drop</p>
         <h2 id="drop-feature-heading" className="dy-h2 mt-4 !text-white">
-          The Drop is where everything <span className="text-dy-orange">happens.</span>
+          The Drop is where everything <span className="text-dy-accent">happens.</span>
         </h2>
         <p className="mt-5 text-[clamp(16px,1.35vw,26px)] leading-[1.32] text-[#c4d3c1]">
           A weekly neighbourhood event. Browse and save during the week. On Saturday, claiming opens.
@@ -167,10 +196,10 @@ const STEPS: Array<{ icon: LucideIcon; title: string; text: string }> = [
 
 function HowItWorks() {
   return (
-    <section aria-labelledby="how-heading" className="dy-section bg-dy-pale">
+    <section aria-labelledby="how-heading" className="dy-section dy-texture-dots bg-dy-pale">
       <div className="dy-wrap text-center">
         <p className="dy-eyebrow">How DropYard Works</p>
-        <h2 id="how-heading" className="dy-h2 mt-4">As simple as a <span className="text-dy-gold">yard sale.</span></h2>
+        <h2 id="how-heading" className="dy-h2 mt-4">As simple as a <span className="text-dy-accent">yard sale.</span></h2>
         <ol className="mt-[clamp(36px,4.2vw,80px)] grid gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-4">
           {STEPS.map(({ icon: Icon, title, text }, i) => (
             <li key={title} className="relative flex flex-col items-center">
@@ -180,7 +209,11 @@ function HowItWorks() {
               <span className="flex h-[clamp(46px,3.65vw,70px)] w-[clamp(46px,3.65vw,70px)] items-center justify-center rounded-full bg-dy-gold text-[clamp(16px,1.35vw,26px)] font-bold text-dy-forest">
                 {String(i + 1).padStart(2, "0")}
               </span>
-              <Icon className="mt-[clamp(20px,2.6vw,50px)] h-[clamp(52px,4.6vw,88px)] w-[clamp(52px,4.6vw,88px)] text-dy-green" strokeWidth={1.4} aria-hidden />
+              {/* Icon tile: a white disc with a soft shadow lifts the line icon
+                  off the pale background. */}
+              <span aria-hidden className="mt-[clamp(20px,2.6vw,50px)] flex h-[clamp(84px,6.9vw,132px)] w-[clamp(84px,6.9vw,132px)] items-center justify-center rounded-full bg-white shadow-(--shadow-card) ring-1 ring-dy-line/70">
+                <Icon className="h-[48%] w-[48%] text-dy-green" strokeWidth={1.75} />
+              </span>
               <h3 className="mt-[clamp(14px,1.5vw,28px)] text-[clamp(24px,1.95vw,38px)] font-semibold text-dy-forest">{title}</h3>
               <p className="dy-body mt-3 max-w-[320px]">{text}</p>
             </li>
@@ -193,7 +226,8 @@ function HowItWorks() {
 
 function GoodStuff() {
   return (
-    <section aria-labelledby="good-stuff-heading" className="bg-dy-pale">
+    // White, not pale: the pale footer follows, and the two ran together.
+    <section aria-labelledby="good-stuff-heading" className="bg-white">
       <div className="grid lg:grid-cols-[60.6%_39.4%]">
         <div className="flex flex-col">
           <div className="relative aspect-[3/2] lg:aspect-auto lg:flex-1 lg:min-h-[clamp(420px,38vw,724px)]">
@@ -215,9 +249,9 @@ function GoodStuff() {
           </p>
         </div>
         <div className="flex flex-col justify-center px-[clamp(16px,5.2vw,100px)] py-12">
-          <p className="dy-eyebrow uppercase">From one home to another</p>
+          <p className="dy-eyebrow">Good for the Neighbourhood</p>
           <h2 id="good-stuff-heading" className="dy-h2 mt-4">
-            Good stuff deserves another <span className="text-dy-gold">home.</span>
+            Good stuff deserves another <span className="text-dy-accent">home.</span>
           </h2>
           <p className="dy-body mt-5">Less waste. Stronger neighbourhoods.<br />Happier homes.</p>
           <div className="mt-[clamp(24px,2.6vw,50px)] flex flex-wrap gap-[14px]">
@@ -251,6 +285,7 @@ export function HomeContent() {
         <NextDropSection
           live={{ state, feedPhase }}
           onDropOpened={reload}
+          neighbourCount={neighbourCount}
         />
       </DropCycleProvider>
       <FeaturedSection items={featured} state={state} savedIds={savedIds} onToggleSaved={toggleSaved} />

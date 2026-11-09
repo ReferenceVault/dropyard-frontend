@@ -1,15 +1,7 @@
 // Shared constants for DropYard
 
 export const CONDITIONS = ["Like New", "Excellent", "Good", "Fair"] as const;
-export const CATEGORIES = [
-  "Furniture",
-  "Electronics",
-  "Sports",
-  "Home",
-  "Clothing",
-  "Books",
-  "Other",
-] as const;
+// Item categories live in lib/categories.ts (mirror of the backend registry).
 
 export const POSTAL_ZONES: Record<
   string,

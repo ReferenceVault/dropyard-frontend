@@ -91,10 +91,17 @@
   --color-dy-green-strong: #33802b;
   --color-dy-orange: #f99605;
   --color-dy-orange-strong: #a35c00;
+  /* Accent words in headings ("look.", "invited."…). A shade deeper than
+     dy-orange so large text clears 3:1 on white, pale and cream (dy-orange
+     itself is ~2.1:1). Decorative orange (rules, ribbons) stays dy-orange. */
+  --color-dy-accent: #d96d00;
   --color-dy-gold: #f4b321;
   --color-dy-pale: #f3f8f3;
   --color-dy-muted: #5f755c;
   --color-dy-line: #d4ddd3;
+  /* "Free" prices — the same red the buyer and seller dashboards use for them
+     (their C.claret). */
+  --color-dy-red: #cc3b2a;
 }
 
 body {
@@ -337,11 +344,31 @@ p {
 .dy-section {
   padding-block: clamp(56px, 6.25vw, 120px);
 }
+/* Section label: one style on every homepage section — uppercase, tracked,
+   with a short orange rule in front (the Early Access design, applied
+   everywhere). orange-strong text keeps 4.5:1 on white, pale and cream; the
+   rule is decoration, so it can use the brighter brand orange. */
 .dy-eyebrow {
-  font-size: clamp(13px, 1.25vw, 24px);
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  color: var(--color-dy-forest);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75em;
+  font-size: clamp(12px, 1.05vw, 20px);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-dy-orange-strong);
+}
+.dy-eyebrow::before {
+  content: "";
+  width: 2.2em;
+  height: 2px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-dy-orange);
+}
+/* On the dark sections (hero photo, forest panel): white text, same rule. */
+.dy-eyebrow--on-dark {
+  color: #ffffff;
 }
 .dy-h1,
 .dy-h2 {
@@ -368,7 +395,7 @@ p {
   gap: 0.5em;
   min-height: clamp(50px, 4.7vw, 90px);
   padding-inline: clamp(20px, 1.9vw, 36px);
-  border-radius: 4px;
+  border-radius: var(--radius-sm); /* 8px: one corner size for every button and input */
   font-size: clamp(15px, 1.25vw, 24px);
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -381,6 +408,9 @@ p {
 .dy-btn--primary {
   background: var(--color-dy-green-strong);
   color: #ffffff;
+  /* A soft green-tinted shadow at rest, so the button sits on the page
+     rather than being painted onto it. Hover deepens it (below). */
+  box-shadow: 0 10px 22px -14px rgba(15, 54, 11, 0.55);
 }
 .dy-btn--primary:hover {
   background: var(--color-green-hover);
@@ -388,7 +418,8 @@ p {
 .dy-btn--light {
   background: #ffffff;
   color: var(--color-dy-forest);
-  box-shadow: 0 16px 32px -20px rgba(15, 54, 11, 0.35);
+  /* Hairline edge so the white button still reads on a white section. */
+  box-shadow: inset 0 0 0 1px var(--color-dy-line), 0 16px 32px -20px rgba(15, 54, 11, 0.35);
 }
 .dy-btn--light:hover {
   background: var(--color-dy-pale);
@@ -477,6 +508,7 @@ p {
   }
   .dy-item:hover {
     transform: translateY(-4px);
+    box-shadow: var(--shadow-lift);
   }
   .dy-item:hover img {
     transform: scale(1.04);
@@ -517,6 +549,50 @@ p {
 .dy-ribbon {
   clip-path: polygon(0 0, 100% 0, calc(100% - 0.75em) 50%, 100% 100%, 0 100%);
 }
+/* ────────────────────────────────────────────────────────────────────────
+   Homepage polish: texture, countdown glow, live pulse, hero drift.
+   All motion lives in the no-preference block further down; with reduced
+   motion these render static (the glow ring stays invisible, the pulse dot
+   is a plain dot, the hero photo doesn't move).
+   ──────────────────────────────────────────────────────────────────────── */
+/* A faint dot grid for large pale sections, so they read as a surface rather
+   than empty space. Layered over whatever background colour the section has. */
+.dy-texture-dots {
+  background-image: radial-gradient(rgba(15, 54, 11, 0.07) 1px, transparent 1.3px);
+  background-size: 22px 22px;
+}
+/* The countdown card's slow "breathing" ring: a pseudo-element, so it never
+   fights the card's own shadow or its hover shadow. */
+.dy-glow {
+  position: relative;
+}
+.dy-glow::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  box-shadow: 0 0 0 4px rgba(58, 142, 49, 0.1);
+  opacity: 0;
+  pointer-events: none;
+}
+/* "Live" dot: the dot itself, plus an expanding ring when motion is allowed. */
+.dy-live-dot {
+  position: relative;
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: #dc2626;
+  flex-shrink: 0;
+}
+.dy-live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  opacity: 0;
+}
 .dy-no-scrollbar {
   scrollbar-width: none;
 }
@@ -548,6 +624,16 @@ p {
   }
   .dy-footer-reveal {
     transition: transform 480ms var(--ease-spring), opacity 360ms var(--ease-out);
+  }
+  .dy-glow::after {
+    animation: dy-glow 4.5s ease-in-out infinite;
+  }
+  .dy-live-dot::after {
+    animation: dy-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  /* The hero photo drifts in very slightly over 20s, once, then holds. */
+  .dy-hero-drift {
+    animation: dy-hero-drift 20s var(--ease-out) both;
   }
 }
 /* Discover's closing reminder strip (BottomReveal): docked at the foot of the
@@ -588,4 +674,16 @@ p {
 }
 @keyframes dy-tick {
   from { opacity: 0.2; transform: translateY(-0.12em); }
+}
+@keyframes dy-glow {
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 1; }
+}
+@keyframes dy-ping {
+  0%        { opacity: 0.55; transform: scale(1); }
+  80%, 100% { opacity: 0;    transform: scale(2.6); }
+}
+@keyframes dy-hero-drift {
+  from { transform: scale(1.06); }
+  to   { transform: scale(1); }
 }
