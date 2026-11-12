@@ -24,6 +24,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, X, ZoomIn, ZoomOut, ImageOff } from "lucide-react";
 import { ModalA11y } from "@/components/ModalA11y";
+import { Z } from "@/lib/layers";
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 4;
@@ -264,7 +265,7 @@ function PhotoViewer({ photos, title, index, onIndex, failed, onFail, onClose }:
   const pct = Math.round(scale * 100);
 
   return createPortal(
-    <div className="fixed inset-0 z-[300] flex flex-col bg-slate-950">
+    <div className="fixed inset-0 flex flex-col bg-slate-950" style={{ zIndex: Z.modal }}>
       <ModalA11y label={`${title} — photo ${index + 1} of ${count}`} onClose={onClose}/>
       {/* Top bar: counter · zoom · close */}
       <div className="relative z-[2] flex items-center justify-between gap-3 px-3 py-3 sm:px-5">

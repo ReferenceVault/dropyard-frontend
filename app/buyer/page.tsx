@@ -7,6 +7,7 @@ import DropYardBuyerDashboard from "@/components/previews/DropYard_BuyerDashboar
 import { EmailVerifyBanner } from "@/components/EmailVerifyBanner";
 import { DashboardProvider, useDashboard } from "@/context/DashboardContext";
 import { DropCycleProvider } from "@/context/DropCycleContext";
+import { NotificationsProvider } from "@/context/NotificationsContext";
 import { useAuth, type AuthUser } from "@/context/AuthContext";
 import { useSocketEvent } from "@/context/SocketContext";
 import { apiRequest } from "@/lib/api";
@@ -61,7 +62,13 @@ function BuyerDashboardContent() {
       </div>
     );
   }
-  return <AuthedBuyerContent />;
+  // Both dashboards read unread counts and the bell from here, and it keeps
+  // listening while you switch between them (see NotificationsContext).
+  return (
+    <NotificationsProvider>
+      <AuthedBuyerContent />
+    </NotificationsProvider>
+  );
 }
 
 function AuthedBuyerContent() {

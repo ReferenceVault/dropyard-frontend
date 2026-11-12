@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { DIALOG_PANEL } from "@/lib/layers";
 import { Loader2, Minus, Plus, RotateCcw, X } from "lucide-react";
 import { ModalA11y } from "@/components/ModalA11y";
 import { T } from "./profileTheme";
@@ -239,7 +240,7 @@ export function AvatarCropper({ file, onCancel, onSave, onChooseAnother, saving,
 
   return createPortal(
     <div style={T.overlay} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}>
-      <div style={{ ...T.dialog, maxWidth: 440 }}>
+      <div className={DIALOG_PANEL} style={{ ...T.dialog, maxWidth: 440 }}>
         <ModalA11y label="Adjust your profile picture" onClose={busy ? null : onCancel} />
         <div style={T.dialogHead}>
           <h2 style={T.dialogTitle}>Adjust your photo</h2>
@@ -316,7 +317,7 @@ export function AvatarCropper({ file, onCancel, onSave, onChooseAnother, saving,
 
         {shownError && <p role="alert" style={{ ...T.error, marginTop: 14 }}>{shownError}</p>}
 
-        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 18 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 10, paddingTop: 18, ...T.dialogFoot }}>
           <button type="button" onClick={onChooseAnother} disabled={busy} style={T.linkButton}>Choose a different photo</button>
           <div style={{ display: "flex", gap: 8, marginLeft: "auto" }}>
             <button type="button" onClick={onCancel} disabled={busy} style={T.secondaryButton}>Cancel</button>

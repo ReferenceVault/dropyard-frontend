@@ -6,6 +6,7 @@ import { AlertTriangle, Loader2, Trash2, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiRequest } from "@/lib/api";
 import { ModalA11y } from "@/components/ModalA11y";
+import { Z, DIALOG_PANEL, dialogHead, dialogFoot } from "@/lib/layers";
 
 // The dashboards inject an unlayered `* { margin: 0; padding: 0 }`, which
 // outranks Tailwind's layered spacing utilities, so spacing here is inline.
@@ -99,15 +100,16 @@ function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-1000 flex items-end sm:items-center justify-center bg-black/45"
+      className="fixed inset-0 flex items-end sm:items-center justify-center bg-black/45"
+      style={{ zIndex: Z.modal }}
       onClick={(e) => { if (e.target === e.currentTarget) close(); }}
     >
       <ModalA11y label="Delete your DropYard account" onClose={close} />
       <form
         onSubmit={handleSubmit}
-        className="w-full sm:max-w-120 max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl"
+        className={"w-full sm:max-w-120 rounded-t-2xl sm:rounded-2xl bg-white shadow-2xl " + DIALOG_PANEL}
       >
-        <header className="flex items-start gap-3" style={{ padding: `20px ${DIALOG_X}px 12px` }}>
+        <header className="flex items-start gap-3" style={{ ...dialogHead(0), padding: `20px ${DIALOG_X}px 12px` }}>
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-rose-50 text-rose-600 ring-1 ring-rose-200 shrink-0">
             <AlertTriangle size={17} aria-hidden="true" />
           </span>
@@ -168,7 +170,7 @@ function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        <footer style={{ padding: `16px ${DIALOG_X}px` }} className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 border-t border-[#EDE8E0]">
+        <footer style={{ ...dialogFoot(0), padding: `16px ${DIALOG_X}px` }} className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2.5 border-t border-[#EDE8E0]">
           <button
             type="button"
             onClick={close}

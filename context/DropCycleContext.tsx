@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import {
   getDropCycleInfo,
   formatDropDate,
@@ -53,13 +53,18 @@ export function DropCycleProvider({ children }: { children: React.ReactNode }) {
   const setSimulatedDate = useCallback((d: Date | null) => {
     setSimulatedDateState(d);
   }, []);
+  // Set while a ?simulate= date is on its way in (the effect below), so the
+  // clock doesn't first run on today's time for a render: everything driven
+  // by it (the live Drop section, the Shelf) would flip to today and back,
+  // and a screen reader would hear the change.
+  const simulatePending = useRef(false);
 
   // Dev-only: ?simulate=<ISO datetime> pins the clock so a phase can be
   // tested without waiting for it or changing the machine's date. The phase
   // is computed client-side from this value, so it drives the whole UI —
   // the Drop banner, the seller publish options, the countdown.
   //
-  //   /buyer?simulate=2026-10-10T13:00    → LIVE  (Sat 08:00–Sun 20:00)
+  //   /buyer?simulate=2026-10-10T13:00    → LIVE  (Sat 08:00–Sun 19:00)
   //   /buyer?simulate=2026-10-09T22:00    → PREVIEW
   //
   // Ignored in production builds so a crafted URL can't shift what a real
@@ -75,6 +80,7 @@ export function DropCycleProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     console.info(`[DropCycle] simulating ${parsed.toISOString()}`);
+    simulatePending.current = true;
     setSimulatedDateState(parsed);
   }, []);
 
@@ -87,12 +93,14 @@ export function DropCycleProvider({ children }: { children: React.ReactNode }) {
   // simulated start, so one second of yours is one second of its.
   useEffect(() => {
     if (simulatedDate) {
+      simulatePending.current = false;
       const simStart  = simulatedDate.getTime();
       const realStart = Date.now();
       setNow(new Date(simStart));
       const id = setInterval(() => setNow(new Date(simStart + (Date.now() - realStart))), 1000);
       return () => clearInterval(id);
     }
+    if (simulatePending.current) return;
     setNow(new Date());
     const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);

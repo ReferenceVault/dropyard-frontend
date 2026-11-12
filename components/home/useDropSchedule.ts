@@ -13,12 +13,16 @@ interface CurrentDrop {
   liveItemCount?: number;
   liveSellerCount?: number;
   claimCount?: number;
+  claimedItemCount?: number;
 }
 
 /** What buyers can see in the current Drop, as counted by the backend. */
 export interface LiveDropStats {
+  /** Drop items still available to claim (Shelf items not included). */
   items: number;
-  claims: number;
+  /** Distinct Drop items with an accepted or completed claim. */
+  claimed: number;
+  /** Neighbours with items available in this Drop. */
   sellers: number;
 }
 
@@ -55,7 +59,7 @@ export function useDropSchedule() {
 
   const load = useCallback(() => {
     apiRequest<CurrentDrop>("/api/drop/current", { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
-      .then(({ drop, now, liveItemCount, liveSellerCount, claimCount }) => {
+      .then(({ drop, now, liveItemCount, liveSellerCount, claimedItemCount }) => {
         setSchedule({
           liveStart:   new Date(drop.liveStart).getTime(),
           closedStart: new Date(drop.closedStart).getTime(),
@@ -63,8 +67,8 @@ export function useDropSchedule() {
           skewMs:      new Date(now).getTime() - Date.now(),
         });
         // Only real figures: an older backend without them leaves the card on "--".
-        if ([liveItemCount, liveSellerCount, claimCount].every((n) => typeof n === "number")) {
-          setLiveStats({ items: liveItemCount!, claims: claimCount!, sellers: liveSellerCount! });
+        if ([liveItemCount, liveSellerCount, claimedItemCount].every((n) => typeof n === "number")) {
+          setLiveStats({ items: liveItemCount!, claimed: claimedItemCount!, sellers: liveSellerCount! });
         }
       })
       // The local schedule stands in. Any figures already shown were real, so they stay.
@@ -108,8 +112,13 @@ export function useDropSchedule() {
     status,
     now,
     opensAt:   active && nowMs < active.liveStart ? new Date(active.liveStart) : upcomingOpening(now),
+    /** When the current (or most recent) Drop opened — the live card's start. */
+    startedAt: active ? new Date(active.liveStart) : nextDropMoment(now),
     closesAt:  active ? new Date(active.closedStart) : dropCloseMoment(now),
     simulated: !!simulatedDate,
     liveStats,
   };
 }
+
+/** One reading of the schedule, for sections that must switch together. */
+export type DropSchedule = ReturnType<typeof useDropSchedule>;

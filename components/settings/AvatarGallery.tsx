@@ -2,6 +2,7 @@
 
 import React, { useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { DIALOG_PANEL } from "@/lib/layers";
 import { Check, Loader2, X } from "lucide-react";
 import { ModalA11y } from "@/components/ModalA11y";
 import type { AvatarPreset } from "@/lib/avatar";
@@ -46,7 +47,7 @@ export function AvatarGallery({ presets, loading, loadError, currentId, onCancel
 
   return createPortal(
     <div style={T.overlay} onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) onCancel(); }}>
-      <div style={{ ...T.dialog, maxWidth: 560 }}>
+      <div className={DIALOG_PANEL} style={{ ...T.dialog, maxWidth: 560 }}>
         <ModalA11y label="Choose an avatar" onClose={saving ? null : onCancel} />
         <div style={T.dialogHead}>
           <h2 style={T.dialogTitle}>Choose an avatar</h2>
@@ -107,7 +108,7 @@ export function AvatarGallery({ presets, loading, loadError, currentId, onCancel
         </p>
         {error && <p role="alert" style={{ ...T.error, marginTop: 8 }}>{error}</p>}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 14, ...T.dialogFoot }}>
           <button type="button" onClick={onCancel} disabled={saving} style={T.secondaryButton}>Cancel</button>
           <button type="button" onClick={() => selected && onSave(selected)} disabled={unchanged || saving} style={T.primaryButton(unchanged || saving)}>
             {saving && <Loader2 size={14} className="animate-spin" aria-hidden />}

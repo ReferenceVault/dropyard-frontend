@@ -4,12 +4,28 @@ import { useState, useEffect, useRef, useMemo, useCallback, useId } from "react"
 import Link from "next/link";
 import { apiRequest, uploadItemPhoto } from "@/lib/api";
 import { useSocket, useSocketEvent } from "@/context/SocketContext";
+import { useNotifications, useRoleConversations } from "@/context/NotificationsContext";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { ModalA11y } from "@/components/ModalA11y";
+import { ModalPortal } from "@/components/ModalPortal";
+import { Z, DIALOG_PANEL, dialogHead, dialogFoot } from "@/lib/layers";
 import DeleteAccountSection from "@/components/settings/DeleteAccountSection";
 import ProfilePictureSection from "@/components/settings/ProfilePictureSection";
 import { UserAvatar } from "@/components/UserAvatar";
+import { shortName } from "@/lib/avatar";
+import { MessagesInboxHeader, tabDomId } from "@/components/messages/MessagesInboxHeader";
+import { ThreadRow } from "@/components/messages/ThreadRow";
+import { ClaimStatusPill } from "@/components/messages/ClaimStatusPill";
+import { OfferBanner } from "@/components/messages/OfferBanner";
+import { MessageRow, DateSeparator } from "@/components/messages/MessageRow";
+import { ThreadMenu } from "@/components/messages/ThreadMenu";
+import { ReportDialog } from "@/components/messages/ReportDialog";
+import { useThreadAutoScroll, NewMessagesPill } from "@/components/messages/useThreadAutoScroll";
+import { ThreadEmptyState, matchesOpenTarget, conversationFromUrl } from "@/components/messages/ThreadEmptyState";
+import { claimPill, isLiveClaim } from "@/components/messages/claimStatus";
+import { inboxTime, messageTime, previewText, withDaySeparators } from "@/components/messages/format";
 import { CategorySelect } from "@/components/CategorySelect";
 import { CATEGORIES, categoryFor, categoryLabel, categoryEmoji, categoryValueFromLabel } from "@/lib/categories";
 import { useAuth } from "@/context/AuthContext";
@@ -38,14 +54,14 @@ import {
   serviceAreaForPostalCode,
 } from "@/lib/barrhaven";
 import {
-  Camera, X, Check, CheckCheck, ChevronRight, ChevronLeft, ChevronDown, ChevronUp, Sparkles, Zap,
+  Camera, X, Check, ChevronRight, ChevronLeft, ChevronDown, Sparkles, Zap,
   MessageCircle, Package, Eye, EyeOff, ArrowRight, User, Clock, Calendar,
   CheckCircle, MapPin, LayoutGrid, Box, DollarSign, ClipboardList,
   MessageSquare, Plus, Truck, History, ArrowLeft, Shield, Tag, TrendingDown,
   Home, Heart, Users, Mail, Phone, Info, Lock, CreditCard, Banknote, Upload, RefreshCw,
   Star, Settings, BarChart3, Bell, Award, Leaf, Send, Share2, AlertCircle,
   Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag, Archive,
-  Paperclip, Smile
+  Paperclip, Smile, Flag, ExternalLink
 } from "lucide-react";
 
 /* ============================================================
@@ -375,7 +391,7 @@ function StatusBadge({ status, size = "sm", label }) {
 
 // Magical Seller/Buyer toggle: animated sliding pill with gradient, icons,
 // glow, and a brief switching feedback before the dashboard actually flips.
-function RoleToggle({ onSwitchToBuyer }) {
+function RoleToggle({ onSwitchToBuyer, buyerUnread = 0 }) {
   const [switching, setSwitching] = useState(false);
   const [hoverBuyer, setHoverBuyer] = useState(false);
 
@@ -451,6 +467,7 @@ function RoleToggle({ onSwitchToBuyer }) {
         onMouseEnter={() => setHoverBuyer(true)}
         onMouseLeave={() => setHoverBuyer(false)}
         disabled={switching}
+        aria-label={buyerUnread > 0 ? "Switch to Buyer" + buyerUnreadLabel(buyerUnread) : undefined}
         style={{
           flex: 1,
           padding: "9px 0",
@@ -471,6 +488,7 @@ function RoleToggle({ onSwitchToBuyer }) {
       >
         <ShoppingBag size={13} strokeWidth={2.6}/>
         Buyer
+        <SwitchUnreadTag unread={buyerUnread} top={-2} right={4}/>
       </button>
     </div>
   );
@@ -481,15 +499,39 @@ function RoleToggle({ onSwitchToBuyer }) {
 // desktop sidebar; mobile users need an equivalent affordance because the
 // sidebar is hidden. Mirrors the buyer dashboard's compact SwitchToSellerButton
 // in shape, swapped to the buyer-side green tint.
-function SwitchToBuyerButton({ onClick }) {
+// `unread` = buyer-side conversations with unread messages, so a message to
+// the side you aren't looking at still shows.
+function buyerUnreadLabel(unread) {
+  return unread > 0 ? `, ${unread} unread buyer conversation${unread === 1 ? "" : "s"}` : "";
+}
+// Envelope count pinned to a switch control's corner; the same tag as the
+// Messages tab's. Decorative: the control's own label carries the count.
+function SwitchUnreadTag({ unread, top = -7, right = -7 }) {
+  if (!(unread > 0)) return null;
+  return (
+    <span aria-hidden="true" style={{
+      position: "absolute", top, right,
+      display: "inline-flex", alignItems: "center", gap: 3,
+      padding: "2px 6px", borderRadius: 999,
+      background: C.green, color: "#fff",
+      boxShadow: "0 0 0 2px " + C.paper,
+      fontFamily: F.head, fontSize: 10, fontWeight: 800, lineHeight: 1.2,
+      pointerEvents: "none", zIndex: 2,
+    }}>
+      <Mail size={11} strokeWidth={2.4}/>
+      {unread > 99 ? "99+" : unread}
+    </span>
+  );
+}
+function SwitchToBuyerButton({ onClick, unread = 0 }) {
   const [hover, setHover] = useState(false);
   return (
     <button
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      aria-label="Switch to Buyer"
-      title="Switch to Buyer"
+      aria-label={"Switch to Buyer" + buyerUnreadLabel(unread)}
+      title={"Switch to Buyer" + buyerUnreadLabel(unread)}
       style={{
         position: "relative",
         display: "inline-flex",
@@ -522,6 +564,7 @@ function SwitchToBuyerButton({ onClick }) {
       }}>
         <ShoppingBag size={13} style={{ color: hover ? "#fff" : C.greenDeep }} strokeWidth={2.6}/>
       </span>
+      <SwitchUnreadTag unread={unread}/>
     </button>
   );
 }
@@ -783,11 +826,16 @@ function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPendi
               </button>
             );
           }
+          // The count is drawn as a bare number; say what it counts.
+          const countLabel = !item.badge ? ""
+            : item.id === "messages" ? ", " + item.badge + " unread conversation" + (item.badge === 1 ? "" : "s")
+            : item.id === "items" ? ", " + item.badge + " unanswered question" + (item.badge === 1 ? "" : "s")
+            : "";
           return (
             <button
               key={item.id}
               onClick={() => onNav(item.id)}
-              aria-label={item.label}
+              aria-label={item.label + countLabel}
               aria-current={active ? "page" : undefined}
               style={{
                 position: "relative",
@@ -832,7 +880,7 @@ function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPendi
 // `aiPlan` was only ever read to decide whether to show the "3/5" pill, so it
 // leaves with it. AIPlanView still takes it — that view is where a real plan
 // state would belong.
-function Sidebar({ activeView, onNav, onSwitchRole, collapsed = false, messagesUnread = 0, questionsPending = 0 }) {
+function Sidebar({ activeView, onNav, onSwitchRole, collapsed = false, messagesUnread = 0, questionsPending = 0, otherUnread = 0 }) {
   const sections = [
     { header: "ACTIVITY", items: [
       { id: "overview",  label: "Overview",  icon: LayoutGrid },
@@ -883,7 +931,7 @@ function Sidebar({ activeView, onNav, onSwitchRole, collapsed = false, messagesU
       {/* Role switcher — hidden in collapsed mode (no meaningful icon-only form) */}
       {!collapsed && (
         <div style={{ padding: "14px 14px 0 14px" }}>
-          <RoleToggle onSwitchToBuyer={onSwitchRole}/>
+          <RoleToggle onSwitchToBuyer={onSwitchRole} buyerUnread={otherUnread}/>
         </div>
       )}
 
@@ -1032,10 +1080,15 @@ function Sidebar({ activeView, onNav, onSwitchRole, collapsed = false, messagesU
 // Avatar with dropdown menu - real user initials and sign-out.
 function SellerUserMenu({ user, onSignout, onOpenSettings }) {
   const [open, setOpen] = useState(false);
+  // The sign-out dialog hands focus back to whatever had it when it opened.
+  // The menu item that opens it disappears with the menu, so focus moves to
+  // the account button first and Esc / "Stay" land back there.
+  const buttonRef = useRef(null);
   const displayName = user?.name || "Guest";
   return (
     <div style={{ position: "relative" }}>
       <button
+        ref={buttonRef}
         onClick={() => setOpen(o => !o)}
         title={displayName}
         aria-label={"Account menu" + (user?.name ? " for " + user.name : "")}
@@ -1079,7 +1132,7 @@ function SellerUserMenu({ user, onSignout, onOpenSettings }) {
               </p>
             </div>
             <button
-              onClick={() => { setOpen(false); onSignout && onSignout(); }}
+              onClick={() => { setOpen(false); buttonRef.current?.focus(); onSignout && onSignout(); }}
               style={{
                 width: "100%", display: "flex", alignItems: "center", gap: 10,
                 padding: "12px 16px", border: "none", background: "transparent",
@@ -1114,18 +1167,7 @@ function labelForView(view) {
   return (view || "").charAt(0).toUpperCase() + (view || "").slice(1).replace(/-/g, " ");
 }
 
-function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, onSwitchRole, messagesUnread = 0, questionsPending = 0, onOpenMessages = null, onOpenQuestions = null }) {
-  // The bell counts everything waiting on the seller, not just messages.
-  // Clicking goes wherever the work actually is: questions when those are
-  // the only thing outstanding, the inbox otherwise.
-  const bellCount = messagesUnread + questionsPending;
-  const bellTarget = messagesUnread === 0 && questionsPending > 0 ? onOpenQuestions : onOpenMessages;
-  const bellTitle = bellCount === 0
-    ? "Notifications"
-    : [
-        messagesUnread > 0 ? messagesUnread + " unread message" + (messagesUnread === 1 ? "" : "s") : null,
-        questionsPending > 0 ? questionsPending + " unanswered question" + (questionsPending === 1 ? "" : "s") : null,
-      ].filter(Boolean).join(" · ");
+function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, onSwitchRole, otherUnread = 0 }) {
   // No `useViewport()` here on purpose — layout flips between mobile/desktop
   // happen entirely via CSS media queries on the `.dy-seller-topnav*` classes
   // defined in globals.css. Gating layout on a JS hook produced a first-paint
@@ -1196,28 +1238,12 @@ function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, 
         {/* Switch to Buyer: shown only on mobile; desktop has the RoleToggle in the sidebar. */}
         {onSwitchRole && (
           <span className="dy-mobile-only" style={{ display: "inline-flex" }}>
-            <SwitchToBuyerButton onClick={() => onSwitchRole()}/>
+            <SwitchToBuyerButton onClick={() => onSwitchRole()} unread={otherUnread}/>
           </span>
         )}
-        <button
-          title={bellTitle}
-          aria-label={bellTitle}
-          className="dy-seller-topnav__bell"
-          onClick={() => bellTarget && bellTarget()}
-          onMouseEnter={e => { e.currentTarget.style.background = C.sand; }}
-          onMouseLeave={e => { e.currentTarget.style.background = C.paper; }}>
-          <Bell size={16} style={{ color: C.mink }} strokeWidth={2.2}/>
-          {bellCount > 0 ? (
-            <span style={{
-              position: "absolute", top: 4, right: 4,
-              minWidth: 16, height: 16, padding: "0 4px",
-              borderRadius: 999, background: C.claret, color: "#fff",
-              fontFamily: F.head, fontSize: 9, fontWeight: 800,
-              display: "inline-flex", alignItems: "center", justifyContent: "center",
-              border: "2px solid " + C.paper,
-            }}>{bellCount > 99 ? "99+" : bellCount}</span>
-          ) : null}
-        </button>
+        {/* Everything waiting on BOTH sides: unread conversations and claim,
+            offer, pickup and question events. See NotificationBell. */}
+        <NotificationBell/>
         {/* BUG-064 — socket health pulse for at-a-glance real-time status. */}
         <SocketHealthDot />
         <SellerUserMenu user={user} onSignout={onSignout} onOpenSettings={onOpenSettings}/>
@@ -2190,27 +2216,27 @@ function ShareSheet({ items, onClose }) {
   ];
 
   return (
+    <ModalPortal>
     <div
       onClick={onClose}
       style={{
         position: "fixed", inset: 0,
         background: "rgba(31, 29, 25, 0.5)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 100, padding: isMobile ? 12 : 24,
+        zIndex: Z.modal, padding: isMobile ? 12 : 24,
         backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
       }}
     >
       <ModalA11y label="Share your listings" onClose={onClose}/>
       <div
         onClick={(e) => e.stopPropagation()}
-        className="fade-in"
+        className={"fade-in " + DIALOG_PANEL}
         style={{
           width: 520, maxWidth: "100%",
           borderRadius: 24,
           background: C.paper,
           boxShadow: "0 20px 48px rgba(31,29,25,0.14), 0 8px 16px rgba(31,29,25,0.08)",
-          overflow: "hidden",
-          maxHeight: "90vh", display: "flex", flexDirection: "column",
+          display: "flex", flexDirection: "column",
         }}
       >
         {/* Header */}
@@ -2292,6 +2318,7 @@ function ShareSheet({ items, onClose }) {
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
@@ -2303,7 +2330,7 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
   const now = cycle.effectiveNow || new Date();
   const dropPhase = toSellerOverviewPhase(cycle, now);                 // "between" | "live" | "closing"
   const nextDropAt = nextDropMoment(now);                              // Saturday 8 am
-  const dropCloseAt = dropCloseMoment(now);                            // Sunday 8 pm
+  const dropCloseAt = dropCloseMoment(now);                            // Sunday 7 pm
   const countdownToOpen  = formatCompactCountdown(nextDropAt, now);    // e.g. "2d 14h"
   const countdownToClose = formatCompactCountdown(dropCloseAt, now);   // e.g. "4h 23m"
   const isFreshRecap = dropPhase === "between" && hoursSinceLastDropClose(now) < 30;
@@ -2799,8 +2826,9 @@ function UpgradeToProModal({ onClose, onSuccess }) {
 
   if (done) {
     return (
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: isMobile ? 16 : 24, backdropFilter: "blur(4px)" }}>
-        <div onClick={e => e.stopPropagation()} className="fade-in" style={{ width: 440, maxWidth: "100%", borderRadius: 24, background: C.paper, padding: isMobile ? 26 : 36, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)", textAlign: "center" }}>
+      <ModalPortal>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: isMobile ? 16 : 24, backdropFilter: "blur(4px)" }}>
+        <div onClick={e => e.stopPropagation()} className={"fade-in " + DIALOG_PANEL} style={{ width: 440, maxWidth: "100%", borderRadius: 24, background: C.paper, padding: isMobile ? 26 : 36, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)", textAlign: "center" }}>
           <div style={{ width: 64, height: 64, borderRadius: 20, background: C.greenMist, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
             <CheckCircle size={32} style={{ color: C.greenDeep }} strokeWidth={2.4}/>
           </div>
@@ -2808,14 +2836,16 @@ function UpgradeToProModal({ onClose, onSuccess }) {
           <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.mink, lineHeight: 1.6 }}>Your Pro features are now active. Unlimited AI listings, full negotiation, and priority processing — all yours.</p>
         </div>
       </div>
+      </ModalPortal>
     );
   }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 200, padding: 24, backdropFilter: "blur(4px)", overflowY: "auto" }}>
-      <div onClick={e => e.stopPropagation()} className="fade-in" style={{ width: "100%", maxWidth: 480, borderRadius: 24, background: C.paper, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)", overflow: "hidden", marginTop: 40, marginBottom: 40 }}>
-        {/* Header — brand violet/AI gradient */}
-        <div style={{ padding: "22px 26px", background: "linear-gradient(135deg, " + C.ai + ", #6D28D9)", color: "#fff", position: "relative" }}>
+    <ModalPortal>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: 24, backdropFilter: "blur(4px)" }}>
+      <div onClick={e => e.stopPropagation()} className={"fade-in " + DIALOG_PANEL} style={{ width: "100%", maxWidth: 480, borderRadius: 24, background: C.paper, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
+        {/* Header — brand violet/AI gradient; stays at the top while the form scrolls. */}
+        <div style={{ ...dialogHead(0), padding: "22px 26px", background: "linear-gradient(135deg, " + C.ai + ", #6D28D9)", color: "#fff" }}>
           <button onClick={onClose} style={{ position: "absolute", top: 14, right: 14, width: 30, height: 30, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.18)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <X size={14} style={{ color: "#fff" }}/>
           </button>
@@ -2863,7 +2893,8 @@ function UpgradeToProModal({ onClose, onSuccess }) {
             <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>Encrypted in transit. We never see or store your card details — they're tokenized by our payment processor.</p>
           </div>
 
-          {/* CTA */}
+          {/* CTA — kept in view at the bottom of the panel. */}
+          <div style={{ paddingTop: 2, ...dialogFoot(isMobile ? 18 : 22) }}>
           <button onClick={handleSubmit} disabled={!valid || submitting} className="cta-primary" style={{
             width: "100%", padding: "14px 0", borderRadius: 999, border: "none",
             cursor: !valid || submitting ? "not-allowed" : "pointer",
@@ -2886,9 +2917,11 @@ function UpgradeToProModal({ onClose, onSuccess }) {
           </button>
           <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
           <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash, marginTop: 10, textAlign: "center", lineHeight: 1.5 }}>By subscribing, you agree to our Terms. Cancel anytime — Pro features remain active until the end of your billing period.</p>
+          </div>
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
@@ -3989,7 +4022,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
                 {pickupMode === "anytime" && (
                   <div style={{ padding: "10px 12px", borderRadius: 10, background: C.sand, border: "1px solid " + C.fawn, marginBottom: 14, display: "flex", alignItems: "flex-start", gap: 8 }}>
                     <Info size={13} style={{ color: C.mink, flexShrink: 0, marginTop: 1 }}/>
-                    <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>Buyers can request any day. You'll confirm via WhatsApp before the pickup is scheduled.</p>
+                    <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>Buyers can request any day. You'll agree a time with the buyer in Messages before the pickup is scheduled.</p>
                   </div>
                 )}
 
@@ -4573,7 +4606,7 @@ function OrdersView({ onNav, accessToken = null, onClaimsChanged = null }) {
 }
 
 // Closing-time banner — replaces the standard Drop strip when the live Drop is
-// within the closing threshold (≤3h to Sun 8pm). Surfaces bulk-discount presets
+// within the closing threshold (≤3h to Sun 7pm). Surfaces bulk-discount presets
 // + custom % so the seller can lower all unsold prices in one tap.
 function ClosingTimeBanner({ counts, onDiscount }) {
   const { isMobile } = useViewport();
@@ -5539,27 +5572,27 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       {/* Publish chooser — seller picks Drop (curated spotlight) vs Shelf (sell now).
           During Live phase, the Drop path is disabled — curation already closed. */}
       {publishChooserItem && (
+        <ModalPortal>
         <div
           onClick={() => setPublishChooserItem(null)}
           style={{
             position: "fixed", inset: 0,
             background: "rgba(31, 29, 25, 0.5)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            zIndex: 100, padding: isMobile ? 16 : 24,
+            zIndex: Z.modal, padding: isMobile ? 16 : 24,
             backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
           }}
         >
           <ModalA11y label="Choose where to publish" onClose={() => setPublishChooserItem(null)}/>
           <div
             onClick={e => e.stopPropagation()}
-            className="fade-in"
+            className={"fade-in " + DIALOG_PANEL}
             style={{
               width: 500, maxWidth: "100%",
               borderRadius: 24,
               background: C.paper,
               boxShadow: "0 24px 60px rgba(31, 29, 25, 0.25)",
-              overflow: "hidden",
-              maxHeight: "90vh", display: "flex", flexDirection: "column",
+              display: "flex", flexDirection: "column",
             }}
           >
             <div style={{ padding: "18px 24px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
@@ -5672,30 +5705,31 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* Delete-draft confirmation — destructive, can't be undone */}
       {confirmDelete && (
+        <ModalPortal>
         <div
           onClick={() => setConfirmDelete(null)}
           style={{
             position: "fixed", inset: 0,
             background: "rgba(31, 29, 25, 0.5)",
             display: "flex", alignItems: "center", justifyContent: "center",
-            zIndex: 100, padding: isMobile ? 16 : 24,
+            zIndex: Z.modal, padding: isMobile ? 16 : 24,
             backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
           }}
         >
           <ModalA11y label="Delete this draft" onClose={() => setConfirmDelete(null)}/>
           <div
             onClick={e => e.stopPropagation()}
-            className="fade-in"
+            className={"fade-in " + DIALOG_PANEL}
             style={{
               width: 460, maxWidth: "100%",
               borderRadius: 24,
               background: C.paper,
               boxShadow: "0 24px 60px rgba(31, 29, 25, 0.25)",
-              overflow: "hidden",
             }}
           >
             <div style={{ padding: "18px 24px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
@@ -5783,6 +5817,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );
@@ -5918,33 +5953,8 @@ function ConversationItemThumb({ item, size, emojiSize }) {
   );
 }
 
-// ─── Read receipts ──────────────────────────────────────────────────────────
-// Mirror of the buyer dashboard's ReadTicks. The server records how far each
-// side has read and pushes `conversation:read` to the other party, so "seen"
-// is a comparison between a message's createdAt and the buyer's cursor.
-//
-// Two states, not WhatsApp's three: one grey tick means the server has it,
-// two blue ticks mean the buyer has opened the thread since. Nothing here
-// tracks delivery to a device, so there is no grey double-tick to claim it.
-const SEEN_BLUE = "#2F6FB3";
-function ReadTicks({ sentAt, otherLastReadAt }) {
-  if (!sentAt) return null;
-  const sent = new Date(sentAt).getTime();
-  const read = otherLastReadAt ? new Date(otherLastReadAt).getTime() : 0;
-  const seen = Number.isFinite(sent) && read >= sent;
-  return (
-    <span
-      role="img"
-      title={seen ? "Seen" : "Sent"}
-      aria-label={seen ? "Seen" : "Sent"}
-      style={{ display: "inline-flex", alignItems: "center", marginLeft: 4, verticalAlign: "middle" }}
-    >
-      {seen
-        ? <CheckCheck size={13} strokeWidth={2.6} style={{ color: SEEN_BLUE }}/>
-        : <Check size={13} strokeWidth={2.6} style={{ color: C.ash }}/>}
-    </span>
-  );
-}
+// Read receipts, the date separators and the bubbles now live in
+// components/messages/ (MessageRow), shared with the buyer dashboard.
 
 function adaptSellerConversation(api, myId) {
   if (!api) return null;
@@ -5959,12 +5969,18 @@ function adaptSellerConversation(api, myId) {
     : (lastFromMe ? "answered" : "pending");
   return {
     id:     api.id,
+    itemId: api.itemId || api.item?.id || null,
     type:   "question",
     status,
     unread: (api.unreadCount || 0) > 0,
     unreadCount: api.unreadCount || 0,
     group:  "active",
+    // "Needs reply": the buyer wrote last and nobody has answered, read or
+    // not. A claim NOTICE isn't someone writing, so it never counts; the
+    // claim pill tells that part of the story.
+    needsReply: !!api.lastMessage && !lastFromMe && api.lastMessage.messageType !== "NOTICE",
     item: {
+      id:    api.item?.id || api.itemId || null,
       title: api.item?.title || "Item",
       price: api.item?.price ?? 0,
       // The thread showed a category emoji for every item, however many
@@ -5981,6 +5997,7 @@ function adaptSellerConversation(api, myId) {
       status: api.item?.status || null,
     },
     buyer: {
+      id:     api.otherUser?.id || api.buyerId || null,
       name:   api.otherUser?.name || "Buyer",
       hood:   api.otherUser?.neighborhood || "—",
       avatar: api.otherUser?.avatar || null,
@@ -5992,8 +6009,10 @@ function adaptSellerConversation(api, myId) {
     // How far the buyer has read — the basis of the read ticks on my own
     // messages. Any message I sent at or before this moment has been seen.
     otherLastReadAt: api.otherLastReadAt || null,
-    lastMsg:  api.lastMessage?.body || "",
+    lastMsg:  previewText(api.lastMessage),
     lastTime: relativeTimeShort(api.lastMessageAt),
+    // Raw timestamp for the inbox's own time label ("5m", "Yesterday").
+    lastMessageAt: api.lastMessageAt || null,
     messages: [],
   };
 }
@@ -6330,7 +6349,7 @@ const DEMO_SELLER_CONVERSATIONS = [
       messages: [
         { from: "buyer", text: "I'd like to claim the dining set at $350.", time: "Wed, 3:00 PM", type: "claim" },
         { from: "ai", text: "Full price claim accepted automatically. Pickup scheduling sent to Sarah M.", time: "Wed, 3:00 PM", type: "text" },
-        { from: "system", text: "WhatsApp confirmation sent.", time: "Wed, 3:01 PM", type: "whatsapp" },
+        { from: "system", text: "Claim accepted. Arrange the pickup here.", time: "Wed, 3:01 PM", type: "notice" },
         { from: "buyer", text: "Can I pick up Saturday at 2pm?", time: "Wed, 3:10 PM", type: "text" },
         { from: "ai", text: "Saturday 2pm confirmed. You'll get a reminder 1 hour before.", time: "Wed, 3:10 PM", type: "text" },
         { from: "system", text: "Reminder: Pickup in 1 hour!", time: "Today, 1:00 PM", type: "reminder" },
@@ -6345,7 +6364,7 @@ const DEMO_SELLER_CONVERSATIONS = [
       messages: [
         { from: "buyer", text: "Would you take $180 for the TV?", time: "Today, 11:00 AM", type: "offer", amount: 180 },
         { from: "ai", text: "Offer of $180 is below your 80% floor ($200). AI auto-countered at $220.", time: "Today, 11:00 AM", type: "counter", amount: 220 },
-        { from: "system", text: "Counter offer sent via WhatsApp.", time: "Today, 11:01 AM", type: "whatsapp" },
+        { from: "system", text: "Counter offer sent.", time: "Today, 11:01 AM", type: "notice" },
       ],
     },
     {
@@ -6381,7 +6400,7 @@ const DEMO_SELLER_CONVERSATIONS = [
         { from: "ai", text: "Offer of $550 is above your floor. Auto-accepted.", time: "Fri, 2:00 PM", type: "text" },
         { from: "buyer", text: "Can I pick up Sunday morning?", time: "Fri, 2:15 PM", type: "text" },
         { from: "ai", text: "Sunday 10am works. Confirmed.", time: "Fri, 2:15 PM", type: "text" },
-        { from: "system", text: "WhatsApp confirmation sent.", time: "Fri, 2:16 PM", type: "whatsapp" },
+        { from: "system", text: "Claim accepted. Arrange the pickup here.", time: "Fri, 2:16 PM", type: "notice" },
       ],
     },
     {
@@ -6407,9 +6426,10 @@ const DEMO_SELLER_CONVERSATIONS = [
    ============================================================ */
 function RateBuyerModal({ title, subtitle, buyerName, stars, setStars, note, setNote, onSubmit, onSkip }) {
   return (
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+    <ModalPortal>
+    <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: 16 }}>
       <ModalA11y label="Rate the buyer"/>
-      <div style={{ width: 420, maxWidth: "100%", borderRadius: 24, background: C.paper, padding: 28, boxShadow: "0 24px 80px rgba(0,0,0,0.15)" }}>
+      <div className={DIALOG_PANEL} style={{ width: 420, maxWidth: "100%", borderRadius: 24, background: C.paper, padding: 28, boxShadow: "0 24px 80px rgba(0,0,0,0.15)" }}>
         <div style={{ textAlign: "center", marginBottom: 20 }}>
           <div style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <CheckCircle size={28} style={{ color: C.gPrimary }}/>
@@ -6444,10 +6464,11 @@ function RateBuyerModal({ title, subtitle, buyerName, stars, setStars, note, set
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
-function SellerMessagesView({ user = null, accessToken = null, convList: convListProp = null, onConvListChange = null }) {
+function SellerMessagesView({ user = null, accessToken = null, convList: convListProp = null, onConvListChange = null, openThread = null, onConsumeOpenThread = null }) {
   const { isMobile } = useViewport();
   const usingBackend = !!accessToken;
   const myId = user?.id || null;
@@ -6511,7 +6532,25 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   // two-list model as the buyer view — the live inbox drives the nav badge,
   // and this list renders the collapsed "Archived" group beneath it.
   const [archivedList, setArchivedList]       = useState([]);
-  const [showArchived, setShowArchived]       = useState(false);
+  // The shared inbox (NotificationsProvider) needs to know which thread is
+  // actually on screen: a message arriving there has been seen, so it isn't
+  // counted as unread. On a phone the list and the thread take turns.
+  const inbox = useNotifications();
+  const setOpenConversation = inbox?.setOpenConversation;
+  const visibleThreadId = activeId && (!isMobile || mobileViewingId) ? activeId : null;
+  useEffect(() => {
+    if (!setOpenConversation) return;
+    setOpenConversation(visibleThreadId);
+    return () => setOpenConversation(null);
+  }, [setOpenConversation, visibleThreadId]);
+  // A new message un-archives a thread (server side), so it reappears in the
+  // inbox; take it out of the Archived tab at the same moment.
+  useEffect(() => {
+    setArchivedList(prev => {
+      const next = prev.filter(c => !convList.some(x => x.id === c.id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [convList]);
   const [archivedLoading, setArchivedLoading] = useState(false);
   useEffect(() => {
     if (!usingBackend) { setArchivedList([]); return; }
@@ -6593,8 +6632,6 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
 
   // In-chat offer action state.
   const [chatBusyClaimId, setChatBusyClaimId] = useState(null);
-  const [chatCounterMode, setChatCounterMode] = useState(false);
-  const [chatCounterAmt, setChatCounterAmt]   = useState("");
   // Rate-the-buyer prompt, opened by Mark Picked up in the chat banner.
   const [rateClaim, setRateClaim] = useState(null);
   const [rateStars, setRateStars] = useState(0);
@@ -6631,12 +6668,9 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     } catch (err) { chatFlashErr("decline", err); }
     finally { setChatBusyClaimId(null); }
   }
-  async function chatCounterSubmit(claim) {
-    const amt = Math.round(Number(chatCounterAmt));
-    if (!Number.isFinite(amt) || amt <= 0) {
-      chatFlashErr("counter", new Error("Enter a valid amount"));
-      return;
-    }
+  // The banner validates the amount (whole dollars, not the current offer)
+  // and closes its form when this resolves true.
+  async function chatCounterSubmit(claim, amt) {
     setChatBusyClaimId(claim.id);
     try {
       await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/amount", {
@@ -6644,10 +6678,9 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
         body: JSON.stringify({ amount: amt }),
       });
       chatFlashOk("Countered at $" + amt + ". Waiting for the buyer.");
-      setChatCounterMode(false);
-      setChatCounterAmt("");
       setPendingClaimTick(t => t + 1);
-    } catch (err) { chatFlashErr("counter", err); }
+      return true;
+    } catch (err) { chatFlashErr("counter", err); return false; }
     finally { setChatBusyClaimId(null); }
   }
   async function chatMarkPickedUp(claim) {
@@ -6705,7 +6738,8 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       id:   api.id,
       from: fromMe ? "seller" : "buyer",
       text: api.body,
-      time: new Date(api.createdAt).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }),
+      // Toronto time, like the day separators above it.
+      time: messageTime(api.createdAt),
       // Raw timestamp alongside the display string — read receipts compare it
       // against the buyer's cursor, which a formatted time can't do.
       sentAt: api.createdAt || null,
@@ -6724,12 +6758,10 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   // path / isolated rendering).
   useEffect(() => {
     if (!usingBackend) return;
-    if (convListProp != null) {
-      if (Array.isArray(convListProp) && convListProp.length > 0) {
-        setActiveId(prev => prev || convListProp[0].id);
-      }
-      return;
-    }
+    // Parent owns the list. Nothing is auto-selected: opening the newest
+    // thread on arrival marked it read before the seller had looked at it,
+    // so it never showed under Unread. The thread pane asks them to pick.
+    if (convListProp != null) return;
     let cancelled = false;
     setLoading(true);
     apiRequest("/api/conversations", { token: accessToken })
@@ -6737,7 +6769,6 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
         if (cancelled) return;
         const list = Array.isArray(data?.conversations) ? data.conversations.map(adaptConversation).filter(Boolean) : [];
         setConvList(list);
-        if (list.length > 0) setActiveId(prev => prev || list[0].id);
       })
       .catch(err => {
         if (cancelled) return;
@@ -6793,9 +6824,14 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
         method: "PATCH",
         token:  accessToken,
       }).catch(() => {});
-      setConvList(prev => prev.map(c => c.id === activeId
+      // The shared inbox doesn't count a message in the thread on screen
+      // (setOpenConversation above); this also clears anything counted before
+      // the thread was opened. Deferred so it lands after the inbox's own
+      // update for this same event.
+      const openId = activeId;
+      Promise.resolve().then(() => setConvList(prev => prev.map(c => c.id === openId
         ? { ...c, unread: false, unreadCount: 0, status: c.status === "needs-response" ? "answered" : c.status }
-        : c));
+        : c)));
     }
   });
 
@@ -6844,6 +6880,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
           return [...list, adaptMessage(res.message)];
         });
       }
+      setConvList(prev => prev.map(c => c.id === activeId ? { ...c, needsReply: false } : c));
     } catch (err) {
       setErrorMsg("Couldn't send that image: " + (err?.message || "try again"));
       setTimeout(() => setErrorMsg(null), 4500);
@@ -6890,13 +6927,14 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
           return [...list, adaptMessage(res.message)];
         });
       }
+      setConvList(prev => prev.map(c => c.id === activeId ? { ...c, needsReply: false } : c));
       // Writing into an archived thread un-archives the sender's side server
       // side, so mirror that here instead of leaving the row under "Archived"
       // with a message the seller just sent as its preview.
       const archived = archivedList.find(c => c.id === activeId);
       if (archived) {
         setArchivedList(prev => prev.filter(c => c.id !== activeId));
-        setConvList(prev => (prev.some(c => c.id === activeId) ? prev : [archived, ...prev]));
+        setConvList(prev => (prev.some(c => c.id === activeId) ? prev : [{ ...archived, needsReply: false }, ...prev]));
       }
     } catch (err) {
       setErrorMsg("Send failed: " + (err?.message || "try again"));
@@ -6975,60 +7013,103 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   // Single source of truth for everything below — derived from state above.
   const conversations = convList;
 
-  const statusMeta = {
-    "pickup-today":      { label: "Pickup today",      color: C.claret,    bg: C.claretMist,  icon: Clock      },
-    "pickup-scheduled":  { label: "Pickup scheduled",  color: C.greenDeep, bg: C.greenMist,   icon: CheckCircle },
-    "countered":         { label: "Counter sent",      color: C.ai,        bg: C.aiMist,      icon: RefreshCw  },
-    "needs-response":    { label: "Needs response",    color: C.claret,    bg: C.claretMist,  icon: AlertCircle },
-    "pending":           { label: "Unanswered",        color: C.amberDeep, bg: C.amberMist,   icon: Clock      },
-    "answered":          { label: "Answered",          color: C.ai,        bg: C.aiMist,      icon: MessageSquare },
-    "cancelled":         { label: "Cancelled",         color: C.ash,       bg: C.sand,        icon: X          },
-    "declined":          { label: "Declined",          color: C.ash,       bg: C.sand,        icon: X          },
-    "expired":           { label: "Expired",           color: C.ash,       bg: C.sand,        icon: Clock      },
-    "completed":         { label: "Completed",         color: C.ash,       bg: C.sand,        icon: Check      },
-  };
+  // ─── Inbox: tabs, search, pills ──────────────────────────────────────────
+  // The status pill reads off the thread's latest claim (components/messages/
+  // claimStatus.ts), shared with the buyer side; a thread with no claim has
+  // none. "Needs reply" is the separate cue for a buyer's message nobody has
+  // answered yet, read or not, so a question the seller opened and meant to
+  // come back to isn't lost.
+  const pillFor = useCallback((c) => (c ? claimPill(latestClaimByConv[c.id]) : null), [latestClaimByConv]);
+  const sellerTurnOnOffer = useCallback((c) => {
+    const pc = c && activeClaimByConv[c.id];
+    return !!pc && pc.status === "PROPOSED" && pc.lastAmountBy !== myId;
+  }, [activeClaimByConv, myId]);
 
-  // The badge has to read off the claim, not just off who spoke last.
-  // `c.status` only says needs-response / answered / pending, which is right
-  // while a negotiation is live and wrong the moment the claim ends: a claim
-  // the buyer waived kept the thread reading "Unanswered". A terminal claim
-  // overrides; anything still live falls through to the conversation's own
-  // reading. Mirrors threadStatus in the buyer dashboard.
-  const threadStatus = useCallback((c) => {
-    if (!c) return "completed";
-    switch (latestClaimByConv[c.id]?.status) {
-      case "CANCELLED":                 return "cancelled";
-      case "DECLINED": case "REJECTED": return "declined";
-      case "EXPIRED":                   return "expired";
-      case "PICKED_UP":                 return "completed";
-      default:                          return c.status;
-    }
-  }, [latestClaimByConv]);
+  // Threads with something unread: the same count as the nav badge.
+  const unreadCount = conversations.filter(c => (c.unreadCount || 0) > 0).length;
+  // "Need your attention": a buyer waiting on a reply, or an offer that's
+  // the seller's to answer.
+  const needsAction = conversations.filter(c => c.needsReply || sellerTurnOnOffer(c)).length;
 
-  const unreadCount = conversations.filter(c => c.unread).length;
-  // Counted through threadStatus so a finished thread stops asking the seller
-  // to do something about it.
-  const needsAction = conversations.filter(c => ["needs-response","pending","pickup-today"].includes(threadStatus(c))).length;
+  const [inboxTab, setInboxTab]       = useState("all");
+  const [searchOpen, setSearchOpen]   = useState(false);
+  const [threadQuery, setThreadQuery] = useState("");
+  const searching = threadQuery.trim().length > 0;
+  // Client-side over what's loaded: item title, the buyer's name and the
+  // last message. Applies within the selected tab.
+  const matchesQuery = useCallback((c) => {
+    const q = threadQuery.trim().toLowerCase();
+    if (!q) return true;
+    return [c?.item?.title, c?.buyer?.name, c?.lastMsg]
+      .some((field) => typeof field === "string" && field.toLowerCase().includes(q));
+  }, [threadQuery]);
+  const tabThreads = useMemo(() => ({
+    all:      conversations,
+    unread:   conversations.filter(c => (c.unreadCount || 0) > 0),
+    claims:   conversations.filter(c => isLiveClaim(activeClaimByConv[c.id])),
+    archived: archivedList,
+  }), [conversations, archivedList, activeClaimByConv]);
+  const visibleThreads = (tabThreads[inboxTab] || []).filter(matchesQuery);
+  const INBOX_TABS = [
+    { id: "all",      label: "All" },
+    { id: "unread",   label: "Unread", badge: unreadCount, badgeLabel: unreadCount === 1 ? "unread conversation" : "unread conversations" },
+    { id: "claims",   label: "Active Claims" },
+    { id: "archived", label: "Archived" },
+  ];
+  const listPanelId = "seller-inbox-list";
 
-  // No type filter any more (BUG-088) — the list is every thread, newest first.
-  const filtered = conversations;
   // Selection can land on an archived thread — opening one is how the seller
   // reads it before deciding to bring it back.
   const activeIsArchived = archivedList.some(c => c.id === activeId);
   const active = conversations.find(c => c.id === activeId)
     || archivedList.find(c => c.id === activeId)
-    || conversations[0];
-  const activeStatus = active ? (statusMeta[threadStatus(active)] || statusMeta.completed) : null;
+    || null;
+
+  // Open a named thread: a browser notification or a ?conversation=<id>
+  // link. Resolved during render (React's "adjust state when a prop changes"
+  // pattern), once per request; a thread that hasn't loaded yet opens as
+  // soon as it does. The request is dropped when Messages closes.
+  // The parent's open-this-thread request. Dropped once that thread is open,
+  // when the seller opens another thread themselves, or (by the parent) when
+  // they leave Messages, so coming back later starts on the inbox.
+  const consumeOpenRef = useRef(onConsumeOpenThread);
+  useEffect(() => { consumeOpenRef.current = onConsumeOpenThread; });
+  const [handledOpen, setHandledOpen] = useState(null);
+  if (openThread && openThread !== handledOpen) {
+    const live = conversations.find(c => matchesOpenTarget(c, openThread));
+    const match = live || archivedList.find(c => matchesOpenTarget(c, openThread));
+    if (match) {
+      setHandledOpen(openThread);
+      setActiveId(match.id);
+      setMobileViewingId(match.id);
+      setInboxTab(live ? (tabThreads[inboxTab]?.some(c => c.id === match.id) ? inboxTab : "all") : "archived");
+    }
+  }
+  // Once the requested thread is open, the request has done its job: tell the
+  // parent to drop it. (Not on unmount: React's development Strict Mode
+  // unmounts and remounts every component once, which cleared the request
+  // before the inbox had loaded, so a ?conversation= link sometimes never
+  // opened.) A ?conversation= link is dropped from the address bar then too
+  // (not on load, when the other dashboard may still be the one mounted), so
+  // a refresh doesn't re-open it over whatever came next.
+  useEffect(() => {
+    if (!handledOpen) return;
+    consumeOpenRef.current?.();
+    if (!handledOpen.conversationId || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("conversation") !== handledOpen.conversationId) return;
+    url.searchParams.delete("conversation");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  }, [handledOpen]);
+  const activeBuyerName = active ? shortName(active.buyer.name) : "";
 
   // Archive / unarchive. The endpoint and the per-side flag
   // (`archivedBySeller`) already existed — the seller inbox simply never
   // offered either, so a seller's thread list only ever grew.
   async function archiveThread(conv) {
     if (!conv) return;
-    const wasActive = conv.id === activeId;
     setConvList(prev => prev.filter(c => c.id !== conv.id));
     setArchivedList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
-    if (wasActive) { setActiveId(null); setMobileViewingId(null); }
     if (!usingBackend) return;
     try {
       await apiRequest("/api/conversations/" + encodeURIComponent(conv.id) + "/archive", {
@@ -7036,12 +7117,11 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
         token:  accessToken,
         body:   JSON.stringify({ archived: true }),
       });
-      setSuccessMsg("Moved to Archived, at the bottom of this list.");
+      setSuccessMsg("Moved to Archived.");
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (err) {
       setConvList(prev => (prev.some(c => c.id === conv.id) ? prev : [conv, ...prev]));
       setArchivedList(prev => prev.filter(c => c.id !== conv.id));
-      if (wasActive) setActiveId(conv.id);
       setErrorMsg("Couldn't archive: " + (err?.message || "try again"));
       setTimeout(() => setErrorMsg(null), 4000);
     }
@@ -7067,72 +7147,107 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
     }
   }
 
-  // One row renderer, shared by the inbox and the Archived group below it.
-  function renderThreadRow(c, muted = false) {
-    const isActive = c.id === activeId;
-    const meta = statusMeta[threadStatus(c)] || statusMeta.completed;
-    const Ic = meta.icon;
+  // ─── Report the buyer (⋮ menu) ───────────────────────────────────────────
+  const [reportOpen, setReportOpen] = useState(false);
+  async function submitReport({ reason, details }) {
+    const target = active;
+    await apiRequest("/api/submissions", {
+      method: "POST", token: accessToken,
+      body: JSON.stringify({
+        type: "USER_REPORT",
+        source: "messages-seller",
+        payload: {
+          message: details ? reason + ": " + details : reason,
+          reason, details: details || undefined,
+          reportedUserId: target?.buyer?.id || undefined, reportedUserName: target?.buyer?.name,
+          itemId: target?.itemId || undefined, itemTitle: target?.item?.title,
+          conversationId: target?.id,
+          name: user?.name || undefined, email: user?.email || undefined,
+        },
+      }),
+    });
+  }
+
+  // One row renderer for every tab.
+  function renderThreadRow(c) {
+    const row = (
+      <ThreadRow
+        key={c.id}
+        title={c.item.title}
+        name={shortName(c.buyer.name)}
+        avatar={c.buyer.avatar}
+        avatarBg={avatarBg(c.buyer.name)}
+        thumb={<ConversationItemThumb item={c.item} size={52} emojiSize={30}/>}
+        preview={c.lastMsg}
+        time={inboxTime(c.lastMessageAt) || c.lastTime}
+        unreadCount={c.unreadCount || (c.unread ? 1 : 0)}
+        selected={c.id === activeId && (!isMobile || !!mobileViewingId)}
+        pill={pillFor(c)}
+        needsReply={!!c.needsReply && inboxTab !== "archived"}
+        onSelect={() => { consumeOpenRef.current?.(); setActiveId(c.id); setMobileViewingId(c.id); }}
+      />
+    );
+    if (inboxTab !== "archived") return row;
+    // Archived rows keep a one-tap way back, beside (not inside) the row button.
     return (
-      <button key={c.id} aria-current={isActive ? "true" : undefined} onClick={() => { setActiveId(c.id); setMobileViewingId(c.id); }} style={{ width: "100%", textAlign: "left", padding: "16px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: isActive && !isMobile ? C.greenMist + "60" : C.paper, cursor: "pointer", display: "flex", gap: 12, position: "relative", opacity: muted && !isActive ? 0.62 : 1 }}>
-        {/* Active accent bar — desktop only, left edge */}
-        {isActive && !isMobile && (
-          <span style={{ position: "absolute", left: 0, top: 12, bottom: 12, width: 3, borderRadius: 999, background: C.green }}/>
-        )}
-        {c.unread && <span className="sr-only">Unread. </span>}
-        {c.unread && <span aria-hidden style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", width: 7, height: 7, borderRadius: "50%", background: C.green, boxShadow: "0 0 0 3px " + C.greenMist }}/>}
-        <ConversationItemThumb item={c.item} size={48} emojiSize={32}/>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, marginBottom: 2 }}>
-            <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.item.title}</p>
-            <span style={{ fontFamily: F.body, fontSize: 10, fontWeight: 600, color: C.ash, flexShrink: 0 }}>{c.lastTime}</span>
-          </div>
-          <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginBottom: 6, display: "flex", alignItems: "center", gap: 4 }}>
-            <UserAvatar avatar={c.buyer.avatar} name={c.buyer.name} size={18} decorative initialsBg={avatarBg(c.buyer.name)} fontFamily={F.head} fontSize={7}/> {c.buyer.name}
-            <Star size={10} style={{ color: C.amber, marginLeft: 4 }} fill={C.amber}/> {c.buyer.rating.toFixed(1)}
-          </p>
-          <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: c.unread ? 700 : 500, color: c.unread ? C.ink : C.mink, marginBottom: muted ? 0 : 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.lastMsg}</p>
-          {!muted && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.color, letterSpacing: "0.04em" }}>
-              <Ic size={10}/> {meta.label}
-            </span>
-          )}
-        </div>
-      </button>
+      <div key={c.id} style={{ position: "relative" }}>
+        {row}
+        <button
+          onClick={() => unarchiveThread(c)}
+          aria-label={"Unarchive " + c.item.title}
+          style={{ position: "absolute", right: 14, bottom: 12, display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, padding: "4px 12px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer" }}
+        >
+          <RefreshCw size={11} aria-hidden="true"/> Unarchive
+        </button>
+      </div>
     );
   }
   // Demo mode reads messages inline from the conversation; wired mode uses
   // the activeMsgs state populated by GET /:id/messages and socket pushes.
   const activeMessages = usingBackend ? (activeMsgs || []) : (active?.messages || []);
+  // Keeps the open thread at its newest message (components/messages/
+  // useThreadAutoScroll): on open, on my own sends, and on arrivals while
+  // I'm at the bottom; otherwise a "New message ↓" pill.
+  const lastMsg = activeMessages[activeMessages.length - 1];
+  const threadScroll = useThreadAutoScroll({
+    threadKey: active?.id || null,
+    lastMessageKey: lastMsg ? (lastMsg.id || activeMessages.length + ":" + lastMsg.time) : null,
+    lastIsMine: lastMsg?.from === "seller",
+  });
 
   function renderMessage(m, i) {
     const isYou = m.from === "seller"; // viewer is the seller; "buyer" is counterparty
-    const isBuyer = m.from === "buyer";
     const isAI = m.from === "ai";
+
+    // Chat bubbles (components/messages/MessageRow): the buyer's grey on the
+    // left with their avatar beside it, mine pale green on the right with the
+    // time and read ticks.
+    const rowProps = {
+      side: isYou ? "out" : "in",
+      avatar: active?.buyer?.avatar,
+      name: activeBuyerName,
+      avatarBg: avatarBg(active?.buyer?.name),
+      time: m.time,
+      sentAt: m.sentAt,
+      otherLastReadAt: active?.otherLastReadAt,
+    };
 
     // Keyed on the URL rather than the type, so a row that carries a photo
     // always renders it. Any caption travels in `text` and sits underneath.
     if (m.attachmentUrl) {
       return (
-        <div key={i} style={{ display: "flex", justifyContent: isYou ? "flex-end" : "flex-start", marginBottom: 10 }}>
-          <div style={{ maxWidth: "72%" }}>
-            <div style={{ borderRadius: 16, overflow: "hidden", border: "1px solid " + (isYou ? C.green + "55" : C.fawn), background: isYou ? C.greenMist : C.paper }}>
-              <a href={m.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ display: "block", lineHeight: 0 }}>
-                <img
-                  src={m.attachmentUrl}
-                  alt={m.text ? m.text : "Attached photo"}
-                  style={{ display: "block", width: "100%", maxWidth: 300, maxHeight: 300, objectFit: "cover", cursor: "zoom-in" }}
-                />
-              </a>
-              {m.text && (
-                <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink, lineHeight: 1.45, overflowWrap: "anywhere" }}>{m.text}</p>
-              )}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: isYou ? "flex-end" : "flex-start", marginTop: 4 }}>
-              <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash }}>{m.time}</span>
-              {isYou && <ReadTicks sentAt={m.sentAt} otherLastReadAt={active?.otherLastReadAt}/>}
-            </div>
-          </div>
-        </div>
+        <MessageRow key={i} {...rowProps} flush>
+          <a href={m.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ display: "block", lineHeight: 0 }}>
+            <img
+              src={m.attachmentUrl}
+              alt={m.text ? m.text : "Attached photo"}
+              style={{ display: "block", width: "100%", maxWidth: 300, maxHeight: 300, objectFit: "cover", cursor: "zoom-in" }}
+            />
+          </a>
+          {m.text && (
+            <p style={{ padding: "8px 12px", fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink, lineHeight: 1.45, overflowWrap: "anywhere" }}>{m.text}</p>
+          )}
+        </MessageRow>
       );
     }
 
@@ -7186,50 +7301,35 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       );
     }
 
-    const bubbleBg = isBuyer ? C.paper : (isAI ? C.aiMist : C.green);
-    const bubbleColor = isBuyer ? C.ink : (isAI ? C.ink : "#fff");
-    const borderStyle = isBuyer ? ("1px solid " + C.fawn) : (isAI ? ("1px solid " + C.ai + "25") : "none");
-
-    return (
-      <div key={i} style={{ display: "flex", justifyContent: isBuyer ? "flex-start" : "flex-end", marginBottom: 10 }}>
-        <div style={{ maxWidth: "72%" }}>
-          {isAI && (
+    // AI-agent replies only exist in the /preview demo data.
+    if (isAI) {
+      return (
+        <div key={i} style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <div style={{ maxWidth: "72%" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4, justifyContent: "flex-end", marginRight: 2 }}>
               <Sparkles size={10} style={{ color: C.ai }}/>
               <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.ai, letterSpacing: "0.05em" }}>AI AGENT (YOU)</span>
             </div>
-          )}
-          {isBuyer && (
-            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4, marginLeft: 2 }}>
-              <UserAvatar avatar={active.buyer.avatar} name={active.buyer.name} size={16} decorative initialsBg={avatarBg(active.buyer.name)} fontFamily={F.head} fontSize={7}/>
-              <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.05em" }}>{active.buyer.name.toUpperCase()}</span>
-            </div>
-          )}
-          <div style={{ padding: "10px 14px", borderRadius: 16, [isYou ? "borderBottomRightRadius" : "borderBottomLeftRadius"]: 4, background: bubbleBg, color: bubbleColor, border: borderStyle, fontFamily: F.body, fontSize: 14, fontWeight: 500, lineHeight: 1.5, overflowWrap: "anywhere" }}>
-            {(m.type === "offer" || m.type === "counter" || m.type === "claim") && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid " + (isBuyer ? C.fawn : (isAI ? C.ai + "20" : "rgba(255,255,255,0.25)")) }}>
-                {m.type === "offer" && <DollarSign size={12}/>}
-                {m.type === "counter" && <RefreshCw size={12}/>}
-                {m.type === "claim" && <Check size={12}/>}
-                <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.9 }}>
-                  {m.type === "offer" ? "Offer" : m.type === "counter" ? "Counter offer" : "Claim"}
-                  {m.amount && " · $" + m.amount}
-                </span>
-              </div>
-            )}
-            {m.text}
+            <div style={{ padding: "10px 14px", borderRadius: 16, borderBottomRightRadius: 4, background: C.aiMist, color: C.ink, border: "1px solid " + C.ai + "25", fontFamily: F.body, fontSize: 14, fontWeight: 500, lineHeight: 1.5, overflowWrap: "anywhere" }}>{m.text}</div>
+            <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash, marginTop: 3, textAlign: "right", marginRight: 2 }}>{m.time}</p>
           </div>
-          <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash, marginTop: 3, textAlign: isBuyer ? "left" : "right", marginLeft: 2, marginRight: 2 }}>
-            {m.time}
-            {isYou && <ReadTicks sentAt={m.sentAt} otherLastReadAt={active?.otherLastReadAt}/>}
-          </p>
-          {/* BUG-055.1 — Legacy in-bubble Accept/Counter/Decline buttons
-              REMOVED. They were keyed on message id and routed through
-              `submitCounter(m.id)` which 404'd against the new claim-id
-              endpoints. The single top-of-chat action banner now handles
-              all negotiation. */}
         </div>
-      </div>
+      );
+    }
+
+    return (
+      <MessageRow key={i} {...rowProps}>
+        {(m.type === "offer" || m.type === "counter") && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid " + (isYou ? C.green + "33" : C.fawn), color: isYou ? C.greenDeep : C.amberDeep }}>
+            {m.type === "offer" ? <DollarSign size={12} aria-hidden="true"/> : <RefreshCw size={12} aria-hidden="true"/>}
+            <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+              {m.type === "offer" ? "Offer" : "Counter offer"}
+              {m.amount && " · $" + m.amount}
+            </span>
+          </div>
+        )}
+        {m.text}
+      </MessageRow>
     );
   }
 
@@ -7251,7 +7351,7 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             <p style={{ fontFamily: F.body, fontSize: isMobile ? 12.5 : 14, fontWeight: 500, color: C.mink, lineHeight: 1.45, maxWidth: 560 }}>
               {needsAction > 0 ? needsAction + " need" + (needsAction === 1 ? "s" : "") + " your attention · " : ""}
               {unreadCount > 0 ? unreadCount + " unread · " : ""}
-              {conversations.length} active thread{conversations.length !== 1 ? "s" : ""}
+              {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
@@ -7283,14 +7383,10 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
         </div>
       )}
 
-      {/* BUG-088 — the All / Claims / Offers / Q&A filter row was removed.
-          It looked functional but couldn't work: adaptSellerConversation
-          hardcodes `type: "question"` on every conversation, so Claims and
-          Offers were permanently 0 and Q&A was always identical to All.
-          Clicking anything either emptied the list or changed nothing.
-          To bring it back, first derive a real conversation type (claim when
-          the thread has a claim, offer when it has OFFER/COUNTER messages,
-          else question) — the chips are the easy half. */}
+      {/* Filters live in the inbox header as tabs (All / Unread / Active
+          Claims / Archived). Unlike the All / Claims / Offers / Q&A chips
+          BUG-088 removed (they read a `type` the adapter hardcodes), they
+          filter on real data: the unread count and the claims API. */}
 
       <div style={{
         display: isMobile ? "flex" : "grid",
@@ -7320,68 +7416,39 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
           minHeight: 0,
           background: C.paper,
         }}>
-          {/* `archivedList` counts here too — otherwise archiving the last
-              live thread renders "No threads yet" over an Archived group
-              that never gets a chance to draw. */}
-          {filtered.length === 0 && archivedList.length === 0 ? (
-            <div style={{ padding: "40px 20px", textAlign: "center" }}>
-              <MessageSquare size={28} style={{ color: C.smoke, marginBottom: 10 }}/>
-              <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No threads yet.</p>
-            </div>
-          ) : (
-            <>
-              {filtered.map(c => renderThreadRow(c))}
+          <MessagesInboxHeader
+            title="Inbox"
+            tabs={INBOX_TABS}
+            activeTab={inboxTab}
+            onTabChange={setInboxTab}
+            panelId={listPanelId}
+            searchOpen={searchOpen}
+            onSearchOpenChange={setSearchOpen}
+            query={threadQuery}
+            onQueryChange={setThreadQuery}
+            compact={isMobile}
+          />
 
-              {filtered.length === 0 && (
-                <div style={{ padding: "28px 20px", textAlign: "center" }}>
-                  <MessageSquare size={24} style={{ color: C.smoke, marginBottom: 8 }}/>
-                  <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink }}>No threads in your inbox.</p>
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, marginTop: 2 }}>
-                    Your archived conversations are below.
-                  </p>
+          <div id={listPanelId} role="tabpanel" aria-labelledby={tabDomId(listPanelId, inboxTab)}>
+            {visibleThreads.map(c => renderThreadRow(c))}
+
+            {visibleThreads.length === 0 && (() => {
+              // Say why the list is empty: the search, the tab, or the inbox.
+              const empty = searching
+                ? { title: "No conversations match “" + threadQuery.trim() + "”.", hint: inboxTab === "all" ? "Try another word, or look in Archived." : "Try All, or another word." }
+                : inboxTab === "unread" ? { title: "You're all caught up.", hint: "No unread messages." }
+                : inboxTab === "claims" ? { title: "No active claims.", hint: "Offers and accepted claims show up here." }
+                : inboxTab === "archived" ? { title: archivedLoading ? "Checking your archive…" : "Nothing archived.", hint: archivedLoading ? "" : "Archive a finished conversation from its ⋮ menu." }
+                : { title: "No conversations yet.", hint: "When buyers message you about your items, they show up here." };
+              return (
+                <div style={{ padding: "36px 20px", textAlign: "center" }}>
+                  {searching ? <Search size={24} style={{ color: C.smoke, marginBottom: 8 }} aria-hidden="true"/> : <MessageSquare size={24} style={{ color: C.smoke, marginBottom: 8 }} aria-hidden="true"/>}
+                  <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.mink }}>{empty.title}</p>
+                  {empty.hint && <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.ash, marginTop: 2 }}>{empty.hint}</p>}
                 </div>
-              )}
-
-              {/* Archived — collapsed, at the very bottom, the way WhatsApp
-                  and Telegram park theirs. Open one to read it; Unarchive
-                  puts it back in the inbox. */}
-              {archivedList.length > 0 && (
-                <>
-                  <button
-                    onClick={() => setShowArchived(v => !v)}
-                    style={{ width: "100%", textAlign: "left", padding: "11px 18px", border: "none", borderBottom: "1px solid " + C.fawn, background: C.sand, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}
-                  >
-                    {showArchived ? <ChevronUp size={14} style={{ color: C.mink }}/> : <ChevronDown size={14} style={{ color: C.mink }}/>}
-                    <Archive size={12} style={{ color: C.mink }}/>
-                    <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                      Archived
-                    </span>
-                    <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash, marginLeft: "auto" }}>
-                      {archivedList.length} thread{archivedList.length !== 1 ? "s" : ""}
-                    </span>
-                  </button>
-                  {showArchived && archivedList.map(c => (
-                    <div key={c.id} style={{ position: "relative" }}>
-                      {renderThreadRow(c, true)}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); unarchiveThread(c); }}
-                        title="Move back to inbox"
-                        style={{ position: "absolute", right: 14, bottom: 12, display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 10, fontWeight: 800, cursor: "pointer" }}
-                      >
-                        <RefreshCw size={10}/> Unarchive
-                      </button>
-                    </div>
-                  ))}
-                </>
-              )}
-
-              {archivedLoading && archivedList.length === 0 && (
-                <div style={{ padding: "10px 18px", borderTop: "1px solid " + C.fawn, background: C.sand }}>
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash }}>Checking your archive…</p>
-                </div>
-              )}
-            </>
-          )}
+              );
+            })()}
+          </div>
         </div>
         )}
 
@@ -7398,76 +7465,51 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             minHeight: 0,
           }}>
             {isMobile && (
-              <button onClick={() => setMobileViewingId(null)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", border: "none", borderBottom: "1px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
-                <ArrowLeft size={14}/> All conversations
+              <button onClick={() => setMobileViewingId(null)} style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 44, padding: "10px 14px", border: "none", borderBottom: "1px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
+                <ArrowLeft size={14} aria-hidden="true"/> All conversations
               </button>
             )}
-            <div style={{ padding: isMobile ? "12px 14px" : "16px 20px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", gap: isMobile ? 12 : 14, flexWrap: "wrap" }}>
-              <ConversationItemThumb item={active.item} size={isMobile ? 40 : 44} emojiSize={isMobile ? 26 : 30}/>
+            {/* Thread header: photo, title, price, buyer, claim pill, ⋮ menu. */}
+            <div style={{ padding: isMobile ? "12px 14px" : "16px 20px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", gap: isMobile ? 10 : 14 }}>
+              <ConversationItemThumb item={active.item} size={isMobile ? 48 : 56} emojiSize={isMobile ? 28 : 32}/>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 15, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{active.item.title}</p>
-                <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, marginTop: 2, flexWrap: "wrap" }}>
-                  <span style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 16, fontWeight: 900, color: priceColor(active.item.price, C.green) }}>{priceText(active.item.price)}</span>
-                  <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4 }}>
-                    <UserAvatar avatar={active.buyer.avatar} name={active.buyer.name} size={22} decorative initialsBg={avatarBg(active.buyer.name)} fontFamily={F.head} fontSize={9}/> {active.buyer.name}{!isMobile && active.buyer.hood && (" · " + active.buyer.hood)}
+                <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 15 : 17, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{active.item.title}</h2>
+                <div style={{ display: "flex", alignItems: "center", columnGap: isMobile ? 8 : 10, rowGap: 4, marginTop: 3, flexWrap: "wrap" }}>
+                  <span style={{ fontFamily: F.head, fontSize: isMobile ? 15 : 17, fontWeight: 900, color: priceColor(active.item.price, C.green) }}>{priceText(active.item.price)}</span>
+                  <span style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                    <UserAvatar avatar={active.buyer.avatar} name={active.buyer.name} size={22} decorative initialsBg={avatarBg(active.buyer.name)} fontFamily={F.head} fontSize={9}/>
+                    {activeBuyerName}{!isMobile && active.buyer.hood && active.buyer.hood !== "—" ? " · " + active.buyer.hood : ""}
                   </span>
                   {(() => {
                     // Buyer-tier badge based on prior PICKED_UP claims between us.
                     // Friend > 3+ prior (Regular) > 1-2 prior (Repeat) > none (First-time).
                     const pp = active.buyer.previousPurchases || 0;
-                    if (active.buyer.isFriend) {
-                      return (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: C.greenMist, color: C.greenDeep, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                          <Heart size={9} strokeWidth={2.4}/> Friend
-                        </span>
-                      );
-                    }
-                    if (pp >= 3) {
-                      return (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: C.amberMist, color: C.amberDeep, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                          <Star size={9} fill={C.amberDeep} strokeWidth={0}/> Regular · {pp} prior
-                        </span>
-                      );
-                    }
-                    if (pp >= 1) {
-                      return (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: C.tealMist, color: C.teal, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                          <RefreshCw size={9} strokeWidth={2.4}/> Repeat · {pp} prior
-                        </span>
-                      );
-                    }
-                    return (
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: C.sand, color: C.mink, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                        First-time
-                      </span>
+                    const badge = (bg, color, content) => (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 999, background: bg, color, letterSpacing: "0.04em", textTransform: "uppercase" }}>{content}</span>
                     );
+                    if (active.buyer.isFriend) return badge(C.greenMist, C.greenDeep, <><Heart size={9} strokeWidth={2.4} aria-hidden="true"/> Friend</>);
+                    if (pp >= 3) return badge(C.amberMist, C.amberDeep, <><Star size={9} fill={C.amberDeep} strokeWidth={0} aria-hidden="true"/> Regular · {pp} prior</>);
+                    if (pp >= 1) return badge(C.tealMist, C.teal, <><RefreshCw size={9} strokeWidth={2.4} aria-hidden="true"/> Repeat · {pp} prior</>);
+                    return badge(C.sand, C.mink, "First-time");
                   })()}
+                  {isMobile && <ClaimStatusPill pill={pillFor(active)}/>}
                 </div>
               </div>
-              {activeStatus && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: isMobile ? 10 : 11, fontWeight: 800, padding: isMobile ? "3px 9px" : "4px 11px", borderRadius: 999, background: activeStatus.bg, color: activeStatus.color, flexShrink: 0 }}>
-                  <activeStatus.icon size={isMobile ? 10 : 11}/> {activeStatus.label}
-                </span>
-              )}
-              {/* Tidy a finished thread away. Hidden while a pickup is still
-                  scheduled — archiving a pickup the seller has to show up
-                  for would hide the only place it's being coordinated. */}
-              {activeIsArchived ? (
-                <button
-                  onClick={() => unarchiveThread(active)}
-                  title="Move this thread back to your inbox"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, border: "1.5px solid " + C.green + "55", background: C.greenMist, color: C.greenDeep, fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}
-                >
-                  <RefreshCw size={11}/> Unarchive
-                </button>
-              ) : !["pickup-today", "pickup-scheduled"].includes(active.status) && (
-                <button
-                  onClick={() => archiveThread(active)}
-                  title="Archive this thread"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}
-                >
-                  <Archive size={11}/> Archive
-                </button>
+              {!isMobile && <ClaimStatusPill pill={pillFor(active)} size="md"/>}
+              {usingBackend && (
+                <ThreadMenu
+                  key={active.id}
+                  label="Conversation options"
+                  items={[
+                    ...(active.itemId ? [{ id: "view", label: "View item", icon: <ExternalLink size={16}/>, href: "/item/" + encodeURIComponent(active.itemId) }] : []),
+                    activeIsArchived
+                      ? { id: "unarchive", label: "Unarchive", icon: <RefreshCw size={16}/>, onSelect: () => unarchiveThread(active) }
+                      // Not while a claim is live: archiving a pickup the seller
+                      // has to show up for would hide where it's coordinated.
+                      : { id: "archive", label: "Archive", icon: <Archive size={16}/>, onSelect: () => archiveThread(active), disabled: !!activeClaimByConv[active.id], hint: activeClaimByConv[active.id] ? "Finish or decline the claim first" : undefined },
+                    { id: "report", label: "Report " + activeBuyerName, icon: <Flag size={16}/>, onSelect: () => setReportOpen(true), danger: true },
+                  ]}
+                />
               )}
             </div>
 
@@ -7485,109 +7527,49 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
               </div>
             )}
 
-            {/* BUG-055 — In-chat action banner. Two variants based on claim
-                status:
-                  PROPOSED → amber banner with Accept/Counter/Decline
-                  ACCEPTED → emerald banner with Mark Picked up (high-priority
-                             orange tint when buyerConfirmedReceiptAt is set —
-                             buyer is waiting). */}
+            {/* Offer / claim banner (components/messages/OfferBanner). The
+                seller answers only when the BUYER set the current amount
+                (BUG-055.1); otherwise they wait, and can still decline. */}
             {usingBackend && active && activeClaimByConv[active.id] && (() => {
               const pc = activeClaimByConv[active.id];
-              const busy = chatBusyClaimId === pc.id;
-              const listed = pc.item?.price ?? 0;
-              const isProposed = pc.status === "PROPOSED";
-              const isAccepted = pc.status === "ACCEPTED";
-              const buyerWaiting = isAccepted && pc.buyerConfirmedReceiptAt;
-              // BUG-055.1 — whoever last set the amount cannot accept it.
-              // For the seller: action buttons only show when the BUYER made
-              // the last offer. Otherwise show a "Waiting for buyer" pill.
-              const myTurn = isProposed && pc.lastAmountBy !== myId;
-
-              // Color palette per state.
-              const bg     = isProposed ? (C.amberMist || "#fef3c7") : (buyerWaiting ? (C.amberMist || "#fef3c7") : C.greenMist);
-              const border = isProposed ? (C.amber || "#f59e0b") + "30" : (buyerWaiting ? (C.amber || "#f59e0b") + "55" : C.green + "30");
-              const iconBg = isProposed ? (C.amber || "#f59e0b") : (buyerWaiting ? (C.amber || "#f59e0b") : C.green);
-              const titleColor = isProposed ? (C.amberDeep || "#92400e") : (buyerWaiting ? (C.amberDeep || "#92400e") : C.greenDeep);
-
               return (
-                <div style={{ padding: "12px 16px", background: bg, borderBottom: "1px solid " + border }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 10, background: iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        {isProposed ? <DollarSign size={17} style={{ color: "#fff" }}/> : <Check size={17} style={{ color: "#fff" }} strokeWidth={3}/>}
-                      </div>
-                      <div>
-                        <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: titleColor }}>
-                          {isProposed
-                            ? "Pending offer · $" + pc.amount
-                            : buyerWaiting
-                              ? "Buyer waiting — confirm pickup · $" + pc.amount
-                              : "Accepted · $" + pc.amount + " — pickup pending"}
-                        </p>
-                        <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginTop: 2 }}>
-                          {isProposed && pc.amount !== listed && ("Listed at $" + listed + " · ")}
-                          {isProposed && pc.amount === listed && "At listed price · "}
-                          {isAccepted && (buyerWaiting ? "Buyer confirmed receipt — please mark pickup complete." : "Coordinate pickup in this thread.")}
-                          {isProposed && ("expires " + (pc.expiresAt ? new Date(pc.expiresAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "soon"))}
-                        </p>
-                      </div>
-                    </div>
-                    {isProposed && !myTurn && (
-                      <span style={{ padding: "8px 14px", borderRadius: 999, background: C.paper, color: C.amberDeep, fontFamily: F.head, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, border: "1.5px solid " + C.amber + "40" }}>
-                        <Clock size={12}/> Waiting for buyer to respond
-                      </span>
-                    )}
-                    {isProposed && myTurn && (chatCounterMode ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink }}>$</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          value={chatCounterAmt}
-                          onChange={e => setChatCounterAmt(e.target.value)}
-                          placeholder={String(Math.max(1, Math.round((pc.amount + listed) / 2)))}
-                          autoFocus
-                          disabled={busy}
-                          style={{ width: 80, padding: "7px 10px", borderRadius: 8, border: "1.5px solid " + C.fawn, fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.ink, outline: "none", background: C.paper }}
-                        />
-                        <button onClick={() => chatCounterSubmit(pc)} disabled={busy} className="cta-primary" style={{ padding: "7px 12px", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: busy ? "not-allowed" : "pointer" }}>Send</button>
-                        <button onClick={() => { setChatCounterMode(false); setChatCounterAmt(""); }} disabled={busy} style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 11, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer" }}>Cancel</button>
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <button onClick={() => chatAccept(pc)} disabled={busy} className="cta-primary" style={{ padding: "8px 14px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: busy ? "not-allowed" : "pointer", boxShadow: "0 2px 0 " + C.greenDeep, display: "flex", alignItems: "center", gap: 5 }}>
-                          <Check size={12}/> Accept ${pc.amount}
-                        </button>
-                        <button onClick={() => { setChatCounterMode(true); setChatCounterAmt(String(Math.max(1, Math.round((pc.amount + listed) / 2)))); }} disabled={busy} style={{ padding: "8px 14px", borderRadius: 999, border: "1.5px solid " + C.green + "55", background: C.paper, color: C.greenDeep, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                          <RefreshCw size={12}/> Counter
-                        </button>
-                        <button onClick={() => chatDecline(pc)} disabled={busy} style={{ padding: "8px 14px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer" }}>
-                          Decline
-                        </button>
-                      </div>
-                    ))}
-                    {isAccepted && (
-                      <button onClick={() => chatMarkPickedUp(pc)} disabled={busy} className="cta-primary" style={{ padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: busy ? "not-allowed" : "pointer", boxShadow: "0 2px 0 " + C.greenDeep, display: "flex", alignItems: "center", gap: 5 }}>
-                        <Check size={13} strokeWidth={3}/> Mark Picked up
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <OfferBanner
+                  role="seller"
+                  claim={{
+                    id: pc.id, status: pc.status, amount: pc.amount,
+                    listed: pc.item?.price ?? active.item.price ?? 0,
+                    expiresAt: pc.expiresAt, myTurn: pc.status === "PROPOSED" && pc.lastAmountBy !== myId,
+                    buyerConfirmedReceiptAt: pc.buyerConfirmedReceiptAt, pickupSlot: pc.pickupSlot,
+                  }}
+                  otherName={activeBuyerName}
+                  busy={chatBusyClaimId === pc.id}
+                  onAccept={() => chatAccept(pc)}
+                  onCounter={(amt) => chatCounterSubmit(pc, amt)}
+                  onDecline={() => chatDecline(pc)}
+                  onMarkPickedUp={() => chatMarkPickedUp(pc)}
+                  compact={isMobile}
+                />
               );
             })()}
 
             {/* `minHeight: 0` is what makes this the pane that scrolls. A flex
                 child defaults to min-height:auto, so without it the message
                 list grows to its content and pushes the composer off the
-                bottom instead of scrolling inside its own box. */}
-            <div role="log" aria-live="polite" aria-label="Conversation" style={{ flex: 1, minHeight: 0, padding: isMobile ? "14px 14px" : "18px 20px", overflowY: "auto", overflowX: "hidden", background: C.sand + "60" }}>
+                bottom instead of scrolling inside its own box. Messages get a
+                day marker before each new (Toronto) day. */}
+            <div ref={threadScroll.ref} onScroll={threadScroll.onScroll} role="log" aria-live="polite" aria-label="Conversation" style={{ flex: 1, minHeight: 0, padding: isMobile ? "14px 14px" : "18px 20px", overflowY: "auto", overflowX: "hidden", background: C.paper }}>
               {usingBackend && activeLoading && (
                 <p style={{ fontSize: 12, color: C.ash, fontFamily: F.body, textAlign: "center", padding: "20px 0" }}>Loading thread…</p>
               )}
               {!activeLoading && activeMessages.length === 0 && usingBackend && (
                 <p style={{ fontSize: 12, color: C.ash, fontFamily: F.body, textAlign: "center", padding: "20px 0" }}>No messages yet — say hello.</p>
               )}
-              {activeMessages.map((m, i) => renderMessage(m, i))}
+              {withDaySeparators(activeMessages, (m) => m.sentAt).map((entry) => (
+                "separator" in entry
+                  ? <DateSeparator key={entry.key} label={entry.separator}/>
+                  : renderMessage(entry.message, entry.message.id || entry.index)
+              ))}
+              <NewMessagesPill count={threadScroll.newCount} onClick={threadScroll.jumpToLatest}/>
             </div>
 
             {/* Quick-reply templates — covers the 80% of routine replies in one tap.
@@ -7723,6 +7705,14 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             </div>
           </div>
         )}
+        {reportOpen && active && (
+          <ReportDialog
+            kind="user"
+            subject={activeBuyerName}
+            onSubmit={submitReport}
+            onClose={() => setReportOpen(false)}
+          />
+        )}
         {rateClaim && (
           <RateBuyerModal
             title="Item Picked Up!"
@@ -7734,14 +7724,15 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             onSkip={() => submitChatRating({ skip: true })}
           />
         )}
-        {!active && usingBackend && !loading && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 60 }}>
-            <div style={{ textAlign: "center" }}>
-              <MessageSquare size={32} style={{ color: "#e2e8f0", marginBottom: 12 }} />
-              <p style={{ fontSize: 15, fontWeight: 700, color: C.ash, fontFamily: F.body }}>No conversations yet</p>
-              <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>When buyers message you about your items, threads will appear here.</p>
-            </div>
-          </div>
+        {/* Desktop, nothing selected: say so, and how much is unread.
+            Phones show the list on its own until a thread is tapped. */}
+        {!active && !isMobile && (!usingBackend || !loading) && (
+          <ThreadEmptyState
+            empty={conversations.length === 0 && archivedList.length === 0}
+            emptyHint="When buyers message you about your items, conversations will appear here."
+            unreadCount={unreadCount}
+            onShowUnread={() => setInboxTab("unread")}
+          />
         )}
       </div>
     </div>
@@ -8132,9 +8123,10 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
 
       {/* Rating modal */}
       {ratingItem && (
-        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+        <ModalPortal>
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal }}>
           <ModalA11y label="Rate the buyer"/>
-          <div style={{ width: 420, maxWidth: "calc(100% - 32px)", borderRadius: 24, background: C.paper, padding: 28, boxShadow: "0 24px 80px rgba(0,0,0,0.15)" }}>
+          <div className={DIALOG_PANEL} style={{ width: 420, maxWidth: "calc(100% - 32px)", borderRadius: 24, background: C.paper, padding: 28, boxShadow: "0 24px 80px rgba(0,0,0,0.15)" }}>
             <div style={{ textAlign: "center", marginBottom: 20 }}>
               <div style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
                 <CheckCircle size={28} style={{ color: C.gPrimary }} />
@@ -8170,13 +8162,15 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
 
       {/* No-show confirmation modal */}
       {noShowItem && (
-        <div onClick={() => setNoShowItem(null)} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 24, backdropFilter: "blur(4px)" }}>
+        <ModalPortal>
+        <div onClick={() => setNoShowItem(null)} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: 24, backdropFilter: "blur(4px)" }}>
           <ModalA11y label="Mark as no-show" onClose={() => setNoShowItem(null)}/>
-          <div onClick={e => e.stopPropagation()} className="fade-in" style={{ width: 460, maxWidth: "100%", borderRadius: 24, background: C.paper, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)", overflow: "hidden" }}>
+          <div onClick={e => e.stopPropagation()} className={"fade-in " + DIALOG_PANEL} style={{ width: 460, maxWidth: "100%", borderRadius: 24, background: C.paper, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
             <div style={{ padding: "18px 24px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ width: 38, height: 38, borderRadius: 12, background: C.claretMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -8212,6 +8206,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );
@@ -8607,9 +8602,10 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
       {/* BUG-055 — Rate buyer modal. Opens from HistoryTxRow's CTA, POSTs to
           /api/claims/:id/review. Backend writes to sellerReviewX fields. */}
       {rateTx && (
-        <div onClick={cancelRate} style={{ position: "fixed", inset: 0, background: "rgba(11,47,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+        <ModalPortal>
+        <div onClick={cancelRate} style={{ position: "fixed", inset: 0, background: "rgba(11,47,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: 16 }}>
           <ModalA11y label="Rate this transaction" onClose={cancelRate}/>
-          <div onClick={e => e.stopPropagation()} style={{ background: C.paper, borderRadius: 20, padding: 24, width: "100%", maxWidth: 420, boxShadow: "0 20px 60px rgba(11,47,32,0.25)" }}>
+          <div className={DIALOG_PANEL} onClick={e => e.stopPropagation()} style={{ background: C.paper, borderRadius: 20, padding: 24, width: "100%", maxWidth: 420, boxShadow: "0 20px 60px rgba(11,47,32,0.25)" }}>
             <h3 style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.ink, marginBottom: 6 }}>Rate {rateTx.buyer}</h3>
             <p style={{ fontFamily: F.body, fontSize: 13, color: C.mink, marginBottom: 16 }}>How was the transaction? Your rating helps other sellers and shows on {rateTx.buyer.split(" ")[0]}&rsquo;s buyer profile.</p>
             <div style={{ display: "flex", gap: 4, marginBottom: 16, justifyContent: "center" }}>
@@ -8626,6 +8622,7 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );
@@ -9452,7 +9449,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
                 {pickupMode === "anytime" && (
                   <div style={{ padding: "10px 12px", borderRadius: 10, background: C.sand, border: "1px solid " + C.fawn, marginBottom: 14, display: "flex", alignItems: "flex-start", gap: 8 }}>
                     <Info size={13} style={{ color: C.mink, flexShrink: 0, marginTop: 1 }}/>
-                    <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>Buyers can request any day. You'll confirm via WhatsApp before the pickup is scheduled.</p>
+                    <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>Buyers can request any day. You'll agree a time with the buyer in Messages before the pickup is scheduled.</p>
                   </div>
                 )}
 
@@ -9617,9 +9614,10 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
 
       {/* Delete confirmation modal — preserved from old EditItemView */}
       {showDelete && (
-        <div onClick={() => setShowDelete(false)} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 24, backdropFilter: "blur(4px)" }}>
+        <ModalPortal>
+        <div onClick={() => setShowDelete(false)} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: 24, backdropFilter: "blur(4px)" }}>
           <ModalA11y label="Delete this item" onClose={() => setShowDelete(false)}/>
-          <div onClick={e => e.stopPropagation()} className="fade-in" style={{ width: 440, maxWidth: "100%", borderRadius: 24, background: C.paper, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)", overflow: "hidden" }}>
+          <div onClick={e => e.stopPropagation()} className={"fade-in " + DIALOG_PANEL} style={{ width: 440, maxWidth: "100%", borderRadius: 24, background: C.paper, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
             <div style={{ padding: "22px 24px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 14 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 12, background: C.claretMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -9641,6 +9639,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </div>
   );
@@ -9704,10 +9703,11 @@ function AIListingEditModal({ item, onClose, onSave, aiSettings = {} }) {
   }
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 210, padding: 24, backdropFilter: "blur(4px)", overflowY: "auto" }}>
-      <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: C.paper, borderRadius: 24, width: "100%", maxWidth: 640, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)", overflow: "hidden", marginTop: 20, marginBottom: 40 }}>
+    <ModalPortal>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: 24, backdropFilter: "blur(4px)" }}>
+      <div onClick={e => e.stopPropagation()} className={"fade-in " + DIALOG_PANEL} style={{ background: C.paper, borderRadius: 24, width: "100%", maxWidth: 640, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
         {/* Header */}
-        <div style={{ padding: "16px 22px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "space-between", background: "linear-gradient(135deg, " + C.aiMist + ", " + C.paper + ")" }}>
+        <div style={{ ...dialogHead(0), padding: "16px 22px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "space-between", background: "linear-gradient(135deg, " + C.aiMist + ", " + C.paper + ")" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Sparkles size={16} style={{ color: C.ai }}/>
             <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.ai, letterSpacing: "0.14em", textTransform: "uppercase" }}>Edit AI listing</span>
@@ -9788,7 +9788,7 @@ function AIListingEditModal({ item, onClose, onSave, aiSettings = {} }) {
           </div>
         </div>
 
-        <div style={{ padding: "14px 22px", borderTop: "1px solid " + C.fawn, background: C.sand, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <div style={{ ...dialogFoot(0), padding: "14px 22px", borderTop: "1px solid " + C.fawn, background: C.sand, display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onClose} style={{ padding: "11px 20px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
           <button onClick={handleSave} className="cta-primary" style={{ padding: "11px 22px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800, background: C.green, color: "#fff", boxShadow: "0 2px 0 " + C.greenDeep, display: "flex", alignItems: "center", gap: 6 }}>
             <Check size={13} strokeWidth={2.8}/> Save changes
@@ -9796,6 +9796,7 @@ function AIListingEditModal({ item, onClose, onSave, aiSettings = {} }) {
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
@@ -9805,10 +9806,11 @@ function AIListingEditModal({ item, onClose, onSave, aiSettings = {} }) {
 function AIListingPreviewModal({ item, onClose, onApprove, onEdit, isApproved, aiSettings = {} }) {
   const pickup = formatPickupSummary(aiSettings);
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 200, padding: 24, backdropFilter: "blur(4px)", overflowY: "auto" }}>
-      <div onClick={e => e.stopPropagation()} className="fade-in" style={{ background: C.paper, borderRadius: 24, width: "100%", maxWidth: 640, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)", overflow: "hidden", marginTop: 20, marginBottom: 40 }}>
+    <ModalPortal>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: 24, backdropFilter: "blur(4px)" }}>
+      <div onClick={e => e.stopPropagation()} className={"fade-in " + DIALOG_PANEL} style={{ background: C.paper, borderRadius: 24, width: "100%", maxWidth: 640, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
         {/* Header */}
-        <div style={{ padding: "16px 22px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "space-between", background: "linear-gradient(135deg, " + C.aiMist + ", " + C.paper + ")" }}>
+        <div style={{ ...dialogHead(0), padding: "16px 22px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "space-between", background: "linear-gradient(135deg, " + C.aiMist + ", " + C.paper + ")" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Sparkles size={16} style={{ color: C.ai }}/>
             <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.ai, letterSpacing: "0.14em", textTransform: "uppercase" }}>AI-drafted preview</span>
@@ -9955,8 +9957,8 @@ function AIListingPreviewModal({ item, onClose, onApprove, onEdit, isApproved, a
           </div>
         </div>
 
-        {/* Action bar */}
-        <div style={{ padding: "14px 22px", borderTop: "1px solid " + C.fawn, background: C.sand, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        {/* Action bar — kept in view at the bottom of the panel. */}
+        <div style={{ ...dialogFoot(0), padding: "14px 22px", borderTop: "1px solid " + C.fawn, background: C.sand, display: "flex", gap: 10, justifyContent: "flex-end" }}>
           <button onClick={onEdit} style={{ padding: "11px 20px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
             Edit
           </button>
@@ -9966,6 +9968,7 @@ function AIListingPreviewModal({ item, onClose, onApprove, onEdit, isApproved, a
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
@@ -10829,7 +10832,7 @@ function SettingsView({ user, initialSection = null, onBack = null, backLabel = 
 
   const sections = [
     { id: "account",       label: "Account",       icon: User,       desc: "Name, email, password" },
-    { id: "notifications", label: "Notifications", icon: Bell,       desc: "Email, WhatsApp, push" },
+    { id: "notifications", label: "Notifications", icon: Bell,       desc: "Email and push" },
     { id: "payments",      label: "Payments",      icon: DollarSign, desc: "How buyers can pay" },
     { id: "pickup",        label: "Pickup",        icon: MapPin,     desc: "Default address" },
     { id: "sellWithAi",    label: "Sell with AI",  icon: Sparkles,   desc: "AI agent that negotiates offers — coming soon" },
@@ -10965,7 +10968,9 @@ function SettingsNotifications({ user, onSuccess }) {
     { id: "pickup",   label: "Pickup reminders", desc: "Day-before and 2-hour-before reminders" },
     { id: "weekly",   label: "Weekly summary",   desc: "Sunday digest of views, claims, and revenue" },
   ];
-  const channels = ["email", "whatsapp", "push"];
+  // WhatsApp isn't offered: nothing sends WhatsApp messages. Its saved values
+  // (DEFAULTS below, user.notificationPrefs) are left as they are.
+  const channels = ["email", "push"];
   // Defaults match the schema's null state — everything on except questions/whatsapp.
   const DEFAULTS = {
     claim:    { email: true,  whatsapp: true,  push: true  },
@@ -11008,14 +11013,13 @@ function SettingsNotifications({ user, onSuccess }) {
 
   return (
     <div style={{ padding: "20px 22px", borderRadius: 18, border: "1px solid " + C.fawn, background: C.paper }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px", gap: 12, paddingBottom: 12, borderBottom: "1px solid " + C.fawn, marginBottom: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", gap: 12, paddingBottom: 12, borderBottom: "1px solid " + C.fawn, marginBottom: 8 }}>
         <span/>
         <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, color: C.ash, letterSpacing: "0.12em", textAlign: "center" }}>EMAIL</span>
-        <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, color: C.ash, letterSpacing: "0.12em", textAlign: "center" }}>WHATSAPP</span>
         <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, color: C.ash, letterSpacing: "0.12em", textAlign: "center" }}>PUSH</span>
       </div>
       {rows.map((r, i) => (
-        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px 60px", gap: 12, alignItems: "center", padding: "12px 0", borderBottom: i === rows.length - 1 ? "none" : "1px solid " + C.fawn }}>
+        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", gap: 12, alignItems: "center", padding: "12px 0", borderBottom: i === rows.length - 1 ? "none" : "1px solid " + C.fawn }}>
           <div>
             <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.ink }}>{r.label}</p>
             <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.mink, marginTop: 2 }}>{r.desc}</p>
@@ -11320,34 +11324,37 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
   };
 
   return (
+    <ModalPortal>
     <div
       role="dialog"
       aria-modal="true"
       style={{
-        position: "fixed", inset: 0, zIndex: 9999,
+        position: "fixed", inset: 0, zIndex: Z.modal,
         background: "rgba(11,47,32,0.55)",
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: 16, overflow: "auto",
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div
+      <ModalA11y label="Complete your seller profile" onClose={onClose}/>
+      <div className={DIALOG_PANEL}
         style={{
           background: C.paper, borderRadius: 18,
           maxWidth: 520, width: "100%", padding: 28,
           boxShadow: "0 30px 80px rgba(11,47,32,0.20)",
-          maxHeight: "90vh", overflowY: "auto",
         }}
       >
+        <div style={{ ...dialogHead(28), paddingBottom: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <span style={{ width: 22, height: 2.5, background: C.green, borderRadius: 2 }}/>
           <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.green, letterSpacing: "0.16em", textTransform: "uppercase" }}>
             Become a seller
           </span>
         </div>
-        <h2 style={{ fontFamily: F.head, fontSize: 26, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em", marginBottom: 8 }}>
+        <h2 style={{ fontFamily: F.head, fontSize: 26, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em" }}>
           Complete your seller profile
         </h2>
+        </div>
         <p style={{ fontFamily: F.body, fontSize: 14, color: C.mink, marginBottom: 20, lineHeight: 1.55 }}>
           We need a few details before you can list items. Buyers see your neighbourhood and how far away you are when they consider claiming — the closer you are, the more likely they claim.
         </p>
@@ -11447,7 +11454,7 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
             </div>
           </Field>
 
-          <div style={{ display: "flex", gap: 10, marginTop: 12, justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 10, paddingTop: 12, justifyContent: "flex-end", ...dialogFoot(28) }}>
             <button
               type="button" onClick={onClose} disabled={submitting}
               style={{
@@ -11477,6 +11484,7 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
         </form>
       </div>
     </div>
+    </ModalPortal>
   );
 }
 
@@ -11580,9 +11588,23 @@ export default function DropYardSellerDashboard({
   // gates the dashboards behind a `mounted` flag, so this never runs on SSR.
   const [view, setView] = useState(() => {
     if (typeof window === "undefined") return "overview";
-    const t = new URLSearchParams(window.location.search).get("tab");
+    const params = new URLSearchParams(window.location.search);
+    // A link naming a conversation lands in Messages whatever its tab says.
+    if (params.get("conversation")) return "messages";
+    const t = params.get("tab");
     return t && SELLER_TABS.has(t) ? t : "overview";
   });
+  // What SellerMessagesView should open: { conversationId }. Seeded from a
+  // ?conversation=<id> link; set again when a message notification is clicked.
+  const [openThread, setOpenThread] = useState(conversationFromUrl);
+  // A request only means something on Messages: leaving it drops one that
+  // hasn't opened yet (SellerMessagesView drops it itself once it has).
+  // Adjusted during render, React's pattern for state that follows other state.
+  const [openThreadView, setOpenThreadView] = useState(view);
+  if (openThreadView !== view) {
+    setOpenThreadView(view);
+    if (openThreadView === "messages" && openThread) setOpenThread(null);
+  }
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
@@ -11663,99 +11685,33 @@ export default function DropYardSellerDashboard({
   // listing from scratch).
   function goToSettings(sectionId = null, returnTo = null) { setSettingsSection(sectionId); setSettingsReturnTo(returnTo); setView("settings"); }
 
-  // ─── Conversation inbox (lifted to root for nav badges) ───
-  // Owns the seller's conversation list at the root so the Sidebar, TopNav
-  // notification bell, and MobileBottomNav Messages tab can show the unread
-  // count regardless of which view is active. SellerMessagesView receives
-  // this through props.
-  const [convList, setConvList] = useState([]);
-  const myUserId = user?.id || null;
+  // ─── Conversation inbox ───
+  // The list, and the message:new / conversation:read / claim listeners that
+  // keep it live, belong to NotificationsProvider (context/
+  // NotificationsContext), which serves both sides of the account so a
+  // message for the buyer side still counts while this dashboard is open.
+  // This is the seller slice of it, adapted for SellerMessagesView;
+  // setConvList writes back, so a thread read or archived here moves the
+  // badges at once.
+  const [convList, setConvList] = useRoleConversations("seller", adaptSellerConversation, []);
+  const inbox = useNotifications();
 
-  // Helper: insert/refresh a single conversation from a socket payload.
-  // The adapted shape mirrors what SellerMessagesView already renders.
-  const upsertConvFromSocket = useCallback((prev, payload) => {
-    if (!payload?.conversationId || !payload.message) return prev;
-    const { conversationId, message } = payload;
-    const isFromMe = message.senderId === myUserId;
-    // Mirrors unreadCountFor on the server: a NOTICE is system narration of a
-    // claim transition, not a message someone sent you, so it must not raise
-    // the Messages badge. Without this the socket path would put back the
-    // phantom unread the backend no longer counts, until the next refetch.
-    const isNotice = message.messageType === "NOTICE";
-    const existing = prev.find((c) => c.id === conversationId);
-    if (!existing) {
-      if (accessToken) {
-        apiRequest("/api/conversations", { token: accessToken })
-          .then((data) => {
-            const list = Array.isArray(data?.conversations) ? data.conversations : [];
-            setConvList(list.map((api) => adaptSellerConversation(api, myUserId)).filter(Boolean));
-          })
-          .catch(() => { /* keep current list on transient blip */ });
-      }
-      return prev;
-    }
-    // Update the matching conversation AND move it to the top so the inbox
-    // stays sorted by latest activity. Without the reordering, new messages
-    // refresh the data but the row stays put.
-    const updated = prev.map((c) => {
-      if (c.id !== conversationId) return c;
-      const newUnread = (isFromMe || isNotice) ? (c.unreadCount || 0) : (c.unreadCount || 0) + 1;
-      return {
-        ...c,
-        lastMsg:       message.body || c.lastMsg,
-        lastTime:      relativeTimeShort(message.createdAt),
-        lastMessageAt: message.createdAt || c.lastMessageAt,
-        unread:        newUnread > 0,
-        unreadCount:   newUnread,
-        status:        newUnread > 0 ? "needs-response" : c.status,
-      };
-    });
-    const moved = updated.find((c) => c.id === conversationId);
-    if (!moved) return updated;
-    return [moved, ...updated.filter((c) => c.id !== conversationId)];
-  }, [accessToken, myUserId]);
-
-  // Bumped on claim socket events so the conv list refetches and the
-  // embedded item.status reflects pickup completion. The composer locks
-  // automatically once the item flips SOLD.
-  const [convListTick, setConvListTick] = useState(0);
-  useSocketEvent("claim:new",     () => setConvListTick(t => t + 1));
-  useSocketEvent("claim:updated", () => setConvListTick(t => t + 1));
+  // A bell entry or toast for this side (NotificationsProvider.navigate):
+  // open the thread or tab it names. The other side's are handled by a mode
+  // switch, and that dashboard reads them from the URL as it mounts.
+  const registerNavHandler = inbox?.registerNavHandler;
   useEffect(() => {
-    if (!accessToken) { setConvList([]); return; }
-    let cancelled = false;
-    apiRequest("/api/conversations", { token: accessToken })
-      .then((data) => {
-        if (cancelled) return;
-        const list = Array.isArray(data?.conversations) ? data.conversations : [];
-        setConvList(list.map((api) => adaptSellerConversation(api, myUserId)).filter(Boolean));
-      })
-      .catch(() => { if (!cancelled) setConvList([]); });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accessToken, myUserId, convListTick]);
-
-  useSocketEvent("message:new", (payload) => {
-    setConvList((prev) => upsertConvFromSocket(prev, payload));
-  });
-
-  // The server emits this to the OTHER party, so it normally means "the buyer
-  // has just read your messages" — which is what the read ticks need. Clearing
-  // MY unread on it was the wrong side of the conversation: the buyer opening
-  // the thread says nothing about whether I've read what they wrote. That
-  // branch now only runs when the reader is me on another device.
-  useSocketEvent("conversation:read", (payload) => {
-    const cid = payload?.conversationId;
-    if (!cid) return;
-    const readByMe = payload?.readByUserId && payload.readByUserId === myUserId;
-    setConvList((prev) => prev.map((c) => {
-      if (c.id !== cid) return c;
-      if (readByMe) {
-        return { ...c, unreadCount: 0, unread: false, status: c.status === "needs-response" ? "answered" : c.status };
+    if (!registerNavHandler) return;
+    return registerNavHandler((target) => {
+      setSettingsReturnTo(null);
+      if (target.conversationId) {
+        setOpenThread({ conversationId: target.conversationId });
+        setView("messages");
+      } else if (target.tab && SELLER_TABS.has(target.tab)) {
+        setView(target.tab);
       }
-      return { ...c, otherLastReadAt: payload?.readAt || c.otherLastReadAt };
-    }));
-  });
+    });
+  }, [registerNavHandler]);
 
   const messagesUnreadCount = useMemo(
     () => convList.filter((c) => (c.unreadCount || 0) > 0).length,
@@ -11785,24 +11741,6 @@ export default function DropYardSellerDashboard({
   // after a successful PATCH so the badge drops without waiting for a refetch.
   const onQuestionsChanged = useCallback(() => setQuestionsTick((t) => t + 1), []);
 
-  // Browser-level notification on incoming message. Gated to authed seller +
-  // granted permission + not currently viewing the active thread.
-  useSocketEvent("message:new", (payload) => {
-    if (typeof window === "undefined" || typeof Notification === "undefined") return;
-    if (Notification.permission !== "granted") return;
-    const msg = payload?.message;
-    if (!msg || msg.senderId === myUserId) return;
-    const conv = convList.find((c) => c.id === payload.conversationId);
-    const itemTitle = conv?.item?.title || "your message";
-    const buyerName = conv?.buyer?.name || "Someone";
-    try {
-      new Notification(buyerName + " · DropYard", {
-        body: msg.body ? String(msg.body).slice(0, 120) : `New message about ${itemTitle}`,
-        tag:  "dropyard-msg-" + payload.conversationId,
-      });
-    } catch { /* notifications can fail in restricted contexts */ }
-  });
-
   return (
     <>
       <GlobalStyle/>
@@ -11814,17 +11752,14 @@ export default function DropYardSellerDashboard({
           activeView={view}
           onToggleSidebar={() => setSidebarCollapsed(c => !c)}
           onSwitchRole={onSwitchRole}
-          messagesUnread={messagesUnreadCount}
-          questionsPending={questionsPending}
-          onOpenMessages={() => safeNav("messages")}
-          onOpenQuestions={() => safeNav("questions")}
+          otherUnread={inbox?.unread.buyer || 0}
         />
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
           {/* Desktop sidebar — rendered always so SSR/client markup matches; CSS
               media query (`.dy-desktop-sidebar`) hides it on mobile. Gating on
               the JS `isMobile` flag caused the sidebar to render in SSR HTML
               (defaults to desktop) and pop out on hydration, shifting layout. */}
-          <Sidebar activeView={view} onNav={safeNav} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount} questionsPending={questionsPending}/>
+          <Sidebar activeView={view} onNav={safeNav} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount} questionsPending={questionsPending} otherUnread={inbox?.unread.buyer || 0}/>
           <main className={"dy-seller-main" + (view === "messages" ? " dy-seller-main--flush" : "")}>
             {view === "overview" && <Overview onNav={safeNav} user={user} sellerItems={sellerItems} accessToken={accessToken}/>}
             {view === "items" && <MyItemsView onNav={safeNav} onEdit={goToEdit} onView={goToView} sellerItems={sellerItems} onItemsChange={onItemsChange} onRefresh={onItemCreated} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
@@ -11833,7 +11768,7 @@ export default function DropYardSellerDashboard({
             {view === "orders" && <OrdersView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated}/>}
             {view === "claims" && <ClaimsView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated}/>}
             {view === "pickups" && <PickupsView onNav={setView} accessToken={accessToken} onChanged={onItemCreated}/>}
-            {view === "messages" && <SellerMessagesView user={user} accessToken={accessToken} convList={convList} onConvListChange={setConvList}/>}
+            {view === "messages" && <SellerMessagesView user={user} accessToken={accessToken} convList={convList} onConvListChange={setConvList} openThread={openThread} onConsumeOpenThread={() => setOpenThread(null)}/>}
             {view === "history" && <SellerHistoryView accessToken={accessToken}/>}
             {/* Keyed on the requested pane so arriving from a deep link while
                 Settings is already mounted still lands on the right section —
@@ -11903,9 +11838,10 @@ export default function DropYardSellerDashboard({
       {/* BUG-057 — Sign-out confirmation modal. Covers TopNav, SellerUserMenu,
           and any future call site that wires to onSignoutRequest. */}
       {signoutOpen && (
-        <div onClick={() => setSignoutOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(11,47,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }}>
+        <ModalPortal>
+        <div onClick={() => setSignoutOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(11,47,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: 16 }}>
           <ModalA11y label="Sign out" onClose={() => setSignoutOpen(false)}/>
-          <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="seller-signout-title" style={{ background: C.paper, borderRadius: 20, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 20px 60px rgba(11,47,32,0.25)" }}>
+          <div className={DIALOG_PANEL} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="seller-signout-title" style={{ background: C.paper, borderRadius: 20, padding: 24, width: "100%", maxWidth: 380, boxShadow: "0 20px 60px rgba(11,47,32,0.25)" }}>
             <h3 id="seller-signout-title" style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.ink, marginBottom: 6 }}>Sign out?</h3>
             <p style={{ fontFamily: F.body, fontSize: 13, color: C.mink, lineHeight: 1.5, marginBottom: 18 }}>You&rsquo;ll need to sign back in to see your inventory, claims, and messages.</p>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -11914,6 +11850,7 @@ export default function DropYardSellerDashboard({
             </div>
           </div>
         </div>
+        </ModalPortal>
       )}
     </>
   );

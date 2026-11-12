@@ -2,7 +2,10 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { dropOpenDay, dropOpenHourLong, dropCloseDay, dropCloseHourLong } from "@/lib/dropCycle";
+import { dropOpenDay, dropOpenHourLong, dropCloseDay, dropCloseHourLong, DROP_OPEN_DAY, DROP_OPEN_HOUR, DROP_CLOSE_DAY, DROP_CLOSE_HOUR } from "@/lib/dropCycle";
+
+// Length of the Drop in hours, from the schedule (Sat 08:00 → Sun 19:00 = 35).
+const DROP_HOURS = (((DROP_CLOSE_DAY - DROP_OPEN_DAY + 7) % 7) * 24) + DROP_CLOSE_HOUR - DROP_OPEN_HOUR;
 
 const LAST_UPDATED = "May 27, 2026";
 
@@ -188,7 +191,7 @@ const categories: Category[] = [
           <>
             <p>
               Every <strong>{dropOpenDay()} {dropOpenHourLong()} through {dropCloseDay()} {dropCloseHourLong()}</strong> —
-              that&apos;s a 36-hour window where the week&apos;s new listings are
+              that&apos;s a {DROP_HOURS}-hour window where the week&apos;s new listings are
               live alongside everything already on the Shelf.
             </p>
             <p className="mt-3">

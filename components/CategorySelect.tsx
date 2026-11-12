@@ -2,6 +2,7 @@
 
 import React, { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Z, SHEET_PANEL } from "@/lib/layers";
 import { Check, ChevronDown, Search, X } from "lucide-react";
 import { ModalA11y } from "@/components/ModalA11y";
 import { T } from "@/components/settings/profileTheme";
@@ -231,8 +232,8 @@ export function CategoryPicker({
 export function CategorySheet({ title = "Choose a category", onClose, ...picker }: CategoryPickerProps & { title?: string; onClose: () => void }) {
   return createPortal(
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15, 54, 11, 0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-      <div style={{ width: "100%", maxWidth: 560, maxHeight: "88vh", display: "flex", flexDirection: "column", background: T.c.paper, borderRadius: "20px 20px 0 0", padding: "10px 16px 18px", boxShadow: "0 -12px 40px rgba(15, 54, 11, 0.25)" }}>
+      style={{ position: "fixed", inset: 0, zIndex: Z.modal, background: "rgba(15, 54, 11, 0.45)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+      <div className={SHEET_PANEL} style={{ width: "100%", maxWidth: 560, display: "flex", flexDirection: "column", background: T.c.paper, borderRadius: "20px 20px 0 0", padding: "10px 16px 18px", boxShadow: "0 -12px 40px rgba(15, 54, 11, 0.25)" }}>
         <ModalA11y label={title} onClose={onClose} />
         <span aria-hidden style={{ alignSelf: "center", width: 40, height: 4, borderRadius: 999, background: T.c.fawn, marginBottom: 10 }} />
         <div style={{ ...T.dialogHead, marginBottom: 12 }}>

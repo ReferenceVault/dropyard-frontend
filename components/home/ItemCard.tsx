@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Heart, MapPin, Package } from "lucide-react";
+import { Heart, MapPin, Package, Radio } from "lucide-react";
 import { UserAvatar } from "@/components/UserAvatar";
 import type { HomeItem } from "./useHomeData";
 
@@ -39,9 +39,18 @@ const SIZES = {
   },
 } as const;
 
+// The ribbon's colours. "Live Drop" is the Shelf section's while the Drop is
+// open (Shelf items are claimable with the Drop's then): the same red and
+// white as the live Drop section's "LIVE NOW" pill (5.0:1).
+const RIBBON_TONE = {
+  New:         "bg-dy-green-strong text-white",
+  Available:   "bg-dy-orange text-dy-forest",
+  "Live Drop": "bg-dy-red text-white",
+} as const;
+
 export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, tight = false, action }: {
   item: HomeItem;
-  ribbon: "New" | "Available";
+  ribbon: keyof typeof RIBBON_TONE;
   saved: boolean;
   onToggleSaved: (id: string) => void;
   /** Smaller type and controls, for a card inside a card. */
@@ -78,8 +87,16 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
               <Package size={56} strokeWidth={1.25} aria-hidden />
             </div>
           )}
-          <span className={`dy-ribbon absolute left-0 top-[6%] py-[0.45em] pl-[1em] pr-[2em] font-medium ${s.ribbon} ${ribbon === "New" ? "bg-dy-green-strong text-white" : "bg-dy-orange text-dy-forest"}`}>
-            {ribbon}
+          <span className={`dy-ribbon absolute left-0 top-[6%] py-[0.45em] pl-[1em] pr-[2em] font-medium ${s.ribbon} ${RIBBON_TONE[ribbon]}`}>
+            {ribbon === "Live Drop" ? (
+              // Styled like the "LIVE NOW" pill: broadcast icon, bold capitals.
+              // align-top: on the baseline, the icon row made this ribbon a
+              // few pixels taller than "Available".
+              <span className="inline-flex items-center gap-[0.4em] align-top font-bold uppercase tracking-[0.08em]">
+                <Radio className="h-[1.1em] w-[1.1em] shrink-0" strokeWidth={2.25} aria-hidden />
+                {ribbon}
+              </span>
+            ) : ribbon}
           </span>
         </div>
         <div className={s.pad}>
