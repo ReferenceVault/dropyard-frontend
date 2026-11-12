@@ -13,6 +13,9 @@ import { ModalPortal } from "@/components/ModalPortal";
 import { Z, DIALOG_PANEL, dialogHead, dialogFoot } from "@/lib/layers";
 import DeleteAccountSection from "@/components/settings/DeleteAccountSection";
 import ProfilePictureSection from "@/components/settings/ProfilePictureSection";
+import { Field as SF_Field, Input as SF_Input, PasswordInput as SF_PasswordInput, ErrorBanner as SF_ErrorBanner, SaveRow as SF_SaveRow, SuccessBanner as SF_SuccessBanner, Toggle as Settings_Toggle } from "@/components/settings/SettingsFields";
+import { TypeBadge, HistoryThumb, MonthGroup, Dot, StatGrid, PageHeader, newestFirst } from "@/components/history/HistoryParts";
+import { averageRating } from "@/components/history/averageRating";
 import { UserAvatar } from "@/components/UserAvatar";
 import { shortName } from "@/lib/avatar";
 import { MessagesInboxHeader, tabDomId } from "@/components/messages/MessagesInboxHeader";
@@ -55,10 +58,10 @@ import {
 } from "@/lib/barrhaven";
 import {
   Camera, X, Check, ChevronRight, ChevronLeft, ChevronDown, Sparkles, Zap,
-  MessageCircle, Package, Eye, EyeOff, ArrowRight, User, Clock, Calendar,
+  MessageCircle, Package, Eye, ArrowRight, User, Clock, Calendar,
   CheckCircle, MapPin, LayoutGrid, Box, DollarSign, ClipboardList,
   MessageSquare, Plus, Truck, History, ArrowLeft, Shield, Tag, TrendingDown,
-  Home, Heart, Users, Mail, Phone, Info, Lock, CreditCard, Banknote, Upload, RefreshCw,
+  Home, Heart, Users, Mail, Info, Lock, CreditCard, Banknote, Upload, RefreshCw,
   Star, Settings, BarChart3, Bell, Award, Leaf, Send, Share2, AlertCircle,
   Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag, Archive,
   Paperclip, Smile, Flag, ExternalLink
@@ -1410,8 +1413,15 @@ function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draf
   const dayLabel = nextDropAt.toLocaleDateString("en-CA", { timeZone: OPERATING_TIMEZONE, weekday: "long" });
   const timeLabel = nextDropAt.toLocaleTimeString("en-CA", { timeZone: OPERATING_TIMEZONE, hour: "numeric", minute: "2-digit", hour12: true }).replace(":00 ", " ");
   const hrsSinceClose = hoursSinceLastDropClose(now);
-  const isFresh = recap && hrsSinceClose < 30;
+  // A seller with nothing in the last Drop (0 of 0) gets the Next Drop
+  // banner, not a "Drop wrapped · 0 of 0 sold" card.
+  const isFresh = recap && recap.total > 0 && hrsSinceClose < 30;
   const showRecapLine = recap && !isFresh && hrsSinceClose < 120; // ~5 days
+  // Phones: one column (the same 640px line as the Next Drop banner below).
+  // Side by side, the text column got whatever the 220px button column left
+  // over, ~40px on a 360px phone, and the headline broke over five lines.
+  const stacked = viewportWidth < 640;
+  const hasTop = !!recap?.top && recap.top !== "—";
 
   // ── Fresh recap face: green hero, sold/earned headline, countdown secondary
   if (isFresh) {
@@ -1420,27 +1430,38 @@ function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draf
         marginBottom: isMobile ? 16 : 24,
         position: "relative", overflow: "hidden",
         borderRadius: isMobile ? 18 : 24,
-        padding: isMobile ? "22px 22px" : "32px 36px",
+        padding: stacked ? "20px 18px" : isMobile ? "22px 22px" : "32px 36px",
         background: "linear-gradient(135deg, " + C.greenMist + " 0%, " + C.paper + " 75%)",
         border: "1px solid " + C.green + "30",
         boxShadow: _SH_MD + ", inset 0 1px 0 rgba(255,255,255,0.7)",
       }}>
         <div style={{ position: "absolute", top: -60, right: -30, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, " + C.green + "20 0%, transparent 70%)", pointerEvents: "none" }}/>
         <div style={{ position: "absolute", bottom: -50, left: 30, width: 110, height: 110, borderRadius: "50%", background: "radial-gradient(circle, " + C.green + "10 0%, transparent 70%)", pointerEvents: "none" }}/>
-        <div style={{ position: "relative", display: "flex", flexWrap: "wrap", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: isMobile ? 16 : 28 }}>
-          <div style={{ flex: 1, minWidth: isMobile ? 0 : 280 }}>
+        <div style={{ position: "relative", display: "flex", flexDirection: stacked ? "column" : "row", flexWrap: stacked ? "nowrap" : "wrap", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: isMobile ? 16 : 28 }}>
+          <div style={stacked ? { minWidth: 0 } : { flex: 1, minWidth: isMobile ? 0 : 280 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", borderRadius: 999, background: C.green, marginBottom: 12, boxShadow: _SH_XS }}>
               <Award size={11} style={{ color: "#fff" }} strokeWidth={2.5}/>
               <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 900, color: "#fff", letterSpacing: "0.1em", textTransform: "uppercase" }}>Drop wrapped</span>
             </div>
-            <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 26 : 40, fontWeight: 900, color: C.ink, letterSpacing: "-0.035em", lineHeight: 1.02, marginBottom: 10 }}>
-              {recap.sold} of {recap.total} sold · ${recap.earned} earned
-            </h2>
-            <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.mink, lineHeight: 1.5, marginBottom: 4 }}>
-              Top item: <span style={{ color: C.ink, fontWeight: 700 }}>{recap.top}</span>.
-            </p>
-            <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.greenDeep, display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <Calendar size={11} strokeWidth={2.3}/> Next Drop · {dayLabel} {timeLabel} ({countdown})
+            {stacked ? (
+              // Two short lines that fit a phone, and size with the screen.
+              <h2 style={{ fontFamily: F.head, fontSize: "clamp(22px, 6.8vw, 26px)", fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.12, marginBottom: 10 }}>
+                <span style={{ display: "block" }}>{recap.sold} of {recap.total} sold</span>
+                <span style={{ display: "block" }}>${recap.earned} earned</span>
+              </h2>
+            ) : (
+              <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 26 : 40, fontWeight: 900, color: C.ink, letterSpacing: "-0.035em", lineHeight: 1.02, marginBottom: 10 }}>
+                {recap.sold} of {recap.total} sold · ${recap.earned} earned
+              </h2>
+            )}
+            {hasTop && (
+              <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.mink, lineHeight: 1.5, marginBottom: 4, overflowWrap: "anywhere" }}>
+                Top item: <span style={{ color: C.ink, fontWeight: 700 }}>{recap.top}</span>.
+              </p>
+            )}
+            <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.greenDeep, display: stacked ? "flex" : "inline-flex", alignItems: stacked ? "flex-start" : "center", gap: 5, lineHeight: 1.4 }}>
+              <Calendar size={11} strokeWidth={2.3} aria-hidden="true" style={stacked ? { flexShrink: 0, marginTop: "0.3em" } : undefined}/>
+              <span>Next Drop · {dayLabel} {timeLabel} ({countdown})</span>
             </p>
           </div>
           {/* "See pickups" used to show unconditionally, but the Orders page
@@ -1449,7 +1470,7 @@ function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draf
               seller landed on a page with two empty sections and no way to
               reach what they just sold. Completed pickups live in History.
               The button only appears when a pickup is actually still due. */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: 0, minWidth: 220 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: stacked ? 1 : 0, minWidth: stacked ? 0 : 220 }}>
             {upcomingPickups > 0 && (
               <button onClick={() => onNav("pickups")} className="cta-primary" style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
@@ -1492,8 +1513,8 @@ function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draf
   // calendar tile, NEXT DROP, the day, and a days/hours/minutes countdown on
   // the left; Share + List more and the listing summary on the right — and a
   // short stack on phones. Same data and actions as before.
-  // Stack below 640px only: a tablet (768px) has room for the one-row layout.
-  const stacked = viewportWidth < 640;
+  // Stack below 640px only (`stacked`, above): a tablet (768px) has room for
+  // the one-row layout.
   const msLeft = Math.max(0, nextDropAt.getTime() - now.getTime());
   const parts = [
     { value: Math.floor(msLeft / 86400000) + "d", label: "Days" },
@@ -1603,7 +1624,10 @@ function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draf
   );
 }
 
-function BackOnShelfCard({ items, onNav }) {
+// `count` is the recap's returnedCount. The recap doesn't say which items
+// those are, so the strip doesn't name any: it used to list the Drop's top
+// item (a SOLD one, or "—" when nothing sold) and then "Item 2", "Item 3".
+function BackOnShelfCard({ count, onNav }) {
   return (
     <button
       onClick={() => onNav("items")}
@@ -1628,11 +1652,11 @@ function BackOnShelfCard({ items, onNav }) {
         <Package size={20} style={{ color: C.amberDeep }} strokeWidth={2.3}/>
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 900, color: C.ink, marginBottom: 3, letterSpacing: "-0.01em" }}>
-          {items.length} item{items.length === 1 ? "" : "s"} back on the Shelf
+        <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 900, color: C.ink, marginBottom: 3, letterSpacing: "-0.01em", lineHeight: 1.3 }}>
+          {count} item{count === 1 ? "" : "s"} back on the Shelf
         </p>
-        <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, lineHeight: 1.45, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {items.map(i => i.t).join(" · ")} · still claimable, consider a price drop
+        <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, lineHeight: 1.45 }}>
+          Still claimable. Consider a price drop to help {count === 1 ? "it" : "them"} sell.
         </p>
       </div>
       <ChevronRight size={16} style={{ color: C.smoke, flexShrink: 0 }}/>
@@ -1673,9 +1697,11 @@ function LiveHero({ countdown, liveCount, saves, claims, onNav, onShare = null }
             <Heart size={11} strokeWidth={2.3}/> {saves} {saves === 1 ? "buyer" : "buyers"} watching · {claims} {claims === 1 ? "claim" : "claims"} pending
           </p>
         </div>
-        {/* Mobile: stack the two CTAs side-by-side (more compact than two
-            full-width buttons) so the hero stays tall-but-not-towering. */}
-        <div style={{ display: "flex", flexDirection: isMobile ? "row" : "column", gap: 10, flexShrink: 0, minWidth: isMobile ? 0 : 220, width: isMobile ? "100%" : "auto" }}>
+        {/* Mobile: the CTAs side by side (more compact than full-width
+            buttons), wrapping onto a second row when they don't fit. They
+            used to stay on one row, which pushed Share out of the card (and
+            the card clips) on a 360px phone. */}
+        <div style={{ display: "flex", flexDirection: isMobile ? "row" : "column", flexWrap: isMobile ? "wrap" : "nowrap", gap: 10, flexShrink: 0, minWidth: isMobile ? 0 : 220, width: isMobile ? "100%" : "auto" }}>
           <button
             onClick={() => onNav("messages")}
             className="cta-primary"
@@ -1903,7 +1929,6 @@ function SellWithAITeaser({ notified, onNotify }) {
     { icon: Camera,         label: "Create listings from photos" },
     { icon: MessageSquare,  label: "Answer buyer questions instantly" },
     { icon: RefreshCw,      label: "Negotiate offers automatically" },
-    { icon: Truck,          label: "Coordinate pickups via WhatsApp" },
     { icon: Sparkles,       label: "5 free listings every month" },
   ];
 
@@ -2333,7 +2358,7 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
   const dropCloseAt = dropCloseMoment(now);                            // Sunday 7 pm
   const countdownToOpen  = formatCompactCountdown(nextDropAt, now);    // e.g. "2d 14h"
   const countdownToClose = formatCompactCountdown(dropCloseAt, now);   // e.g. "4h 23m"
-  const isFreshRecap = dropPhase === "between" && hoursSinceLastDropClose(now) < 30;
+  const inFreshRecapWindow = dropPhase === "between" && hoursSinceLastDropClose(now) < 30;
 
   const h = now.getHours();
   const greet = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
@@ -2398,6 +2423,9 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
     // recap immediately — the "Drop wrapped" face stays current.
   }, [accessToken, refreshTick]);
   const lastDropRecap = recapState ?? { sold: 0, total: 0, earned: 0, top: "—", returnedCount: 0 };
+  // "Drop wrapped" only for a seller who had something in it (same rule as
+  // BetweenHero): otherwise the greeting, hero and tiles say 0 of 0 sold.
+  const isFreshRecap = inFreshRecapWindow && lastDropRecap.total > 0;
 
   // Live-phase activity metrics. `liveSaves` = sum of watcher counts across
   // the seller's currently-live items (uses the existing `saves` field from
@@ -2613,12 +2641,7 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
 
       {/* Fresh-recap nudge — unsold items rolled back to the Shelf may need a price drop. */}
       {isFreshRecap && lastDropRecap.returnedCount > 0 && (
-        <BackOnShelfCard
-          items={Array.from({ length: lastDropRecap.returnedCount }, (_, i) => ({
-            t: i === 0 && lastDropRecap.top ? lastDropRecap.top : `Item ${i + 1}`,
-          }))}
-          onNav={onNav}
-        />
+        <BackOnShelfCard count={lastDropRecap.returnedCount} onNav={onNav}/>
       )}
 
       {/* 3-up stat strip — content swaps per drop phase. */}
@@ -2744,6 +2767,10 @@ function BannerStat({ icon: Ic, label, value }) {
       border: "1px solid " + C.fawn,
       boxShadow: _SH_XS,
       minWidth: 0,
+      // Phones: a wrapping row (ContextualStats). The basis is in em so it
+      // grows with the text: three across at normal size, two plus one
+      // full-width tile once a larger font size wouldn't fit three.
+      flex: isMobile ? "1 1 5.5em" : undefined,
     }}>
       <div style={{
         width: isMobile ? 28 : 40, height: isMobile ? 28 : 40,
@@ -2756,7 +2783,8 @@ function BannerStat({ icon: Ic, label, value }) {
         <Ic size={isMobile ? 13 : 18} style={{ color: C.greenDeep }} strokeWidth={2.3}/>
       </div>
       <div style={{ textAlign: "left", minWidth: 0, width: "100%" }}>
-        <p style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, color: C.mink, letterSpacing: "0.1em", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textTransform: "uppercase" }}>{label}</p>
+        {/* Phones: the label wraps ("BACK ON / SHELF") rather than being cut off. */}
+        <p style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, color: C.mink, letterSpacing: "0.1em", marginBottom: 2, textTransform: "uppercase", ...(isMobile ? {} : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }) }}>{label}</p>
         <p style={{ fontFamily: F.head, fontSize: isMobile ? 19 : 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em", lineHeight: 1, whiteSpace: "nowrap" }}>{value}</p>
       </div>
     </div>
@@ -2795,7 +2823,9 @@ function ContextualStats({ dropPhase, isFreshRecap, data }) {
   };
   const items = sets[dropPhase] || sets.between;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: isMobile ? 8 : 12, marginBottom: 22 }}>
+    <div style={isMobile
+      ? { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 22 }
+      : { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
       {items.map((s, i) => (
         <BannerStat key={i} icon={s.icon} label={s.label} value={s.value}/>
       ))}
@@ -3018,7 +3048,6 @@ function AIPlanView({ aiPlan, aiUsed, onUpgrade, onCancel, onBack }) {
             "Photo-to-listing generation",
             "AI price suggestions",
             "Basic buyer responses",
-            "WhatsApp notifications",
           ].map((f, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <Check size={14} style={{ color: C.gPrimary }} />
@@ -3097,8 +3126,10 @@ function AISetup({ onComplete, onBack, settings, onSave }) {
   const [pickupNewDate, setPickupNewDate] = useState("");
   const [pickupDateError, setPickupDateError] = useState("");
   const [pickupWindows, setPickupWindows] = useState(settings.pickupWindows || ["morning", "afternoon"]);
-  const [waNotif, setWaNotif] = useState(settings.waNotif !== false);
-  const [waPhone, setWaPhone] = useState(settings.waPhone || "");
+  // Kept so onSave still returns whatever was saved before; there is no
+  // control for them any more (WhatsApp notifications were never sent).
+  const waNotif = settings.waNotif !== false;
+  const waPhone = settings.waPhone || "";
   const [paymentMethod, setPaymentMethod] = useState(settings.paymentMethod || "either");
 
   function togDay(d) { setPickupDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d]); }
@@ -3259,7 +3290,7 @@ function AISetup({ onComplete, onBack, settings, onSave }) {
             {pickupMode === "anytime" && (
               <div style={{ padding: "10px 12px", borderRadius: 10, background: C.sand, border: "1px solid " + C.fawn, marginBottom: 14, display: "flex", alignItems: "flex-start", gap: 8 }}>
                 <Info size={13} style={{ color: C.mink, flexShrink: 0, marginTop: 1 }}/>
-                <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>Buyers can request any day. Your AI agent will confirm with you via WhatsApp before scheduling.</p>
+                <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>Buyers can request any day. You&apos;ll agree a time with the buyer in Messages before the pickup is scheduled.</p>
               </div>
             )}
 
@@ -3303,36 +3334,8 @@ function AISetup({ onComplete, onBack, settings, onSave }) {
             ))}
           </div>
 
-          {/* WhatsApp notifications — escalation channel for the seller */}
-          <div style={{ padding: 20, borderRadius: 18, border: "1.5px solid " + (waNotif ? C.wa + "40" : C.fawn), background: waNotif ? "#F0FFF4" : C.paper }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 12, background: waNotif ? C.wa : C.sand, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <MessageCircle size={18} style={{ color: waNotif ? "#fff" : C.mink }}/>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 4 }}>
-                  <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>WhatsApp notifications</p>
-                  <button onClick={() => setWaNotif(!waNotif)} style={{ width: 46, height: 26, borderRadius: 999, padding: 2, border: "none", cursor: "pointer", background: waNotif ? C.wa : C.smoke, transition: "background 150ms", flexShrink: 0 }}>
-                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transform: waNotif ? "translateX(20px)" : "translateX(0)", transition: "transform 200ms" }}/>
-                  </button>
-                </div>
-                <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5, marginBottom: waNotif ? 14 : 0 }}>Get a WhatsApp ping when the AI escalates — counter offers, uncertain questions, pickup confirmations.</p>
-
-                {waNotif && (
-                  <div className="fade-in">
-                    <label style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Your WhatsApp number</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 12, border: "1.5px solid " + C.fawn, background: C.paper }}>
-                      <Phone size={14} style={{ color: C.mink, flexShrink: 0 }}/>
-                      <input type="tel" value={waPhone} onChange={e => setWaPhone(e.target.value)} placeholder="+1 613 555 0198" style={{ flex: 1, border: "none", outline: "none", fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.ink, background: "transparent" }}/>
-                    </div>
-                    <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, marginTop: 6, display: "flex", alignItems: "center", gap: 5 }}>
-                      <Info size={10}/> Only used for escalations. Buyers don't see this number.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          {/* No WhatsApp notifications card: nothing sends WhatsApp messages.
+              The saved waNotif / waPhone values are passed through unchanged. */}
 
           {/* Payment method — global seller preference */}
           <div style={{ marginTop: 16, padding: 20, borderRadius: 18, border: "1.5px solid " + C.fawn, background: C.paper }}>
@@ -6069,7 +6072,7 @@ function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChang
       t:        api.item?.title || "Item",
       listed:   api.item?.price ?? 0,
       offered,
-      buyer:    api.buyer?.name || api.buyer?.email || "Buyer",
+      buyer:    api.buyer?.name || "Buyer",
       buyerAvatar: api.buyer?.avatar || null,
       time:     relativeTimeShort(api.proposedAt || api.createdAt),
       // BUG-055.1 — whose turn is it? GET /incoming only returns claims
@@ -7781,7 +7784,7 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
       e:       CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
       t:       api.item?.title || "Item",
       price:   (typeof api.amount === "number" ? api.amount : api.item?.price) ?? 0,
-      buyer:   api.buyer?.name || api.buyer?.email || "Buyer",
+      buyer:   api.buyer?.name || "Buyer",
       buyerAvatar: api.buyer?.avatar || null,
       date:    isToday ? "Today" : (slot.split(/\s+/)[0] || slot),
       time:    isToday ? slot.replace(/^\S+\s*/, "") : slot.replace(/^\S+\s*/, ""),
@@ -8217,102 +8220,97 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
 // across renders. Without this, every collapse toggle remounted all rows
 // and replayed the fade-in animation, which looked like the list was refreshing.
 function HistoryTxRow({ tx, idx, isMobile = false, isOpen = false, onToggle = null, onRateBuyer = null, accessToken = null }) {
-  const layerBadge = tx.layer === "drop"
-    ? { label: "Drop", bg: C.green, color: "#fff" }
-    : { label: "Shelf", bg: C.amber, color: "#fff" };
   // Asking is set by adaptHistory (originalPrice) or in demo data; treat any
   // value <= sold price as "no discount" so we don't show a misleading "$80 → $80".
   const wasDiscounted = typeof tx.asking === "number" && tx.asking > tx.price;
   const handleToggle = () => onToggle && onToggle(tx.id);
   const SoldViaIcon = tx.layer === "drop" ? Calendar : Package;
+  const panelId = "sale-details-" + tx.id;
 
+  // A row inside its month card (components/history/HistoryParts.tsx), laid
+  // out like the buyer's Purchase history: picture, type badge before the
+  // title, buyer / neighbourhood / date, the buyer's stars, price on the
+  // right. The whole row opens the details panel under it.
   return (
-    <article
-      onClick={handleToggle}
-      style={{
-        padding: isMobile ? "14px 16px" : "16px 18px",
-        borderRadius: isMobile ? 14 : 16,
-        background: C.paper,
-        border: "1.5px solid " + (isOpen ? C.green + "40" : C.fawn),
-        marginBottom: 10,
-        cursor: onToggle ? "pointer" : "default",
-        transition: "border-color 150ms",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 12 : 14 }}>
-        <ItemThumb
-          photos={tx.photos}
-          fallback={tx.img}
-          alt={tx.title}
-          size={isMobile ? 46 : 56}
-          emojiSize={isMobile ? 22 : 28}
-          radius={isMobile ? 12 : 14}
-          background={"linear-gradient(135deg, " + C.sand + ", " + C.fawn + ")"}
-        />
+    <article style={{ borderTop: "1px solid " + C.fawn, background: isOpen ? C.sand : "transparent", transition: "background 150ms" }}>
+      <div
+        role={onToggle ? "button" : undefined}
+        tabIndex={onToggle ? 0 : undefined}
+        aria-expanded={onToggle ? isOpen : undefined}
+        aria-controls={onToggle && isOpen ? panelId : undefined}
+        onClick={handleToggle}
+        onKeyDown={e => { if (onToggle && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); handleToggle(); } }}
+        style={{ display: "flex", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 14 : 18, padding: isMobile ? "14px 16px" : "16px 22px", cursor: onToggle ? "pointer" : "default" }}
+      >
+        <HistoryThumb photo={Array.isArray(tx.photos) ? tx.photos.find(Boolean) : null} fallback={tx.img} layer={tx.layer} isMobile={isMobile}/>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3, flexWrap: "wrap" }}>
-            <p style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 15, fontWeight: 800, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? "100%" : undefined }}>{tx.title}</p>
-            <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, padding: "2px 7px", borderRadius: 5, background: layerBadge.bg, color: layerBadge.color, letterSpacing: "0.05em", textTransform: "uppercase" }}>{layerBadge.label}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+            <TypeBadge layer={tx.layer}/>
+            <p style={{ fontFamily: F.head, fontSize: isMobile ? 16 : 19, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em", minWidth: 0, overflowWrap: "anywhere" }}>{tx.title}</p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 10, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: F.body, fontSize: isMobile ? 11 : 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 5 }}><UserAvatar avatar={tx.buyerAvatar} name={tx.buyer} size={20} decorative initialsBg={avatarBg(tx.buyer)} fontFamily={F.head} fontSize={8}/> {tx.buyer}</span>
-            {!isMobile && (
-              <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 3 }}><MapPin size={10}/> {tx.hood}</span>
-            )}
-            <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash }}>{new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: isMobile ? undefined : "numeric" })}</span>
+          <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16, rowGap: 4, flexWrap: "wrap", fontFamily: F.body, fontSize: isMobile ? 12.5 : 13.5, fontWeight: 600, color: C.mink }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><UserAvatar avatar={tx.buyerAvatar} name={tx.buyer} size={20} decorative initialsBg={avatarBg(tx.buyer)} fontFamily={F.head} fontSize={8}/> {tx.buyer}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><MapPin size={13} aria-hidden="true"/> {tx.hood}</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Calendar size={13} aria-hidden="true"/> {new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
           </div>
-          <div style={{ display: "flex", gap: 2, marginTop: 6 }}>
-            {[1,2,3,4,5].map(n => <Star key={n} size={isMobile ? 12 : 13} style={{ color: n <= tx.rating ? C.amber : C.fawn }} fill={n <= tx.rating ? C.amber : "none"} strokeWidth={n <= tx.rating ? 0 : 1.5}/>)}
-          </div>
+          {tx.rating > 0 && (
+            <div role="img" aria-label={"Rated " + tx.rating + " out of 5 by " + tx.buyer} style={{ display: "flex", gap: 3, marginTop: 8 }}>
+              {[1,2,3,4,5].map(n => <Star key={n} size={15} aria-hidden="true" style={{ color: n <= tx.rating ? C.amber : C.fawn }} fill={n <= tx.rating ? C.amber : "none"} strokeWidth={n <= tx.rating ? 0 : 1.5}/>)}
+            </div>
+          )}
+          {isMobile && (
+            <p style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: priceColor(tx.price, C.green), letterSpacing: "-0.02em", marginTop: 8 }}>{priceText(tx.price)}</p>
+          )}
         </div>
-        <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-          <span style={{ fontFamily: F.head, fontSize: isMobile ? 18 : 22, fontWeight: 900, color: priceColor(tx.price, C.green) }}>{priceText(tx.price)}</span>
-          {onToggle && <ChevronDown size={14} style={{ color: C.smoke, transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 200ms" }}/>}
-        </div>
+        {!isMobile && (
+          <span style={{ fontFamily: F.head, fontSize: 27, fontWeight: 900, color: priceColor(tx.price, C.green), letterSpacing: "-0.02em", flexShrink: 0 }}>{priceText(tx.price)}</span>
+        )}
+        {onToggle && <ChevronDown size={20} aria-hidden="true" style={{ color: C.mink, flexShrink: 0, alignSelf: "center", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 200ms" }}/>}
       </div>
 
       {/* Expanded detail panel — Sold via, Asking → sold delta, optional buyer review. */}
       {isOpen && (
-        <div onClick={e => e.stopPropagation()} style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed " + C.fawn, display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(2, 1fr)", gap: isMobile ? 10 : 14 }}>
+        <div id={panelId} style={{ margin: isMobile ? "0 16px 14px" : "0 22px 16px", paddingTop: 12, borderTop: "1px dashed " + C.fawn, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: isMobile ? 10 : 14 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
-              <SoldViaIcon size={10} style={{ color: C.ash }}/>
-              <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase" }}>Sold via</span>
+              <SoldViaIcon size={11} aria-hidden="true" style={{ color: C.mink }}/>
+              <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase" }}>Sold via</span>
             </div>
-            <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 700, color: C.ink, lineHeight: 1.3 }}>{tx.layer === "drop" ? "Saturday Drop" : "Shelf (anytime)"}</p>
+            <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.ink, lineHeight: 1.3 }}>{tx.layer === "drop" ? "Saturday Drop" : "Shelf (anytime)"}</p>
           </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
-              <DollarSign size={10} style={{ color: C.ash }}/>
-              <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase" }}>Asking &rarr; sold</span>
+              <DollarSign size={11} aria-hidden="true" style={{ color: C.mink }}/>
+              <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase" }}>Asking &rarr; sold</span>
             </div>
-            <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 700, color: C.ink, lineHeight: 1.3 }}>
+            <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.ink, lineHeight: 1.3 }}>
               {wasDiscounted ? ("$" + tx.asking + " → $" + tx.price) : ("$" + tx.price + " (full asking)")}
             </p>
           </div>
           {tx.review && (
-            <div style={{ gridColumn: "1 / -1", padding: "10px 12px", borderRadius: 10, background: C.sand, border: "1px solid " + C.fawn }}>
+            <div style={{ gridColumn: "1 / -1", padding: "10px 12px", borderRadius: 10, background: C.paper, border: "1px solid " + C.fawn }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <MessageSquare size={11} style={{ color: C.greenDeep }} strokeWidth={2.3}/>
+                <MessageSquare size={11} aria-hidden="true" style={{ color: C.greenDeep }} strokeWidth={2.3}/>
                 <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.greenDeep, letterSpacing: "0.06em", textTransform: "uppercase" }}>{tx.buyer.split(" ")[0]}&rsquo;s review</span>
               </div>
-              <p style={{ fontFamily: F.body, fontSize: isMobile ? 12 : 13, fontWeight: 500, color: C.ink, lineHeight: 1.5, fontStyle: "italic" }}>
+              <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink, lineHeight: 1.5, fontStyle: "italic" }}>
                 &ldquo;{tx.review}&rdquo;
               </p>
             </div>
           )}
           {/* BUG-055 — Rate buyer CTA. Surfaces only on real claims (not demo
-              rows) and only when the seller hasn't already rated. Used for
-              marketing "X-star community" pitch on buyer profiles. */}
+              rows) and only when the seller hasn't already rated. */}
           {accessToken && onRateBuyer && tx.id && typeof tx.id === "string" && tx.id.length > 8 && !tx.sellerRated && (
-            <div style={{ gridColumn: "1 / -1", padding: "10px 12px", borderRadius: 10, background: C.amberMist || "#fef3c7", border: "1px solid " + C.amber + "30" }}>
+            <div style={{ gridColumn: "1 / -1", padding: "10px 12px", borderRadius: 10, background: C.amberMist, border: "1px solid " + C.amber + "30" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
-                  <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.04em" }}>Rate {tx.buyer.split(" ")[0]}</p>
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.mink, marginTop: 2 }}>Help other sellers — what was the buyer like?</p>
+                  <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.02em" }}>Rate {tx.buyer.split(" ")[0]}</p>
+                  <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, marginTop: 2 }}>Help other sellers — what was the buyer like?</p>
                 </div>
-                <button onClick={() => onRateBuyer(tx)} className="cta-primary" style={{ padding: "6px 14px", borderRadius: 999, border: "none", background: C.amber, color: "#fff", fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                  <Star size={12}/> Rate buyer
+                {/* Same look as the buyer's "Leave review": amber outline,
+                    amber-deep text (white on amber was 2.2:1). */}
+                <button onClick={() => onRateBuyer(tx)} style={{ minHeight: 40, padding: "8px 16px", borderRadius: 999, border: "1.5px solid " + C.amber, background: C.paper, color: C.amberDeep, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                  <Star size={14} aria-hidden="true"/> Rate buyer
                 </button>
               </div>
             </div>
@@ -8320,8 +8318,8 @@ function HistoryTxRow({ tx, idx, isMobile = false, isOpen = false, onToggle = nu
           {tx.sellerRated && tx.sellerRating > 0 && (
             <div style={{ gridColumn: "1 / -1", padding: "8px 12px", borderRadius: 10, background: C.greenMist, border: "1px solid " + C.green + "20", display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.greenDeep, letterSpacing: "0.04em", textTransform: "uppercase" }}>You rated {tx.buyer.split(" ")[0]}</span>
-              <div style={{ display: "flex", gap: 1 }}>
-                {[1,2,3,4,5].map(n => <Star key={n} size={11} style={{ color: n <= tx.sellerRating ? C.amber : C.fawn }} fill={n <= tx.sellerRating ? C.amber : "none"}/>)}
+              <div role="img" aria-label={tx.sellerRating + " out of 5"} style={{ display: "flex", gap: 1 }}>
+                {[1,2,3,4,5].map(n => <Star key={n} size={11} aria-hidden="true" style={{ color: n <= tx.sellerRating ? C.amber : C.fawn }} fill={n <= tx.sellerRating ? C.amber : "none"}/>)}
               </div>
             </div>
           )}
@@ -8407,7 +8405,7 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
       photos: Array.isArray(api.item?.photos) ? api.item.photos.filter(Boolean) : [],
       img:    CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
       cat:    ENUM_TO_CATEGORY_LABEL[api.item?.category] || "Other",
-      buyer:  api.buyer?.name || api.buyer?.email || "Buyer",
+      buyer:  api.buyer?.name || "Buyer",
       buyerAvatar: api.buyer?.avatar || null,
       hood:   api.buyer?.neighborhood || "—",
       date:   api.pickedUpAt || api.updatedAt || api.createdAt,
@@ -8442,13 +8440,13 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
 
   const totalItems = transactions.length;
   const totalRevenue = transactions.reduce((a, t) => a + t.price, 0);
-  const avgRating = totalItems > 0
-    ? (transactions.reduce((a, t) => a + t.rating, 0) / totalItems).toFixed(1)
-    : "—";
+  // Only sales the buyer rated: an unrated sale has rating 0 and would drag
+  // the average down (5 + 4 + unrated is 4.5, not 3.0).
+  const avgRating = averageRating(transactions);
   const co2Kg = Math.round(totalItems * 2.5);
 
   const grouped = {};
-  transactions.forEach(t => {
+  newestFirst(transactions).forEach(t => {
     const d = new Date(t.date);
     const y = d.getFullYear();
     const m = d.toLocaleDateString("en-US", { month: "long" });
@@ -8461,7 +8459,7 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
   const stats = [
     { label: "Items sold",    value: totalItems,           icon: Package,     color: C.green,     bg: C.greenMist },
     { label: "Total revenue", value: "$" + totalRevenue,   icon: DollarSign,  color: C.amberDeep, bg: C.amberMist },
-    { label: "Avg rating",    value: avgRating,            icon: Star,        color: C.amberDeep, bg: C.amberMist },
+    { label: "Avg rating",    value: avgRating ?? "—",    icon: Star,        color: C.amberDeep, bg: C.amberMist, ...(avgRating ? {} : { sub: "No ratings yet" }) },
     { label: "Drops / Shelf", value: transactions.filter(t=>t.layer==="drop").length + "/" + transactions.filter(t=>t.layer==="shelf").length, icon: Package, color: C.green, bg: C.greenMist },
   ];
 
@@ -8473,106 +8471,61 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
   return (
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
       {!embedded && (
-        <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 2 : 4 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
-            <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.amberMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
-              <Award size={isMobile ? 18 : 20} style={{ color: C.amberDeep }} strokeWidth={2.2}/>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <h1 style={{ fontFamily: F.head, fontSize: isMobile ? 24 : 30, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.05, marginBottom: 4 }}>Sales history</h1>
-              <p style={{ fontFamily: F.body, fontSize: isMobile ? 12.5 : 14, fontWeight: 500, color: C.mink, lineHeight: 1.45, maxWidth: 560 }}>{totalItems} completed sale{totalItems !== 1 ? "s" : ""} across Drops and the Shelf.</p>
-            </div>
-          </div>
-        </div>
+        <PageHeader icon={Award} isMobile={isMobile} title="Sales history" subtitle={totalItems + " completed sale" + (totalItems !== 1 ? "s" : "") + " across Drops and the Shelf."}/>
       )}
 
       {/* Error toast */}
       {errorMsg && (
         <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
-          <AlertCircle size={18} style={{ color: C.claret }} />
+          <AlertCircle size={18} aria-hidden="true" style={{ color: C.claret }} />
           <p style={{ fontSize: 13, fontWeight: 600, color: C.claret, fontFamily: F.body, flex: 1 }}>{errorMsg}</p>
-          <button onClick={() => setErrorMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
+          <button onClick={() => setErrorMsg(null)} aria-label="Dismiss" style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
         </div>
       )}
 
-      {/* Stats grid — 4-col on desktop, 2x2 on mobile */}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14, marginBottom: isMobile ? 18 : 22 }}>
-        {stats.map((st, i) => {
-          const Ic = st.icon;
-          return (
-            <div key={i} className="fade-in" style={{ padding: isMobile ? "14px 14px" : "18px 20px", borderRadius: isMobile ? 14 : 18, background: C.paper, border: "1.5px solid " + C.fawn, animationDelay: (i * 40) + "ms" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: isMobile ? 8 : 10 }}>
-                <div style={{ width: isMobile ? 32 : 38, height: isMobile ? 32 : 38, borderRadius: isMobile ? 10 : 12, background: st.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Ic size={isMobile ? 14 : 17} style={{ color: st.color }}/>
-                </div>
-              </div>
-              <p style={{ fontFamily: F.head, fontSize: isMobile ? 22 : 26, fontWeight: 900, color: st.color, letterSpacing: "-0.02em", lineHeight: 1 }}>{st.value}</p>
-              <p style={{ fontFamily: F.body, fontSize: isMobile ? 11 : 12, fontWeight: 600, color: C.mink, marginTop: 4 }}>{st.label}</p>
-            </div>
-          );
-        })}
-      </div>
+      {/* Stats — the same tiles as the buyer's Purchase history. */}
+      <StatGrid stats={stats} isMobile={isMobile}/>
 
       {/* Loading */}
       {loading && (
-        <div style={{ padding: 40, textAlign: "center" }}>
-          <p style={{ fontSize: 13, color: C.ash, fontFamily: F.body }}>Loading sales history…</p>
+        <div role="status" style={{ padding: 40, textAlign: "center" }}>
+          <p style={{ fontSize: 13, color: C.mink, fontFamily: F.body }}>Loading sales history…</p>
         </div>
       )}
 
       {/* Empty state */}
       {!loading && totalItems === 0 && (
-        <div style={{ padding: 60, textAlign: "center" }}>
-          <Award size={32} style={{ color: "#e2e8f0", marginBottom: 12 }} />
-          <p style={{ fontSize: 15, fontWeight: 700, color: C.ash, fontFamily: F.body }}>No sales yet</p>
-          <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>Once a buyer picks up an item from you, it'll show up here.</p>
+        <div style={{ padding: "48px 24px", textAlign: "center", borderRadius: 18, border: "1px solid " + C.fawn, background: C.paper }}>
+          <Award size={32} aria-hidden="true" style={{ color: C.smoke, marginBottom: 12 }} />
+          <p style={{ fontSize: 15, fontWeight: 700, color: C.ink, fontFamily: F.head }}>No sales yet</p>
+          <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>Once a buyer picks up an item from you, it&apos;ll show up here.</p>
         </div>
       )}
 
-      {/* Timeline grouped by year/month - collapsible */}
-      {!loading && totalItems > 0 && years.map(year => {
-        const yearTxs = transactions.filter(t => new Date(t.date).getFullYear() === year);
-        const yearRev = yearTxs.reduce((a, t) => a + t.price, 0);
-        const months = Object.keys(grouped[year]);
-        const yearKey = "year-" + year;
-        const yearCollapsed = !!collapsed[yearKey];
+      {/* Timeline — one card per month, newest first, like the buyer's
+          Purchase history: "October 2026" with the month's count and revenue,
+          its sales stacked under it. The year loop only keeps the ordering. */}
+      {!loading && totalItems > 0 && years.map(year => Object.keys(grouped[year]).map(month => {
+        const monthKey = year + "-" + month;
+        const monthTxs = grouped[year][month];
+        const monthRev = monthTxs.reduce((a, t) => a + t.price, 0);
         return (
-          <section key={year} style={{ marginBottom: isMobile ? 22 : 28 }}>
-            <button onClick={() => toggleCollapse(yearKey)} style={{ width: "100%", display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: isMobile ? "10px 0 8px" : "12px 0 10px", marginBottom: yearCollapsed ? 0 : (isMobile ? 12 : 14), borderBottom: "2px solid " + C.fawn, background: "none", border: "none", borderBottomStyle: "solid", cursor: "pointer", textAlign: "left" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 8 : 12 }}>
-                {yearCollapsed ? <ChevronRight size={isMobile ? 16 : 20} style={{ color: C.mink, flexShrink: 0 }}/> : <ChevronDown size={isMobile ? 16 : 20} style={{ color: C.mink, flexShrink: 0 }}/>}
-                <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 18 : 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em" }}>{year}</h2>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14 }}>
-                <span style={{ fontFamily: F.body, fontSize: isMobile ? 11 : 12, fontWeight: 600, color: C.mink }}>{yearTxs.length} sale{yearTxs.length !== 1 ? "s" : ""}</span>
-                <span style={{ fontFamily: F.head, fontSize: isMobile ? 13 : 14, fontWeight: 800, color: C.green }}>${yearRev}</span>
-              </div>
-            </button>
-
-            {!yearCollapsed && months.map(month => {
-              const monthKey = year + "-" + month;
-              const monthTxs = grouped[year][month];
-              const monthRev = monthTxs.reduce((a, t) => a + t.price, 0);
-              const monthCollapsed = !!collapsed[monthKey];
-              return (
-                <div key={month} style={{ marginBottom: 14 }}>
-                  <button onClick={() => toggleCollapse(monthKey)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", marginBottom: monthCollapsed ? 0 : 10, borderRadius: 12, border: "1px solid " + C.fawn, background: monthCollapsed ? C.paper : C.sand, cursor: "pointer", textAlign: "left", transition: "all 150ms" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      {monthCollapsed ? <ChevronRight size={14} style={{ color: C.mink }}/> : <ChevronDown size={14} style={{ color: C.mink }}/>}
-                      <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.ink, letterSpacing: "0.12em", textTransform: "uppercase" }}>{month}</p>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink }}>{monthTxs.length} sale{monthTxs.length !== 1 ? "s" : ""}</span>
-                      <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.green }}>${monthRev}</span>
-                    </div>
-                  </button>
-                  {!monthCollapsed && monthTxs.map((tx, idx) => <HistoryTxRow key={tx.id} tx={tx} idx={idx} isMobile={isMobile} isOpen={expandedIds.has(tx.id)} onToggle={toggleExpand} onRateBuyer={openRateBuyer} accessToken={accessToken}/>)}
-                </div>
-              );
-            })}
-          </section>
+          <MonthGroup
+            key={monthKey}
+            isMobile={isMobile}
+            title={month + " " + year}
+            collapsed={!!collapsed[monthKey]}
+            onToggle={() => toggleCollapse(monthKey)}
+            summary={<>
+              <span>{monthTxs.length} sale{monthTxs.length !== 1 ? "s" : ""}</span>
+              <Dot/>
+              <span style={{ fontFamily: F.head, fontWeight: 800, color: C.greenDeep }}>${monthRev} earned</span>
+            </>}
+          >
+            {monthTxs.map((tx, idx) => <HistoryTxRow key={tx.id} tx={tx} idx={idx} isMobile={isMobile} isOpen={expandedIds.has(tx.id)} onToggle={toggleExpand} onRateBuyer={openRateBuyer} accessToken={accessToken}/>)}
+          </MonthGroup>
         );
-      })}
+      }))}
 
       {/* Community impact */}
       <div style={{ padding: isMobile ? "20px 22px" : "24px 28px", borderRadius: isMobile ? 18 : 22, background: "linear-gradient(135deg, " + C.ink + ", #3A3730)", position: "relative", overflow: "hidden", marginTop: 20 }}>
@@ -10344,112 +10297,9 @@ function AIPhotoFlow({ onDone, onBack, aiSettings = {} }) {
    ============================================================ */
 
 /* Tabs header — same look as InventoryTabs (icon, eyebrow, h1, tab row). */
-// Tiny toggle used across the new Notifications / Payments sections.
-function Settings_Toggle({ on, onClick, disabled = false }) {
-  return (
-    <button onClick={onClick} disabled={disabled} style={{
-      width: 36, height: 22, borderRadius: 999, border: "none",
-      cursor: disabled ? "not-allowed" : "pointer",
-      background: on ? C.green : C.fawn,
-      position: "relative", transition: "background 150ms", padding: 0,
-      opacity: disabled ? 0.5 : 1,
-    }}>
-      <span style={{
-        position: "absolute", top: 2, left: on ? 16 : 2,
-        width: 18, height: 18, borderRadius: "50%",
-        background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
-        transition: "left 150ms",
-      }}/>
-    </button>
-  );
-}
-
-/* Field, input, button helpers — keep card markup compact. */
-function SF_Field({ label, helper, children }) {
-  return (
-    <div>
-      <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>{label}</p>
-      {children}
-      {helper && <p style={{ fontFamily: F.body, fontSize: 11, color: C.ash, marginTop: 6 }}>{helper}</p>}
-    </div>
-  );
-}
-
-function SF_Input({ style, ...props }) {
-  return (
-    <input
-      {...props}
-      style={{
-        width: "100%", padding: "10px 14px", borderRadius: 10,
-        border: "1.5px solid " + C.fawn, background: C.paper,
-        fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink,
-        outline: "none", boxSizing: "border-box",
-        ...(props.disabled ? { opacity: 0.75, cursor: "not-allowed" } : {}),
-        ...style,
-      }}
-    />
-  );
-}
-
-/* Password input with a reveal toggle. The caller owns `show` so one piece of
-   state can drive both the new and confirm fields at once — revealing them
-   together is the point: "do not match" is unactionable when you can't see
-   which of the two has the typo. Right padding clears the eye button. */
-function SF_PasswordInput({ show, onToggleShow, ...props }) {
-  return (
-    <div style={{ position: "relative" }}>
-      <SF_Input {...props} type={show ? "text" : "password"} style={{ paddingRight: 42 }}/>
-      <button
-        type="button"
-        onClick={onToggleShow}
-        tabIndex={-1}
-        aria-label={show ? "Hide password" : "Show password"}
-        style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 6, border: "none", background: "none", color: C.ash, cursor: "pointer" }}
-      >
-        {show ? <EyeOff size={15}/> : <Eye size={15}/>}
-      </button>
-    </div>
-  );
-}
-
-function SF_PrimaryButton({ disabled, loading, children, ...props }) {
-  return (
-    <button
-      {...props}
-      disabled={disabled}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 7,
-        padding: "10px 20px", borderRadius: 999, border: "none",
-        cursor: disabled ? "not-allowed" : "pointer",
-        fontFamily: F.head, fontSize: 13, fontWeight: 800,
-        background: disabled ? C.fawn : C.green,
-        color: disabled ? C.ash : "#fff",
-        boxShadow: disabled ? "none" : "0 2px 0 " + C.greenDeep,
-        opacity: loading ? 0.7 : 1,
-        transition: "background 150ms",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function SF_ErrorBanner({ message }) {
-  return (
-    <div style={{ padding: "10px 12px", borderRadius: 10, background: C.claretMist, border: "1px solid " + C.claret + "40", display: "flex", alignItems: "flex-start", gap: 8 }}>
-      <AlertCircle size={14} style={{ color: C.claret, flexShrink: 0, marginTop: 1 }}/>
-      <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.claret }}>{message}</p>
-    </div>
-  );
-}
-
-function SF_SavedBadge({ label }) {
-  return (
-    <p style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.greenDeep }}>
-      <CheckCircle size={13}/> {label}
-    </p>
-  );
-}
+// The field, input, button, banner and switch helpers (SF_*, Settings_Toggle)
+// are shared with the buyer dashboard: components/settings/SettingsFields.tsx,
+// imported at the top under these names.
 
 /* ───── PROFILE TAB ───── */
 function ProfileTab({ user, onSuccess }) {
@@ -10579,14 +10429,14 @@ function ProfileTab({ user, onSuccess }) {
 
         {profileError && <SF_ErrorBanner message={profileError}/>}
 
-        <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: 14, borderTop: "1px solid " + C.fawn }}>
-          {profileSavedAt
-            ? <SF_SavedBadge label="Changes saved"/>
-            : <p style={{ fontFamily: F.body, fontSize: 12, color: C.ash }}>Save when you&apos;re ready.</p>}
-          <SF_PrimaryButton type="submit" disabled={!profileDirty || savingProfile} loading={savingProfile}>
-            {savingProfile ? "Saving..." : "Save changes"}
-          </SF_PrimaryButton>
-        </div>
+        <SF_SaveRow
+          savedLabel={profileSavedAt ? "Changes saved" : null}
+          hint="Save when you're ready."
+          blockedHint="Edit your name to save changes."
+          disabled={!profileDirty || savingProfile}
+          loading={savingProfile}
+          label="Save changes"
+        />
       </form>
 
       {/* Password */}
@@ -10618,20 +10468,14 @@ function ProfileTab({ user, onSuccess }) {
 
         {pwError && <SF_ErrorBanner message={pwError}/>}
 
-        <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: 14, borderTop: "1px solid " + C.fawn }}>
-          {pwSavedAt
-            ? <SF_SavedBadge label={hasPassword ? "Password updated" : "Password set"}/>
-            : <p style={{ fontFamily: F.body, fontSize: 12, color: C.ash }}>
-                {hasPassword ? "Other devices will be signed out." : "Adds a password so you can sign in with email too."}
-              </p>}
-          <SF_PrimaryButton
-            type="submit"
-            disabled={savingPw || !newPw || !confirmPw || (hasPassword && !currentPw)}
-            loading={savingPw}
-          >
-            {savingPw ? "Saving..." : (hasPassword ? "Update password" : "Set password")}
-          </SF_PrimaryButton>
-        </div>
+        <SF_SaveRow
+          savedLabel={pwSavedAt ? (hasPassword ? "Password updated" : "Password set") : null}
+          hint={hasPassword ? "Other devices will be signed out." : "Adds a password so you can sign in with email too."}
+          blockedHint={hasPassword ? "Fill in all three fields to update." : "Fill in both fields to set a password."}
+          disabled={savingPw || !newPw || !confirmPw || (hasPassword && !currentPw)}
+          loading={savingPw}
+          label={hasPassword ? "Update password" : "Set password"}
+        />
       </form>
 
       <div style={{ gridColumn: "1 / -1" }}><DeleteAccountSection/></div>
@@ -10667,7 +10511,6 @@ function SubscriptionTab({ user, onSuccess }) {
 
   const freeFeatures = [
     "Unlimited listings during weekly Drops",
-    "Run a Moving Sale when you need to",
     "Direct messaging with buyers",
     "Pickup scheduling tools",
     "DropYard fraud protection",
@@ -10677,7 +10520,6 @@ function SubscriptionTab({ user, onSuccess }) {
     "Auto-responds to buyer questions",
     "Negotiates within rules you set",
     "Schedules pickups within your windows",
-    "WhatsApp updates so you don't live in the app",
     "No-show handling — re-opens and contacts next buyer",
   ];
 
@@ -10780,27 +10622,6 @@ function SubscriptionTab({ user, onSuccess }) {
   );
 }
 
-/* Top-of-page success banner — fades in, fades out 2.6s later. */
-function SF_SuccessBanner({ message, onClose }) {
-  useEffect(() => {
-    if (!message) return;
-    const t = setTimeout(onClose, 2600);
-    return () => clearTimeout(t);
-  }, [message, onClose]);
-  if (!message) return null;
-  return (
-    <div className="fade-in" style={{ position: "sticky", top: 0, zIndex: 30, maxWidth: 1160, margin: "0 auto 16px", padding: "12px 16px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "55", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 6px 20px rgba(48, 132, 36, 0.12)" }}>
-      <div style={{ width: 28, height: 28, borderRadius: "50%", background: C.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <Check size={15} style={{ color: "#fff" }} strokeWidth={3}/>
-      </div>
-      <p style={{ fontFamily: F.head, fontSize: 13.5, fontWeight: 800, color: C.greenDeep, flex: 1 }}>{message}</p>
-      <button onClick={onClose} aria-label="Dismiss" style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.greenDeep }}>
-        <X size={14} strokeWidth={2.5}/>
-      </button>
-    </div>
-  );
-}
-
 /* Parent SettingsView — picks active tab and renders the right body. */
 // `initialSection` lets other screens deep-link into a specific settings pane
 // (e.g. the listing form's "Set your default" payment-method link). null = the
@@ -10873,18 +10694,8 @@ function SettingsView({ user, initialSection = null, onBack = null, backLabel = 
 
       {/* Page header — hidden on mobile while drilled into a section. */}
       {(!isMobile || !mobileViewingSection) && (
-        <div style={{ padding: isMobile ? "12px 0 8px" : "14px 0 10px", position: "relative", marginBottom: isMobile ? 4 : 10 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: isMobile ? 12 : 16 }}>
-            <div style={{ width: isMobile ? 42 : 48, height: isMobile ? 42 : 48, borderRadius: isMobile ? 12 : 14, background: C.amberMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
-              <Settings size={isMobile ? 18 : 20} style={{ color: C.amberDeep }} strokeWidth={2.2}/>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <h1 style={{ fontFamily: F.head, fontSize: isMobile ? 24 : 30, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.05, marginBottom: 4 }}>Settings</h1>
-              <p style={{ fontFamily: F.body, fontSize: isMobile ? 12.5 : 14, fontWeight: 500, color: C.mink, lineHeight: 1.45, maxWidth: 560 }}>
-                Account, notifications, payments, pickup defaults, and subscription.
-              </p>
-            </div>
-          </div>
+        <div style={{ marginBottom: isMobile ? 2 : 6 }}>
+          <PageHeader icon={Settings} isMobile={isMobile} title="Settings" subtitle="Account, notifications, payments, pickup defaults, and subscription."/>
         </div>
       )}
 
@@ -10905,6 +10716,7 @@ function SettingsView({ user, initialSection = null, onBack = null, backLabel = 
               return (
                 <button
                   key={sec.id}
+                  aria-current={active ? "true" : undefined}
                   onClick={() => isMobile ? setMobileViewingSection(sec.id) : setActiveSection(sec.id)}
                   style={{
                     width: "100%", display: "flex", alignItems: "center", gap: 12, textAlign: "left",
@@ -11013,10 +10825,15 @@ function SettingsNotifications({ user, onSuccess }) {
 
   return (
     <div style={{ padding: "20px 22px", borderRadius: 18, border: "1px solid " + C.fawn, background: C.paper }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", gap: 12, paddingBottom: 12, borderBottom: "1px solid " + C.fawn, marginBottom: 8 }}>
+      {/* The choices are stored but nothing sends these emails or pushes yet. */}
+      <p style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 12px", marginBottom: 14, borderRadius: 10, background: C.sand, border: "1px solid " + C.fawn, fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>
+        <Bell size={14} aria-hidden="true" style={{ color: C.greenDeep, flexShrink: 0, marginTop: 2 }}/>
+        Email and push alerts are coming soon; your choices are saved for when they launch.
+      </p>
+      <div aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", gap: 12, paddingBottom: 12, borderBottom: "1px solid " + C.fawn, marginBottom: 8 }}>
         <span/>
-        <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, color: C.ash, letterSpacing: "0.12em", textAlign: "center" }}>EMAIL</span>
-        <span style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, color: C.ash, letterSpacing: "0.12em", textAlign: "center" }}>PUSH</span>
+        <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textAlign: "center" }}>EMAIL</span>
+        <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textAlign: "center" }}>PUSH</span>
       </div>
       {rows.map((r, i) => (
         <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", gap: 12, alignItems: "center", padding: "12px 0", borderBottom: i === rows.length - 1 ? "none" : "1px solid " + C.fawn }}>
@@ -11029,7 +10846,8 @@ function SettingsNotifications({ user, onSuccess }) {
               <Settings_Toggle
                 on={!!prefs[r.id][ch]}
                 onClick={() => toggle(r.id, ch)}
-                disabled={busy === `${r.id}.${ch}`}
+                label={r.label + (ch === "email" ? ", email" : ", push")}
+                busy={busy === `${r.id}.${ch}`}
               />
             </div>
           ))}
@@ -11108,7 +10926,7 @@ function SettingsPayments({ user, onSuccess }) {
                   {wouldBeLast && <span style={{ color: C.amberDeep, fontWeight: 700 }}> · at least one method must stay on</span>}
                 </p>
               </div>
-              <Settings_Toggle on={on} onClick={() => toggle(it.id)} disabled={busy === it.id}/>
+              <Settings_Toggle on={on} onClick={() => toggle(it.id)} label={it.label} busy={busy === it.id}/>
             </div>
           );
         })}
@@ -11169,7 +10987,7 @@ function SettingsPickup({ user, onSuccess }) {
 
   return (
     <form onSubmit={submit} style={{ padding: "20px 22px", borderRadius: 18, border: "1px solid " + C.fawn, background: C.paper, display: "flex", flexDirection: "column", gap: 16 }}>
-      <SF_Field label="Default pickup address" helper="Shown to buyers after they claim an item. You can override per-listing.">
+      <SF_Field label="Default pickup address" helper="Your pickup address is private and never shown to buyers. You decide if and when to share it.">
         <SF_Input
           value={address}
           onChange={e => setAddress(e.target.value)}
@@ -11179,6 +10997,7 @@ function SettingsPickup({ user, onSuccess }) {
       </SF_Field>
       <SF_Field label="Buyer-facing neighbourhood" helper="Shown on every listing, and what buyers sort by. Update it if you move within Barrhaven.">
         <select
+          aria-label="Buyer-facing neighbourhood"
           value={neighborhoodId}
           onChange={e => setNeighborhoodId(e.target.value)}
           disabled={saving}
@@ -11195,12 +11014,15 @@ function SettingsPickup({ user, onSuccess }) {
         </select>
       </SF_Field>
       {error && <SF_ErrorBanner message={error}/>}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: 12, borderTop: "1px solid " + C.fawn }}>
-        {savedAt
-          ? <SF_SavedBadge label="Changes saved"/>
-          : <p style={{ fontFamily: F.body, fontSize: 12, color: C.ash }}>Per-listing windows can be set when creating each item.</p>}
-        <SF_PrimaryButton type="submit" disabled={!dirty || saving} loading={saving}>Save changes</SF_PrimaryButton>
-      </div>
+      <SF_SaveRow
+        style={{ paddingTop: 12 }}
+        savedLabel={savedAt ? "Changes saved" : null}
+        hint="Per-listing windows can be set when creating each item."
+        blockedHint="Change the address or neighbourhood to save."
+        disabled={!dirty || saving}
+        loading={saving}
+        label="Save changes"
+      />
     </form>
   );
 }
@@ -11429,7 +11251,7 @@ function SellerOnboardingModal({ user, accessToken, onClose, onSuccess }) {
               style={{ ...fieldInput, background: area.inServiceArea ? C.paper : C.sand }}
             />
             <p style={{ fontFamily: F.body, fontSize: 11, color: C.mink, marginTop: 5 }}>
-              Only shared with a buyer after you confirm their claim.
+              Your pickup address is private and never shown to buyers. You decide if and when to share it.
             </p>
           </Field>
           <Field label="Accepted payment methods">

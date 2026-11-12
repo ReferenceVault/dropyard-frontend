@@ -763,3 +763,34 @@ p {
 .dy-ask-cta:not(:disabled):hover { filter: brightness(0.9); }
 .dy-ask-cta:not(:disabled):active { filter: brightness(0.8); }
 .dy-ask-cta:focus-visible { outline: 3px solid var(--color-dy-orange); outline-offset: 3px; }
+/* Settings Save buttons and switches (components/settings/SettingsFields.tsx):
+   hover and pressed states as a colour change, so they show with reduced
+   motion too, and a focus ring that clears the button's own shadow. */
+.dy-sf-btn { transition: filter var(--transition-fast), transform var(--motion-press); }
+.dy-sf-btn:not(:disabled):hover { filter: brightness(0.92); }
+.dy-sf-btn:not(:disabled):active { filter: brightness(0.84); }
+.dy-sf-btn:focus-visible,
+.dy-sf-toggle:focus-visible { outline: 3px solid var(--color-dy-orange); outline-offset: 3px; }
+.dy-sf-toggle:not([aria-disabled="true"]):hover { filter: brightness(0.92); }
+/* A 44×44 touch target around the 36×22 switch, without changing its size
+   or the layout: an invisible box centred on it that takes the taps. */
+.dy-sf-toggle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+/* Buyer dashboard top bar on phones under 640px: the bell matches the Switch
+   and account buttons, three equal 44px white circles with one soft shadow.
+   Scoped to the buyer header; the seller dashboard's bell is unchanged. */
+@media (max-width: 639px) {
+  .dy-buyer-actions .dy-notif-bell {
+    width: 44px;
+    height: 44px;
+    border: none;
+    box-shadow: 0 4px 14px -6px rgba(15, 54, 11, 0.30), 0 0 0 1px rgba(15, 54, 11, 0.06);
+  }
+}
