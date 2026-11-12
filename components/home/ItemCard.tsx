@@ -69,7 +69,7 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
     // on something instead of floating under the photo. Not overflow-hidden:
     // the link's focus ring draws outside the card and must not be clipped.
     <article className="dy-item relative flex h-full flex-col rounded-2xl border border-dy-line bg-white shadow-(--shadow-card)">
-      <Link href={`/item/${encodeURIComponent(item.id)}`} className="dy-focus group block flex-1 rounded-2xl">
+      <Link href={`/item/${encodeURIComponent(item.id)}`} className="dy-focus group flex flex-1 flex-col rounded-2xl">
         {/* 15px = the card's 16px corner inside its 1px border. */}
         <div className="relative aspect-square overflow-hidden rounded-t-[15px] bg-dy-pale">
           {showPhoto ? (
@@ -99,7 +99,10 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
             ) : ribbon}
           </span>
         </div>
-        <div className={s.pad}>
+        {/* A column that fills the card, so the seller row can sit at the
+            bottom: cards in a row are one height, and their seller rows
+            line up whether the title takes one line or two. */}
+        <div className={`flex flex-1 flex-col ${s.pad}`}>
           <h3 className={`line-clamp-2 font-semibold leading-tight tracking-[-0.01em] text-dy-forest group-hover:text-dy-green-strong ${s.title}`}>
             {item.title}
           </h3>
@@ -110,13 +113,12 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
             <MapPin className="h-[1em] w-[1em] shrink-0 text-dy-green" aria-hidden />
             <span className="truncate">{item.neighbourhood}</span>
           </p>
-          <p className={`mt-1 text-dy-muted ${s.small}`}>{item.pickup}</p>
-          {item.pickupHours && (
-            <p className={`text-dy-muted ${s.small}`}>{item.pickupHours}</p>
-          )}
+          {/* No pickup days or hours on cards: they're on the item page. */}
           {/* Who's selling: their chosen profile picture and "First L." — the
-              public homepage never shows a full surname. */}
-          <p className={`mt-[0.6em] flex min-w-0 items-center gap-2 border-t border-dy-line pt-[0.6em] text-dy-forest ${s.small}`}>
+              public homepage never shows a full surname. The spacer keeps the
+              old 0.6em gap above it; mt-auto takes any extra height. */}
+          <span aria-hidden className={`block h-[0.6em] shrink-0 ${s.small}`} />
+          <p className={`mt-auto flex min-w-0 items-center gap-2 border-t border-dy-line pt-[0.6em] text-dy-forest ${s.small}`}>
             <UserAvatar avatar={item.sellerAvatar} name={item.sellerName} size={s.avatar} decorative />
             <span className="truncate font-medium">{item.sellerName}</span>
           </p>

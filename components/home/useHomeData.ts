@@ -4,8 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiRequest } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { formatPickupDateList } from "@/lib/pickupDates";
-import { pickupWindowsShort } from "@/lib/pickupWindows";
 import { shortName, type ResolvedAvatar } from "@/lib/avatar";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -18,10 +16,6 @@ interface ApiItem {
   status: string;
   placement: string;
   queuedAt?: string | null;
-  pickupMode?: string;
-  pickupDays?: string[];
-  pickupCustomDates?: string[];
-  pickupWindows?: string[];
   seller?: { id?: string; name?: string | null; neighborhood?: string | null; avatar?: ResolvedAvatar | null } | null;
   _count?: { watchlist?: number };
 }
@@ -32,9 +26,6 @@ export interface HomeItem {
   price: number;
   photo: string | null;
   neighbourhood: string;
-  pickup: string;
-  /** "Evenings · 4 PM–7 PM"; null when the seller set no window. */
-  pickupHours: string | null;
   sellerId: string | null;
   /** "First L." — the homepage is public, so never a full surname. */
   sellerName: string;
@@ -51,20 +42,6 @@ export type LoadState = "loading" | "ready" | "error";
 
 const NO_SAVED_ITEMS = new Set<string>();
 
-const DAY_NAMES: Record<string, string> = {
-  Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday",
-};
-
-function pickupLabel(api: ApiItem): string {
-  if (api.pickupMode === "anytime") return "Pickup anytime";
-  const dates = api.pickupCustomDates ?? [];
-  if (api.pickupMode === "custom" && dates.length > 0) return `Pickup ${formatPickupDateList(dates)}`;
-  const days = api.pickupDays ?? [];
-  if (days.length === 1) return `Pickup on ${DAY_NAMES[days[0]] ?? days[0]}`;
-  if (days.length > 1) return `Pickup ${days.join(", ")}`;
-  return "Pickup by request";
-}
-
 function toHomeItem(api: ApiItem): HomeItem {
   return {
     id:            api.id,
@@ -72,8 +49,6 @@ function toHomeItem(api: ApiItem): HomeItem {
     price:         Number(api.price) || 0,
     photo:         api.photos?.find(Boolean) ?? null,
     neighbourhood: api.seller?.neighborhood || "Nearby",
-    pickup:        pickupLabel(api),
-    pickupHours:   pickupWindowsShort(api.pickupWindows),
     sellerId:      api.seller?.id ?? null,
     sellerName:    shortName(api.seller?.name),
     sellerAvatar:  api.seller?.avatar ?? null,

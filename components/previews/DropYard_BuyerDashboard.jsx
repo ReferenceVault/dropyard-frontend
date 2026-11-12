@@ -21,6 +21,8 @@ import { ModalPortal } from "@/components/ModalPortal";
 import { Z, DIALOG_PANEL, dialogHead, dialogFoot } from "@/lib/layers";
 import DeleteAccountSection from "@/components/settings/DeleteAccountSection";
 import ProfilePictureSection from "@/components/settings/ProfilePictureSection";
+import { Field as BSF_Field, Input as BSF_Input, PasswordInput as BSF_PasswordInput, ErrorBanner as BSF_ErrorBanner, SaveRow as BSF_SaveRow, SuccessBanner as BSF_SuccessBanner } from "@/components/settings/SettingsFields";
+import { TypeBadge, HistoryThumb, MonthGroup, Dot, StatTile as SharedStatTile, PageHeader, newestFirst } from "@/components/history/HistoryParts";
 import { UserAvatar } from "@/components/UserAvatar";
 import { shortName } from "@/lib/avatar";
 import { MessagesInboxHeader, tabDomId } from "@/components/messages/MessagesInboxHeader";
@@ -39,13 +41,15 @@ import { sellerLocationText } from "@/lib/sellerLocation";
 import { CategoryPicker } from "@/components/CategorySelect";
 import { CATEGORIES, QUICK_PICK_VALUES, categoryFor, categoryLabel, categoryEmoji, categoryValueFromLabel, matchesCategory } from "@/lib/categories";
 import { useAuth } from "@/context/AuthContext";
+import { useDropSchedule } from "@/components/home/useDropSchedule";
 import {
   dropOpenHour, dropOpenHourCompact, dropOpenHourBadge,
-  dropOpenDay, dropOpenFull, dropOpenHourLong,
+  dropOpenDay, dropOpenFull,
   dropCloseDay, dropCloseHour,
-  nextDropMoment, dropCloseMoment,
+  nextDropMoment,
   formatCompactCountdown,
   getDropCycleInfo,
+  dropDayOf, dropTimeOf,
   DROP_OPEN_DAY, DROP_OPEN_HOUR, DROP_CLOSE_DAY, DROP_CLOSE_HOUR,
 } from "@/lib/dropCycle";
 
@@ -66,7 +70,7 @@ import {
   LayoutGrid, ArrowUpDown,
   Check, X, User, ShoppingBag, MessageSquare, Sparkles, Truck, Calendar,
   Star, Shield, Send, ArrowRight, ArrowLeft, Home, Tag, Bell, MessageCircle,
-  CalendarDays, Compass, Archive, RefreshCw, Eye, EyeOff, Info, TrendingDown,
+  CalendarDays, Compass, Archive, RefreshCw, Eye, Info, TrendingDown,
   DollarSign, AlertCircle, CheckCircle, Share2, Award, Leaf,
   Smile, Paperclip, Flag, ExternalLink,
   Mail,
@@ -278,7 +282,8 @@ function adaptBuyerClaim(api) {
     status:        uiStatus,
     date:          isToday ? "Today" : (day || null),
     time:          time || null,
-    addr:          api.pickupAddress || null,
+    // No pickup address: it's private to the seller, who shares it in
+    // Messages if and when they choose. The API doesn't send one.
     channel:       "drop",
     paymentMethod: "either",
     // Buyer's "Confirm receipt" flag — drives the "Receipt confirmed, waiting
@@ -653,7 +658,7 @@ function computeDropState(now = new Date()) {
 
 // Avatar with dropdown menu - the user's profile picture (photo, avatar or
 // initials) and sign-out. Click outside (the invisible overlay) to close.
-function UserMenu({ user, onSignout, onOpenSettings, dropState }) {
+function UserMenu({ user, onSignout, onOpenSettings, dropState, round = false }) {
   const [open, setOpen] = useState(false);
   // The sign-out dialog hands focus back to whatever had it when it opened.
   // The menu item that opens it disappears with the menu, so focus moves to
@@ -667,7 +672,14 @@ function UserMenu({ user, onSignout, onOpenSettings, dropState }) {
         title={user?.name || "Account"}
         aria-label={"Account menu" + (user?.name ? " for " + user.name : "")}
         aria-expanded={open}
-        style={{
+        style={round ? {
+          // Phone: a white 44px circle like the bell and Switch, the avatar
+          // inside it with a thin white ring.
+          width: 44, height: 44, borderRadius: "50%",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: C.paper, border: "none", boxShadow: HEADER_ROUND_SHADOW,
+          cursor: "pointer", padding: 0, overflow: "hidden", flexShrink: 0,
+        } : {
           width: 38, height: 38, borderRadius: "50%",
           display: "flex", alignItems: "center", justifyContent: "center",
           background: "transparent",
@@ -681,7 +693,7 @@ function UserMenu({ user, onSignout, onOpenSettings, dropState }) {
         <UserAvatar
           avatar={user?.avatar}
           name={user?.name}
-          size={34}
+          size={round ? 38 : 34}
           decorative
           eager
           initialsBg={dropState === "live" ? C.green : C.amberDeep}
@@ -745,7 +757,13 @@ function UserMenu({ user, onSignout, onOpenSettings, dropState }) {
 // `unread` = seller-side conversations with unread messages, so a message to
 // the side you aren't looking at still shows. Same envelope tag as the
 // Messages tab's.
-function SwitchToSellerButton({ onClick, compact = false, unread = 0 }) {
+// Phones under 640px: the bell, Switch and account buttons are three equal
+// 44px white circles with one soft shadow (the client's mockup). The bell's
+// size comes from .dy-buyer-actions in globals.css (it's shared with the
+// seller dashboard, whose header is unchanged).
+const HEADER_ROUND_SHADOW = "0 4px 14px -6px rgba(15, 54, 11, 0.30), 0 0 0 1px rgba(15, 54, 11, 0.06)";
+
+function SwitchToSellerButton({ onClick, compact = false, unread = 0, round = false }) {
   const [hover, setHover] = useState(false);
   const unreadLabel = unread > 0 ? `, ${unread} unread seller conversation${unread === 1 ? "" : "s"}` : "";
   return (
@@ -763,6 +781,7 @@ function SwitchToSellerButton({ onClick, compact = false, unread = 0 }) {
         padding: compact ? "8px" : "8px 14px 8px 12px",
         borderRadius: 999,
         border: "1.5px solid " + (hover ? C.amber : C.fawn),
+        ...(round ? { width: 44, height: 44, padding: 0, justifyContent: "center", border: "none", flexShrink: 0 } : {}),
         background: hover
           ? "linear-gradient(135deg, " + C.amberMist + " 0%, " + C.paper + " 100%)"
           : C.paper,
@@ -771,7 +790,9 @@ function SwitchToSellerButton({ onClick, compact = false, unread = 0 }) {
         fontSize: 12,
         fontWeight: 800,
         color: hover ? C.amberDeep : C.mink,
-        boxShadow: hover
+        boxShadow: round
+          ? HEADER_ROUND_SHADOW
+          : hover
           ? "0 6px 18px " + C.amber + "33, 0 1px 2px rgba(31,29,25,0.04)"
           : "0 1px 2px rgba(31,29,25,0.04)",
         transform: hover ? "translateY(-1px)" : "translateY(0)",
@@ -780,7 +801,7 @@ function SwitchToSellerButton({ onClick, compact = false, unread = 0 }) {
     >
       {/* Tiny truck tile that animates on hover */}
       <span style={{
-        width: 24, height: 24, borderRadius: 7,
+        width: round ? 28 : 24, height: round ? 28 : 24, borderRadius: round ? 9 : 7,
         background: hover ? C.amber : C.amberMist,
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         boxShadow: hover ? "0 2px 6px " + C.amber + "55" : "none",
@@ -897,7 +918,8 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
   // brown underline. greenDeep, not green, for the label: green on greenMist
   // is ~4.1:1, under AA for 15px text.
   const livePill = dropState === "live";
-  const { isMobile } = useViewport();
+  const { isMobile, width } = useViewport();
+  const roundButtons = width < PHONE_HERO_MAX;
   const navItems = [
     { id:"discover", label:"Discover" },
     { id:"saved",    label:"Saved",    badge: savedCount  > 0 ? savedCount  : null },
@@ -910,11 +932,13 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
   return (
     <header style={{ borderBottom: "1px solid " + C.fawn, background: C.page, position: "sticky", top: 0, zIndex: Z.header }}>
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: isMobile ? "10px 16px" : "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: isMobile ? 10 : 24 }}>
-        <Link href="/" style={{ display: "block", border: "none", background: "transparent", cursor: "pointer", padding: 0, textDecoration: "none" }}>
+        <Link href="/" style={{ display: "block", border: "none", background: "transparent", cursor: "pointer", padding: 0, textDecoration: "none", ...(roundButtons ? { flex: "0 1 129px", minWidth: 0 } : {}) }}>
           {/* Sizes are for the trimmed asset, whose artwork fills ~94% of the
               box. Logo_1.png was 54% whitespace, so its 44px box only drew a
               ~20px mark — which is why the logo looked small next to the nav. */}
-          <img src={LOGO_SRC} alt="DropYard" style={{ height: isMobile ? 32 : 38, width: "auto", display: "block" }}/>
+          {/* With the round buttons on a 320px phone there isn't room for the
+              full 129px, so the logo scales down whole rather than squashing. */}
+          <img src={LOGO_SRC} alt="DropYard" style={roundButtons ? { width: "100%", maxWidth: 129, height: "auto", display: "block" } : { height: isMobile ? 32 : 38, width: "auto", display: "block" }}/>
         </Link>
 
         {/* Desktop primary nav — replaced by MobileBottomNav on small screens. */}
@@ -973,7 +997,7 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
           </nav>
         )}
 
-        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 6 : 12 }}>
+        <div className={roundButtons ? "dy-buyer-actions" : undefined} style={{ display: "flex", alignItems: "center", flexShrink: 0, gap: roundButtons ? (width < 360 ? 7 : 10) : isMobile ? 6 : 12 }}>
           {/* BUG-064 — socket health pulse. Visible at a glance so we can spot
               real-time outages without DevTools. Green=connected, amber=
               reconnecting, gray=disconnected. */}
@@ -984,8 +1008,8 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
           {/* Switch-to-Seller pill. On mobile, render an icon-only compact variant
              so it still fits at 360px alongside logo + avatar. Desktop keeps the
              full label. */}
-          <SwitchToSellerButton onClick={() => onSwitchRole && onSwitchRole()} compact={isMobile} unread={otherUnread}/>
-          <UserMenu user={user} onSignout={onSignout} onOpenSettings={() => { onReset && onReset(); setPage("settings"); }} dropState={dropState}/>
+          <SwitchToSellerButton onClick={() => onSwitchRole && onSwitchRole()} compact={isMobile} round={roundButtons} unread={otherUnread}/>
+          <UserMenu user={user} onSignout={onSignout} onOpenSettings={() => { onReset && onReset(); setPage("settings"); }} dropState={dropState} round={roundButtons}/>
         </div>
       </div>
     </header>
@@ -1044,31 +1068,9 @@ function PageBar({ title, chip, chipIcon: ChipIcon, chipTone = "green", onBack }
 // figure left the label ~50px, so single words like "Completed" ran out of
 // the tile — there the icon sits above the figure instead.
 //   stat: { label, value, icon, color, bg, sub?, urgent? }
-function StatTile({ stat: s, index = 0 }) {
+function StatTile({ stat, index = 0 }) {
   const { isMobile } = useViewport();
-  const Ic = s.icon;
-  return (
-    <div className="fade-in" style={{
-      padding: isMobile ? "14px" : "20px 22px", minWidth: 0, borderRadius: 18,
-      background: s.urgent ? s.bg : C.paper, border: "1px solid " + (s.urgent ? s.color + "40" : C.fawn),
-      animationDelay: (index * 40) + "ms", position: "relative",
-      display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 10 : 16,
-    }}>
-      <div style={{ width: isMobile ? 40 : 52, height: isMobile ? 40 : 52, borderRadius: isMobile ? 12 : 16, background: s.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <Ic size={isMobile ? 19 : 23} strokeWidth={2.1} style={{ color: s.color }}/>
-      </div>
-      <div style={{ flex: 1, minWidth: 0, width: isMobile ? "100%" : undefined }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <p style={{ fontFamily: F.head, fontSize: isMobile ? 26 : 33, fontWeight: 900, color: s.color, letterSpacing: "-0.02em", lineHeight: 1 }}>{s.value}</p>
-          {s.sub && <span style={{ fontFamily: F.body, fontSize: isMobile ? 11 : 12, fontWeight: 600, color: C.ash, background: C.sand, border: "1px solid " + C.fawn, padding: isMobile ? "2px 8px" : "3px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>{s.sub}</span>}
-        </div>
-        <p style={{ fontFamily: F.body, fontSize: isMobile ? 13 : 14, fontWeight: 600, color: C.mink, marginTop: 5, lineHeight: 1.3 }}>{s.label}</p>
-      </div>
-      {s.urgent && (
-        <span style={{ position: isMobile ? "absolute" : "static", top: 14, right: 14, width: 8, height: 8, flexShrink: 0, borderRadius: "50%", background: s.color, boxShadow: "0 0 0 3px " + s.color + "35", animation: "pulseGreen 2s infinite" }}/>
-      )}
-    </div>
-  );
+  return <SharedStatTile stat={stat} index={index} isMobile={isMobile}/>;
 }
 
 // 3×3 dot grid drawn inline — lucide has no 9-dot icon at this weight, and
@@ -1145,6 +1147,150 @@ function HillsBackdrop() {
     </div>
   );
 }
+
+/* ============================================================
+   PHONE DROP HERO — the top of Discover on phones (under 640px)
+   The client's mockup: photo on the right under a cream wash that is solid
+   where the text sits, so the copy always reads on cream; status pill,
+   headline, body; then a cream countdown card overlapping the bottom of the
+   photo, with the open (or close) moment and the action under the digits.
+   Both bands render it on phones and keep their own content; tablets and
+   desktops keep the bands' wide layouts.
+   ============================================================ */
+const PHONE_HERO_MAX = 640;
+const HERO_CREAM = "#FFF6E8";
+const HERO_CARD = "#FFF9F0";
+// Body copy: 8.4:1 on the cream (CARD.muted was 4.2:1 even on solid cream,
+// and ~1:1 where the photo showed through).
+const HERO_TEXT = "#454A52";
+// "Drop opens in": 6.6:1 on the card.
+const HERO_LABEL = "#555A62";
+// The wash: solid cream across the left 42%, then never thinner than 74%
+// cream, so even the photo's darkest pixel under the right end of a line
+// keeps HERO_TEXT above 4.5:1. Measured on the real pixels in testing.
+const HERO_WASH = "linear-gradient(90deg, " + HERO_CREAM + " 0%, " + HERO_CREAM + " 42%, rgba(255, 246, 232, 0.86) 66%, rgba(255, 246, 232, 0.74) 100%)";
+
+function countdownParts(totalSec) {
+  return [
+    { unit: "d", word: "day",    value: Math.floor(totalSec / 86400) },
+    { unit: "h", word: "hour",   value: Math.floor((totalSec % 86400) / 3600) },
+    { unit: "m", word: "minute", value: Math.floor((totalSec % 3600) / 60) },
+    { unit: "s", word: "second", value: totalSec % 60 },
+  ];
+}
+
+// totalSec: null until the schedule is known (shown as "--").
+function PhoneDropHero({ live = false, photo, pill, headline, body, avatars = null, cardLabel, totalSec, when, action = null }) {
+  const parts = totalSec == null ? null : countdownParts(totalSec);
+  // Screen readers get the countdown to the minute, as plain text that is not
+  // a live region: it reads when reached, and never announces the ticking.
+  const spoken = parts
+    ? cardLabel + " " + parts.slice(0, 3).filter((p, i) => p.value > 0 || i === 2).map((p) => p.value + " " + p.word + (p.value === 1 ? "" : "s")).join(", ")
+    : cardLabel;
+  const accent = live ? C.green : C.amberDeep;
+  return (
+    // dy-hero-bleed: full width, flush under the top bar (see AnticipationBand).
+    <section className="fade-in dy-hero-bleed" style={{
+      background: HERO_CREAM,
+      marginBottom: 20,
+      position: "relative",
+      overflow: "hidden",
+      paddingBottom: 24,
+    }}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- a packaged backdrop, like the bands' own */}
+      <img src={photo} alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "72% 35%" }}/>
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: HERO_WASH }}/>
+
+      <div style={{ position: "relative" }}>
+        {/* Status pill: brown before the Drop, green while it's live. White on
+            either is above 4.5:1. */}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 11px", borderRadius: 999, background: accent, boxShadow: "0 2px 10px " + accent + "40" }}>
+          <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", flexShrink: 0, animation: live ? "pulseGreen 1.6s ease-in-out infinite" : "pulseAmber 2.4s ease-in-out infinite" }}/>
+          <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: "#fff", letterSpacing: "0.06em", textTransform: "uppercase" }}>{pill}</span>
+        </span>
+
+        <h1 style={{ fontFamily: F.head, fontSize: "clamp(25px, 7.4vw, 32px)", fontWeight: 800, color: CARD.ink, letterSpacing: "-0.025em", lineHeight: 1.14, marginTop: 14, overflowWrap: "anywhere" }}>
+          {headline}
+        </h1>
+
+        <p style={{ fontFamily: F.body, fontSize: 15, fontWeight: 450, color: HERO_TEXT, lineHeight: 1.55, marginTop: 12 }}>
+          {body}
+        </p>
+
+        {avatars && <div style={{ marginTop: 12 }}>{avatars}</div>}
+
+        {/* Countdown card */}
+        <div style={{
+          marginTop: 22,
+          background: HERO_CARD,
+          borderRadius: 28,
+          padding: "18px 18px 16px",
+          border: "1px solid rgba(163, 92, 0, 0.10)",
+          boxShadow: "0 18px 36px -20px rgba(120, 72, 0, 0.45), 0 2px 6px rgba(120, 72, 0, 0.06)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: "50%", background: accent, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Clock size={20} strokeWidth={2.4} style={{ color: "#fff" }}/>
+            </span>
+            <span aria-hidden="true" style={{ fontFamily: F.head, fontSize: 16, fontWeight: 500, color: HERO_LABEL }}>{cardLabel}</span>
+            <span style={visuallyHiddenStyle}>{spoken}</span>
+          </div>
+
+          {/* Digits: four equal cells with hairlines between. The size follows
+              the card's width (cqi), so the row fits every phone; tabular
+              figures and a fixed minimum width keep it from shifting as it
+              ticks. With very large text it wraps to two rows. */}
+          <div aria-hidden="true" style={{ containerType: "inline-size", marginTop: 14 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", rowGap: 8, fontSize: "clamp(22px, 10.5cqi, 42px)" }}>
+              {(parts || countdownParts(0)).map((p, i) => (
+                <div key={p.unit} data-cd-unit="" style={{
+                  flex: "1 1 0", minWidth: "fit-content",
+                  display: "flex", alignItems: "baseline", justifyContent: "center", gap: "0.08em",
+                  padding: "0 0.1em",
+                  borderLeft: i > 0 ? "1px solid rgba(163, 92, 0, 0.18)" : "none",
+                }}>
+                  <span style={{ fontFamily: F.head, fontSize: "1em", fontWeight: 800, color: CARD.ink, letterSpacing: "-0.02em", lineHeight: 1.05, fontVariantNumeric: "tabular-nums", display: "inline-block", minWidth: (i === 0 && parts && p.value > 9 ? String(p.value).length : i === 0 ? 1 : 2) + "ch", textAlign: "center" }}>
+                    {parts ? (i === 0 ? p.value : String(p.value).padStart(2, "0")) : "--"}
+                  </span>
+                  {/* amberDeep, not amber: 4.9:1 on the card (amber was 2.1:1). */}
+                  <span style={{ fontFamily: F.head, fontSize: "0.46em", fontWeight: 700, color: C.amberDeep }}>{p.unit}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div aria-hidden="true" style={{ height: 1, background: "rgba(163, 92, 0, 0.14)", margin: "16px 0 14px" }}/>
+
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+            <span style={{ fontFamily: F.head, fontSize: 17, fontWeight: 800, color: C.greenDeep, letterSpacing: "-0.01em" }}>{when}</span>
+            {action}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// The Remind me control on the phone card: a brown pill, or a quiet
+// "Reminders enabled" pill once they're on (it still opens the settings).
+function PhoneRemindButton({ reminded, onClick }) {
+  return (
+    <button onClick={onClick} aria-haspopup="dialog" style={{
+      flex: "1 1 auto", minHeight: 48,
+      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+      padding: "12px 20px", borderRadius: 999, border: "none",
+      background: reminded ? C.paper : C.amberDeep,
+      color: reminded ? C.amberDeep : "#fff",
+      fontFamily: F.head, fontSize: 16, fontWeight: 800, whiteSpace: "nowrap",
+      cursor: "pointer",
+      boxShadow: reminded ? "inset 0 0 0 1.5px " + C.amberDeep + "55" : "0 2px 0 #7A4500, 0 8px 18px -10px " + C.amberDeep,
+    }}>
+      {reminded ? <><Check size={18} aria-hidden="true"/> Reminders enabled</> : <><Bell size={18} aria-hidden="true"/> Remind me</>}
+    </button>
+  );
+}
+
+const visuallyHiddenStyle = { position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 };
 
 /* ============================================================
    ANTICIPATION BAND (Between Drops state)
@@ -1300,21 +1446,17 @@ function DropReminderModal({ view, accessToken, onClose, onSaved }) {
 }
 
 function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = null }) {
-  // Real countdown to the next drop-open moment (Saturday 8 AM by default).
-  // `now` starts null on first render so SSR + initial client hydration produce
-  // identical "0d 0h 0m 0s" markup; useEffect seeds the real value after mount
-  // and ticks per second from there. Same SSR-safe pattern as DynamicDropCard.
-  const [now, setNow] = useState(null);
-  useEffect(() => {
-    setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  const totalSec = useMemo(() => {
-    if (!now) return 0;
-    const target = nextDropMoment(now);
-    return Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000));
-  }, [now]);
+  // Counts to the Drop record's opening: useDropSchedule reads the backend's
+  // Drop row (Toronto time) and only falls back to the local Saturday 8 AM
+  // calculation when the row can't be read, or under ?simulate=. This used to
+  // tick a private clock to a locally computed Saturday. Zeros until the
+  // schedule is known, as before (SSR-safe: the clock starts on the client).
+  const { width } = useViewport();
+  const schedule = useDropSchedule();
+  const opensAt = schedule.opensAt;
+  const totalSec = schedule.ready ? Math.max(0, Math.floor((opensAt.getTime() - schedule.now.getTime()) / 1000)) : 0;
+  const openDay = dropDayOf(opensAt);
+  const openWhen = openDay + " " + dropTimeOf(opensAt);
   const t = {
     d: Math.floor(totalSec / 86400),
     h: Math.floor((totalSec % 86400) / 3600),
@@ -1344,6 +1486,45 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = 
   // the standalone /preview/buyer-dashboard route).
   const displayCount = queuedCount == null ? 47 : queuedCount;
 
+  // Body copy. The zero case keeps its own: "preview what your neighbours are
+  // selling" is an empty promise when nothing has been queued yet. It must
+  // stay accurate: Remind me emails the buyer BEFORE the Drop opens (24h, 1h,
+  // 15m), and only once they've turned it on. It used to say "we'll notify
+  // you the moment the Drop opens", which nothing does.
+  const bodyCopy = displayCount > 0
+    ? <>Preview what your neighbours are selling and save your favourites before the {openDay} Drop opens.</>
+    : reminded
+    ? <>Items aren&apos;t queued yet. Your reminder is on: we&apos;ll email you before the Drop opens.</>
+    : <>Items aren&apos;t queued yet. Tap <b style={{ color: CARD.ink, fontWeight: 700 }}>Remind me</b> and we&apos;ll email you before the Drop opens.</>;
+
+  if (width < PHONE_HERO_MAX) {
+    return (
+      <PhoneDropHero
+        photo={BANNER_BETWEEN_SRC}
+        pill={"Opens " + openDay}
+        headline="Good finds. Right around the corner."
+        body={bodyCopy}
+        avatars={displayCount > 0 ? (
+          <div role="img" aria-label="Neighbours with items in this Drop" style={{ display: "flex", alignItems: "center" }}>
+            {neighbours.map((n, i) => (
+              <UserAvatar key={n.id || i} avatar={n.avatar} name={n.name} size={32} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={10}
+                style={{ border: "2px solid " + HERO_CREAM, marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i, position: "relative" }}/>
+            ))}
+            {displayCount > neighbours.length && (
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.amberDeep, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + HERO_CREAM, marginLeft: -8 }}>
+                +{displayCount - neighbours.length}
+              </div>
+            )}
+          </div>
+        ) : null}
+        cardLabel="Drop opens in"
+        totalSec={schedule.ready ? totalSec : null}
+        when={openWhen}
+        action={<PhoneRemindButton reminded={reminded} onClick={onRemindMe}/>}
+      />
+    );
+  }
+
   return (
     // dy-hero-bleed breaks the band out of the dashboard's centred 1280px
     // column so it spans the viewport and sits flush under the nav — it reads
@@ -1366,8 +1547,12 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = 
           tiles — its backdrop is meant to be the neighbourhood's own items. */}
       <img src={BANNER_BETWEEN_SRC} alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center 50%" }}/>
 
-      {/* Primary scrim — bright cream-white on the left where text lives, fading right so the image shines through */}
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255, 250, 240, 0.98) 0%, rgba(255, 245, 225, 0.94) 32%, rgba(255, 232, 188, 0.62) 58%, rgba(255, 228, 176, 0.28) 82%, rgba(255, 228, 176, 0.08) 100%)" }}/>
+      {/* Primary scrim — cream on the left where the text lives, fading right
+          so the image shines through. Stops in px, not %: the text column is
+          up to ~560px wide at every width, so it stays on near-solid cream
+          (it used to fade to 62% by 58% of the width, which at 768-1024px
+          put the copy over the photo at ~1.9:1). */}
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(255, 250, 240, 0.98) 0px, rgba(255, 246, 232, 0.96) 600px, rgba(255, 238, 210, 0.55) 860px, rgba(255, 228, 176, 0.10) 100%)" }}/>
 
       {/* Secondary scrim — soft amber kiss at the bottom for cohesion */}
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 0%, transparent 60%, rgba(240, 138, 0, 0.10) 100%)" }}/>
@@ -1385,7 +1570,7 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = 
               <span style={{ position: "absolute", inset: -2, borderRadius: "50%", background: "#fff", opacity: 0.4, animation: "pulseAmber 2.4s ease-in-out infinite" }}/>
               <span style={{ position: "relative", width: 6, height: 6, borderRadius: "50%", background: "#fff" }}/>
             </span>
-            <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: "#fff", letterSpacing: "0.1em" }}>OPENS SATURDAY</span>
+            <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: "#fff", letterSpacing: "0.1em" }}>{"OPENS " + openDay.toUpperCase()}</span>
           </span>
 
           {/* Headline — the countdown pill below already spells out the day and
@@ -1394,15 +1579,9 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = 
             Good finds. Right around the corner.
           </h1>
 
-          {/* Body. The zero case keeps its own copy — "preview what your
-              neighbours are selling" is an empty promise when nothing has
-              been queued yet. */}
-          <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 400, color: CARD.muted, maxWidth: 520, lineHeight: 1.55, marginBottom: 12 }}>
-            {displayCount > 0 ? (
-              <>Preview what your neighbours are selling and save your favourites before the {dropOpenDay()} Drop opens.</>
-            ) : (
-              <>Items aren&apos;t queued yet — we&apos;ll notify you the moment the Drop opens. Tap <b style={{ color: CARD.ink, fontWeight: 700 }}>Remind me</b> below to lock it in.</>
-            )}
+          {/* Body (see bodyCopy). HERO_TEXT, not CARD.muted: 8:1 on the cream. */}
+          <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 400, color: HERO_TEXT, maxWidth: 520, lineHeight: 1.55, marginBottom: 12 }}>
+            {bodyCopy}
           </p>
 
           {/* Avatar stack — only render when at least one neighbour has queued
@@ -1446,24 +1625,24 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = 
           <span style={{ width: 30, height: 30, borderRadius: "50%", background: C.amberDeep, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <Clock size={16} strokeWidth={2.4} style={{ color: "#fff" }}/>
           </span>
-          <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 500, color: CARD.muted, whiteSpace: "nowrap" }}>Drop opens in</span>
+          <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 500, color: HERO_LABEL, whiteSpace: "nowrap" }}>Drop opens in</span>
         </span>
 
         <div style={{ display: "flex", alignItems: "baseline", gap: 3, fontFamily: F.head, fontSize: 26, fontWeight: 700, color: CARD.ink, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
           <span>{t.d}</span>
-          <span style={{ fontSize: 13, color: C.amber, fontWeight: 600 }}>d</span>
+          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 600 }}>d</span>
           <span style={{ marginLeft: 8 }}>{pad(t.h)}</span>
-          <span style={{ fontSize: 13, color: C.amber, fontWeight: 600 }}>h</span>
+          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 600 }}>h</span>
           <span style={{ marginLeft: 8 }}>{pad(t.m)}</span>
-          <span style={{ fontSize: 13, color: C.amber, fontWeight: 600 }}>m</span>
+          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 600 }}>m</span>
           <span style={{ marginLeft: 8 }}>{pad(t.s)}</span>
-          <span style={{ fontSize: 13, color: C.amber, fontWeight: 600 }}>s</span>
+          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 600 }}>s</span>
         </div>
 
         <span style={{ width: 1, alignSelf: "stretch", margin: "6px 0", background: C.amberDeep + "28", flexShrink: 0 }}/>
 
         <span style={{ flexShrink: 0, fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink, whiteSpace: "nowrap" }}>
-          {dropOpenDay()} {dropOpenHourLong()}
+          {openWhen}
         </span>
 
         <button onClick={onRemindMe} aria-haspopup="dialog" style={{
@@ -1578,13 +1757,12 @@ function WelcomeBand({ itemsCount = null, sellers = null }) {
   // first render on both sides produces the same markup.
   // The provider holds effectiveNow at epoch 0 until the client mounts —
   // that's its own "no clock yet" sentinel, so treat it as such.
-  const { effectiveNow } = useDropCycle();
-  const now = effectiveNow.getTime() > 0 ? effectiveNow : null;
-  const totalSec = useMemo(() => {
-    if (!now) return 0;
-    const target = dropCloseMoment(now);
-    return Math.max(0, Math.floor((target.getTime() - now.getTime()) / 1000));
-  }, [now]);
+  // Now the Drop record's close (useDropSchedule; ?simulate= still works).
+  const { width } = useViewport();
+  const schedule = useDropSchedule();
+  const closesAt = schedule.closesAt;
+  const now = schedule.ready ? schedule.now : null;
+  const totalSec = now ? Math.max(0, Math.floor((closesAt.getTime() - now.getTime()) / 1000)) : 0;
   const t = {
     h: Math.floor(totalSec / 3600),
     m: Math.floor((totalSec % 3600) / 60),
@@ -1614,6 +1792,47 @@ function WelcomeBand({ itemsCount = null, sellers = null }) {
   const overflowCount = Array.isArray(sellers)
     ? Math.max(0, sellers.length - neighbours.length)
     : 0;
+
+  if (width < PHONE_HERO_MAX) {
+    const closeDay = dropDayOf(closesAt);
+    const closeTime = dropTimeOf(closesAt);
+    return (
+      <PhoneDropHero
+        live
+        photo={BANNER_LIVE_SRC}
+        pill="Live now"
+        headline={<>The Drop is live in{" "}
+          <span style={{ position: "relative", display: "inline-block" }}>
+            Barrhaven
+            <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: -2, height: 3, background: C.amber, borderRadius: 2 }}/>
+          </span>
+        </>}
+        body={displayCount === null ? (
+          <>Items from your neighbours are claimable until {closeDay} at {closeTime}. Drops are first-come, first-served.</>
+        ) : displayCount > 0 ? (
+          <><b style={{ color: CARD.ink, fontWeight: 800 }}>{displayCount} item{displayCount === 1 ? "" : "s"}</b>{" "}from your neighbours {displayCount === 1 ? "is" : "are"} claimable until {closeDay} at {closeTime}. Drops are first-come, first-served.</>
+        ) : (
+          <>Nothing is claimable in this Drop right now — new items show up here the moment a neighbour posts one. The window closes {closeDay} at {closeTime}.</>
+        )}
+        avatars={neighbours.length > 0 ? (
+          <div role="img" aria-label="Neighbours selling in this Drop" style={{ display: "flex", alignItems: "center" }}>
+            {neighbours.map((n, i) => (
+              <UserAvatar key={n.id || i} avatar={n.avatar} name={n.name} size={32} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={10}
+                style={{ border: "2px solid " + HERO_CREAM, marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i, position: "relative" }}/>
+            ))}
+            {overflowCount > 0 && (
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.green, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + HERO_CREAM, marginLeft: -8 }}>
+                +{overflowCount}
+              </div>
+            )}
+          </div>
+        ) : null}
+        cardLabel="Drop closes in"
+        totalSec={now ? totalSec : null}
+        when={closeDay + " " + closeTime}
+      />
+    );
+  }
 
   return (
     // Full bleed, like AnticipationBand: dy-hero-bleed breaks the band out of
@@ -1660,7 +1879,9 @@ function WelcomeBand({ itemsCount = null, sellers = null }) {
       {/* Primary scrim — dark on the left where text lives, fading right so the
           image shines through. Lighter than the mosaic version needed: a single
           photograph survives being seen, where tiled thumbnails needed burying. */}
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(20, 16, 12, 0.90) 0%, rgba(20, 16, 12, 0.78) 32%, rgba(20, 16, 12, 0.50) 58%, rgba(20, 16, 12, 0.22) 82%, rgba(20, 16, 12, 0.06) 100%)" }}/>
+      {/* Stops in px like the between band's: at 768px the % stops left
+          the end of the copy over the photo's bright patches at ~3.6:1. */}
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(20, 16, 12, 0.90) 0px, rgba(20, 16, 12, 0.84) 600px, rgba(20, 16, 12, 0.40) 880px, rgba(20, 16, 12, 0.06) 100%)" }}/>
 
       {/* Secondary scrim — adds warmth and depth at the bottom */}
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 0%, transparent 55%, rgba(31, 90, 24, 0.18) 100%)" }}/>
@@ -1796,7 +2017,7 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, ho
           ].map(opt => {
             const active = filter === opt.id;
             return (
-              <button key={opt.id} onClick={() => setFilter(opt.id)} style={{
+              <button key={opt.id} onClick={() => setFilter(opt.id)} aria-pressed={active} style={{
                 flex: 1,
                 padding: "8px 14px", borderRadius: 999,
                 border: "none",
@@ -2965,31 +3186,6 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
 }
 
 /* ============================================================
-   PICKUP HOURS LINE — on Sneak Peek cards (ItemCard no longer shows it)
-   ============================================================ */
-// "Pickup · Evenings · 4 PM–7 PM", muted like the seller line above it.
-// Renders nothing when the listing has no window set: no invented hours.
-// Each window stays on one line with its hours, so a narrow card wraps
-// between windows rather than splitting "4 PM–7 PM" in two.
-function PickupHoursLine({ windows, style = null }) {
-  const wins = selectedPickupWindows(windows);
-  if (!wins.length) return null;
-  return (
-    <p style={{ display: "flex", alignItems: "flex-start", gap: 6, fontFamily: CARD.font, fontSize: 12, fontWeight: 450, color: CARD.muted, lineHeight: 1.4, ...style }}>
-      <Clock size={12} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}/>
-      <span style={{ minWidth: 0 }}>
-        Pickup ·{" "}
-        {wins.length === 1
-          ? <span style={{ whiteSpace: "nowrap" }}>{wins[0].label} · {wins[0].shortTime}</span>
-          : wins.map((w, i) => (
-            <span key={w.id}>{i > 0 && " · "}<span style={{ whiteSpace: "nowrap" }}>{w.label} {w.shortTime}</span></span>
-          ))}
-      </span>
-    </p>
-  );
-}
-
-/* ============================================================
    SNEAK PEEK CARD PARTS — shared by PreviewStrip and SneakPeekListPage
    ============================================================ */
 // ItemCard's type scale, so a queued item reads the same as a live one. Only
@@ -3161,7 +3357,6 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
                     <span style={type.seller}>{item.seller.split(" ")[0]}</span>
                     <span style={type.place}>· {item.dist}</span>
                   </p>
-                  <PickupHoursLine windows={item.pickupWindows || item.raw?.pickupWindows} style={{ marginTop: -6, marginBottom: 12 }}/>
                   <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 6 }}>
                     {!isFreePrice(item.estPrice) && <span style={type.around}>Around</span>}
                     <span style={type.price(item.estPrice)}>{priceText(item.estPrice)}</span>
@@ -3295,7 +3490,6 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
                   <span style={type.seller}>{item.seller.split(" ")[0]}</span>
                   <span style={type.place}>· {item.dist}</span>
                 </p>
-                <PickupHoursLine windows={item.pickupWindows || item.raw?.pickupWindows} style={{ marginTop: -6, marginBottom: 12 }}/>
 
                 {/* Price estimate — framed as approximate */}
                 <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 6 }}>
@@ -3676,7 +3870,7 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
               <div>
                 <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.greenDeep, marginBottom: 4 }}>How claiming works</p>
                 <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.55 }}>
-                  Claiming reserves this item for you. You'll pick a pickup time and the seller will send their address. If you can't make it, cancel at least 2 hours before so someone else can claim it.
+                  Claiming reserves this item for you. You'll pick a pickup time and the seller will share pickup details with you in Messages. If you can't make it, cancel at least 2 hours before so someone else can claim it.
                 </p>
               </div>
             </div>
@@ -4614,7 +4808,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                   </div>
                 </div>
                 <p style={{ fontFamily: D.font, fontSize: 11, fontWeight: 500, color: C.ash, marginTop: 12, lineHeight: 1.5, fontStyle: "italic" }}>
-                  Exact pickup time and address are confirmed once you claim the item.
+                  The seller shares pickup details in Messages once your claim is accepted.
                 </p>
               </div>
             );
@@ -5275,11 +5469,6 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                         <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4 }}>
                           <Calendar size={11}/> {c.date} {c.time && "· " + c.time}
                         </span>
-                        {c.addr && (
-                          <span style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4 }}>
-                            <MapPin size={11}/> {c.addr}
-                          </span>
-                        )}
                       </div>
                     )}
                   </div>
@@ -5487,7 +5676,6 @@ const DEMO_BUYER_CONVERSATIONS = [
       id: "c1", type: "claim", status: "pickup-today", unread: true, group: "active",
       item: { title: "Kids Bicycle 16\"", price: 30, img: "\uD83D\uDEB2", layer: "drop" },
       seller: { name: "Tom R.", hood: "Barrhaven", usesAI: true },
-      pickup: { day: "Today", time: "10:00 AM", address: "8 Larkin Cres" },
       lastMsg: "Reminder: Your pickup is in 2 hours!",
       lastTime: "35 min ago",
       messages: [
@@ -5525,7 +5713,6 @@ const DEMO_BUYER_CONVERSATIONS = [
       id: "c4", type: "claim", status: "pickup-confirmed", unread: false, group: "this-week",
       item: { title: "Solid Oak Dining Table", price: 350, img: "\uD83E\uDEB5", layer: "drop" },
       seller: { name: "Jane D.", hood: "Bridlewood", usesAI: true },
-      pickup: { day: "Sat Apr 13", time: "2:00 PM", address: "42 Bridlewood Dr" },
       lastMsg: "Pickup confirmed for Saturday 2pm.",
       lastTime: "2h ago",
       messages: [
@@ -6682,21 +6869,6 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
               )}
             </div>
 
-            {/* Pickup card (demo data only) */}
-            {active.pickup && (
-              <div style={{ padding: "12px 20px", borderBottom: "1px solid " + C.fawn, background: active.status === "pickup-today" ? C.claretMist : C.greenMist, display: "flex", alignItems: "center", gap: 12 }}>
-                <Calendar size={16} style={{ color: active.status === "pickup-today" ? C.claret : C.greenDeep, flexShrink: 0 }}/>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: active.status === "pickup-today" ? C.claret : C.greenDeep }}>
-                    Pickup {active.pickup.day} at {active.pickup.time}
-                  </p>
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, display: "flex", alignItems: "center", gap: 4, marginTop: 1 }}>
-                    <MapPin size={10}/> {active.pickup.address}
-                  </p>
-                </div>
-              </div>
-            )}
-
             {/* Offer / claim banner (components/messages/OfferBanner). The
                 buyer answers only when the SELLER set the current amount
                 (BUG-055.1); otherwise they wait, and can withdraw. */}
@@ -7055,9 +7227,9 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
   const unratedCount = withReviews.filter(t => !t.rated).length;
   const co2Kg = Math.round(totalItems * 2.5);
 
-  // Group by year > month
+  // Group by year > month, newest first
   const grouped = {};
-  withReviews.forEach(t => {
+  newestFirst(withReviews).forEach(t => {
     const d = new Date(t.date);
     const y = d.getFullYear();
     const m = d.toLocaleDateString("en-US", { month: "long" });
@@ -7104,8 +7276,6 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
   function TxRow({ tx, idx }) {
     const saved = tx.origPrice ? tx.origPrice - tx.price : 0;
     const isReviewing = reviewId === tx.id;
-    const layerTint = tx.layer === "drop" ? C.greenMist : tx.layer === "shelf" ? C.amberMist : C.sand;
-    const layerBadge = tx.layer === "drop" ? { label: "Drop", bg: C.green, color: "#fff" } : tx.layer === "shelf" ? { label: "Shelf", bg: C.amber, color: "#fff" } : { label: "Drop", bg: C.green, color: "#fff" };
 
     // Desktop: right of the details. Phones: a full-width row under them,
     // price on the left and the review action on the right.
@@ -7142,14 +7312,12 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
       // a green edge, since a ring needs a gap around it to read.
       <article style={{ padding: __isMobile ? "14px 16px" : "16px 22px", background: highlightId === tx.id ? C.greenMist : "transparent", borderTop: "1px solid " + C.fawn, boxShadow: highlightId === tx.id ? "inset 3px 0 0 " + C.green : "none", transition: "box-shadow 200ms, background 200ms" }}>
         <div style={{ display: "flex", alignItems: __isMobile ? "flex-start" : "center", gap: __isMobile ? 14 : 18 }}>
-          <div style={{ width: __isMobile ? 64 : 88, height: __isMobile ? 64 : 88, borderRadius: 14, background: layerTint, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
-            <ItemImage src={tx.img} emojiSize={__isMobile ? 30 : 40}/>
-          </div>
+          <HistoryThumb fallback={tx.img} layer={tx.layer} isMobile={__isMobile}/>
           <div style={{ flex: 1, minWidth: 0 }}>
             {/* Badge leads the line — the design puts the layer before the
                 title rather than trailing it. */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-              <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 6, background: layerBadge.bg, color: layerBadge.color, letterSpacing: "0.06em", textTransform: "uppercase" }}>{layerBadge.label}</span>
+              <TypeBadge layer={tx.layer}/>
               <p style={{ fontFamily: F.head, fontSize: __isMobile ? 16 : 19, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em" }}>{tx.title}</p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", fontFamily: F.body, fontSize: 13.5, fontWeight: 600, color: C.mink }}>
@@ -7158,8 +7326,8 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
               <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Calendar size={13}/> {new Date(tx.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
             </div>
             {tx.rated && (
-              <div style={{ display: "flex", gap: 3, marginTop: 8 }}>
-                {[1,2,3,4,5].map(n => <Star key={n} size={15} style={{ color: n <= tx.rating ? C.amber : C.fawn }} fill={n <= tx.rating ? C.amber : "none"} strokeWidth={n <= tx.rating ? 0 : 1.5}/>)}
+              <div role="img" aria-label={"You rated " + tx.rating + " out of 5"} style={{ display: "flex", gap: 3, marginTop: 8 }}>
+                {[1,2,3,4,5].map(n => <Star key={n} size={15} aria-hidden="true" style={{ color: n <= tx.rating ? C.amber : C.fawn }} fill={n <= tx.rating ? C.amber : "none"} strokeWidth={n <= tx.rating ? 0 : 1.5}/>)}
               </div>
             )}
           </div>
@@ -7229,22 +7397,22 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
         const monthSaved = monthTxs.reduce((a, t) => a + (t.origPrice ? t.origPrice - t.price : 0), 0);
         const monthCollapsed = !!collapsed[monthKey];
         return (
-          <section key={monthKey} style={{ marginBottom: 16, borderRadius: 18, border: "1px solid " + C.fawn, background: C.paper, overflow: "hidden" }}>
-            <button onClick={() => toggleCollapse(monthKey)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: __isMobile ? "14px 16px" : "16px 22px", border: "none", background: "transparent", cursor: "pointer", textAlign: "left", flexWrap: "wrap", rowGap: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                {monthCollapsed ? <ChevronRight size={18} style={{ color: C.mink, flexShrink: 0 }}/> : <ChevronDown size={18} style={{ color: C.mink, flexShrink: 0 }}/>}
-                <h2 style={{ fontFamily: F.head, fontSize: __isMobile ? 16 : 19, fontWeight: 800, color: C.ink, letterSpacing: "-0.015em" }}>{month} {year}</h2>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: F.body, fontSize: __isMobile ? 12 : 13.5, fontWeight: 600, color: C.mink }}>
-                <span>{monthTxs.length} item{monthTxs.length !== 1 ? "s" : ""}</span>
-                <span aria-hidden="true" style={{ color: C.smoke }}>•</span>
-                <span>${monthSpent} spent</span>
-                <span aria-hidden="true" style={{ color: C.smoke }}>•</span>
-                <span style={{ fontFamily: F.head, fontWeight: 800, color: C.greenDeep }}>${monthSaved} saved</span>
-              </div>
-            </button>
-            {!monthCollapsed && monthTxs.map((tx, idx) => <TxRow key={tx.id} tx={tx} idx={idx}/>)}
-          </section>
+          <MonthGroup
+            key={monthKey}
+            isMobile={__isMobile}
+            title={month + " " + year}
+            collapsed={monthCollapsed}
+            onToggle={() => toggleCollapse(monthKey)}
+            summary={<>
+              <span>{monthTxs.length} item{monthTxs.length !== 1 ? "s" : ""}</span>
+              <Dot/>
+              <span>${monthSpent} spent</span>
+              <Dot/>
+              <span style={{ fontFamily: F.head, fontWeight: 800, color: C.greenDeep }}>${monthSaved} saved</span>
+            </>}
+          >
+            {monthTxs.map((tx, idx) => <TxRow key={tx.id} tx={tx} idx={idx}/>)}
+          </MonthGroup>
         );
       }))}
 
@@ -7288,7 +7456,6 @@ function SellWithAICta({ onSwitchRole }) {
     { icon: "📸",  text: "Create listings from photos" },
     { icon: "💬",  text: "Answer buyer questions instantly" },
     { icon: "🤝",  text: "Negotiate offers automatically" },
-    { icon: "📦",  text: "Coordinate pickups via WhatsApp" },
     { icon: "✨",  text: "5 free listings every month" },
   ];
   const [msgIdx, setMsgIdx] = useState(0);
@@ -7673,130 +7840,16 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
    No subscription tab (buyers don't have a paid plan).
    ============================================================ */
 
-/* Helpers — prefixed BSF_ ("Buyer Settings Form") to avoid any collision. */
-function BSF_Field({ label, helper, children }) {
-  return (
-    <div>
-      <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 6 }}>{label}</p>
-      {children}
-      {helper && <p style={{ fontFamily: F.body, fontSize: 11, color: C.ash, marginTop: 6 }}>{helper}</p>}
-    </div>
-  );
-}
+/* The form helpers (BSF_*) are shared with the seller dashboard:
+   components/settings/SettingsFields.tsx, imported at the top under these
+   names. */
 
-function BSF_Input({ style, ...props }) {
-  return (
-    <input
-      {...props}
-      style={{
-        width: "100%", padding: "10px 14px", borderRadius: 10,
-        border: "1.5px solid " + C.fawn, background: C.paper,
-        fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.ink,
-        outline: "none", boxSizing: "border-box",
-        ...(props.disabled ? { opacity: 0.75, cursor: "not-allowed" } : {}),
-        ...style,
-      }}
-    />
-  );
-}
-
-/* Password input with a reveal toggle. The caller owns `show` so one piece of
-   state can drive both the new and confirm fields at once — revealing them
-   together is the point: "do not match" is unactionable when you can't see
-   which of the two has the typo. Right padding clears the eye button. */
-function BSF_PasswordInput({ show, onToggleShow, ...props }) {
-  return (
-    <div style={{ position: "relative" }}>
-      <BSF_Input {...props} type={show ? "text" : "password"} style={{ paddingRight: 42 }}/>
-      <button
-        type="button"
-        onClick={onToggleShow}
-        tabIndex={-1}
-        aria-label={show ? "Hide password" : "Show password"}
-        style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "flex", alignItems: "center", justifyContent: "center", padding: 6, border: "none", background: "none", color: C.ash, cursor: "pointer" }}
-      >
-        {show ? <EyeOff size={15}/> : <Eye size={15}/>}
-      </button>
-    </div>
-  );
-}
-
-function BSF_PrimaryButton({ disabled, loading, children, ...props }) {
-  return (
-    <button
-      {...props}
-      disabled={disabled}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 7,
-        padding: "10px 20px", borderRadius: 999, border: "none",
-        cursor: disabled ? "not-allowed" : "pointer",
-        fontFamily: F.head, fontSize: 13, fontWeight: 800,
-        background: disabled ? C.fawn : C.green,
-        color: disabled ? C.ash : "#fff",
-        boxShadow: disabled ? "none" : "0 2px 0 " + C.greenDeep,
-        opacity: loading ? 0.7 : 1,
-        transition: "background 150ms ease",
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function BSF_ErrorBanner({ message }) {
-  return (
-    <div style={{ padding: "10px 12px", borderRadius: 10, background: C.claretMist, border: "1px solid " + C.claret + "40", display: "flex", alignItems: "flex-start", gap: 8 }}>
-      <AlertCircle size={14} style={{ color: C.claret, flexShrink: 0, marginTop: 1 }}/>
-      <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.claret }}>{message}</p>
-    </div>
-  );
-}
-
-function BSF_SavedBadge({ label }) {
-  return (
-    <p style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.greenDeep }}>
-      <CheckCircle size={13}/> {label}
-    </p>
-  );
-}
-
-function BSF_SuccessBanner({ message, onClose }) {
-  useEffect(() => {
-    if (!message) return;
-    const t = setTimeout(onClose, 2600);
-    return () => clearTimeout(t);
-  }, [message, onClose]);
-  if (!message) return null;
-  return (
-    <div className="fade-in" style={{ position: "sticky", top: 0, zIndex: 30, maxWidth: 1160, margin: "0 auto 16px", padding: "12px 16px", borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "55", display: "flex", alignItems: "center", gap: 10, boxShadow: "0 6px 20px rgba(48, 132, 36, 0.12)" }}>
-      <div style={{ width: 28, height: 28, borderRadius: "50%", background: C.green, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        <Check size={15} style={{ color: "#fff" }} strokeWidth={3}/>
-      </div>
-      <p style={{ fontFamily: F.head, fontSize: 13.5, fontWeight: 800, color: C.greenDeep, flex: 1 }}>{message}</p>
-      <button onClick={onClose} aria-label="Dismiss" style={{ width: 26, height: 26, borderRadius: "50%", border: "none", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.greenDeep }}>
-        <X size={14} strokeWidth={2.5}/>
-      </button>
-    </div>
-  );
-}
-
-/* Header — same compact treatment as seller Inventory/History/Messages/Profile */
+/* Header — the shared PageHeader, same as the seller's Settings and History. */
 function BuyerSettingsHeader() {
+  const { isMobile } = useViewport();
   return (
     <div className="fade-in" style={{ maxWidth: 1160, margin: "0 auto 14px" }}>
-      <div style={{ padding: "14px 0 10px", position: "relative", marginBottom: 4 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: C.greenMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2, boxShadow: "0 2px 0 " + C.fawn }}>
-            <SettingsIcon size={20} style={{ color: C.greenDeep }} strokeWidth={2.2}/>
-          </div>
-          <div>
-            <h1 style={{ fontFamily: F.head, fontSize: 30, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.05, marginBottom: 4 }}>Profile</h1>
-            <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, lineHeight: 1.45, maxWidth: 560 }}>
-              Edit your name and manage your sign-in password.
-            </p>
-          </div>
-        </div>
-      </div>
+      <PageHeader icon={SettingsIcon} isMobile={isMobile} title="Profile" subtitle="Edit your name and manage your sign-in password."/>
     </div>
   );
 }
@@ -7934,14 +7987,14 @@ function BuyerProfileContent({ user, onSuccess }) {
 
         {profileError && <BSF_ErrorBanner message={profileError}/>}
 
-        <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: 14, borderTop: "1px solid " + C.fawn }}>
-          {profileSavedAt
-            ? <BSF_SavedBadge label="Changes saved"/>
-            : <p style={{ fontFamily: F.body, fontSize: 12, color: C.ash }}>Save when you&apos;re ready.</p>}
-          <BSF_PrimaryButton type="submit" disabled={!profileDirty || savingProfile} loading={savingProfile}>
-            {savingProfile ? "Saving..." : "Save changes"}
-          </BSF_PrimaryButton>
-        </div>
+        <BSF_SaveRow
+          savedLabel={profileSavedAt ? "Changes saved" : null}
+          hint="Save when you're ready."
+          blockedHint="Edit your name to save changes."
+          disabled={!profileDirty || savingProfile}
+          loading={savingProfile}
+          label="Save changes"
+        />
       </form>
 
       {/* Password */}
@@ -7973,20 +8026,14 @@ function BuyerProfileContent({ user, onSuccess }) {
 
         {pwError && <BSF_ErrorBanner message={pwError}/>}
 
-        <div style={{ marginTop: "auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, paddingTop: 14, borderTop: "1px solid " + C.fawn }}>
-          {pwSavedAt
-            ? <BSF_SavedBadge label={hasPassword ? "Password updated" : "Password set"}/>
-            : <p style={{ fontFamily: F.body, fontSize: 12, color: C.ash }}>
-                {hasPassword ? "Other devices will be signed out." : "Adds a password so you can sign in with email too."}
-              </p>}
-          <BSF_PrimaryButton
-            type="submit"
-            disabled={savingPw || !newPw || !confirmPw || (hasPassword && !currentPw)}
-            loading={savingPw}
-          >
-            {savingPw ? "Saving..." : (hasPassword ? "Update password" : "Set password")}
-          </BSF_PrimaryButton>
-        </div>
+        <BSF_SaveRow
+          savedLabel={pwSavedAt ? (hasPassword ? "Password updated" : "Password set") : null}
+          hint={hasPassword ? "Other devices will be signed out." : "Adds a password so you can sign in with email too."}
+          blockedHint={hasPassword ? "Fill in all three fields to update." : "Fill in both fields to set a password."}
+          disabled={savingPw || !newPw || !confirmPw || (hasPassword && !currentPw)}
+          loading={savingPw}
+          label={hasPassword ? "Update password" : "Set password"}
+        />
       </form>
     </div>
   );
@@ -8299,9 +8346,9 @@ export default function DropYardBuyerDashboard({
   // Maker" stat counts in the Claims tab before the fetch finishes \u2014 and
   // permanently if the network fails.
   const DEMO_CLAIMS = [
-    { id:"bc1", itemId: 1,  e:"\u{1F6B2}", t:"Kids Bicycle - 16 inch",    price:30,  seller:"Tom R.",  status:"pickup-overdue",   date:"Today",     time:"10:00 AM", addr:"8 Larkin Crescent",         channel:"drop",     isPastDue:true, autoCancelsIn:"1h 47m", paymentMethod:"cash"      },
-    { id:"bc2", itemId: 13, e:"\u{1FAB5}", t:"Solid Oak Dining Table",    price:350, seller:"Jane D.", status:"pickup-scheduled", date:"Sat, Apr 25", time:"2:00 PM", addr:"42 Bridlewood Dr",           channel:"drop",     paymentMethod:"etransfer" },
-    { id:"bc3", itemId: 9,  e:"\u2615",     t:"Cuisinart Coffee Maker",     price:15,  seller:"Sarah L.", status:"offer-pending",    date:null,         time:null,      addr:null,                         channel:"drop", counterAmount:20,  paymentMethod:"either"    },
+    { id:"bc1", itemId: 1,  e:"\u{1F6B2}", t:"Kids Bicycle - 16 inch",    price:30,  seller:"Tom R.",  status:"pickup-overdue",   date:"Today",     time:"10:00 AM", channel:"drop",     isPastDue:true, autoCancelsIn:"1h 47m", paymentMethod:"cash"      },
+    { id:"bc2", itemId: 13, e:"\u{1FAB5}", t:"Solid Oak Dining Table",    price:350, seller:"Jane D.", status:"pickup-scheduled", date:"Sat, Apr 25", time:"2:00 PM", channel:"drop",     paymentMethod:"etransfer" },
+    { id:"bc3", itemId: 9,  e:"\u2615",     t:"Cuisinart Coffee Maker",     price:15,  seller:"Sarah L.", status:"offer-pending",    date:null,         time:null,      channel:"drop", counterAmount:20,  paymentMethod:"either"    },
   ];
   const [claims, setClaims] = useState(accessToken ? [] : DEMO_CLAIMS);
 
@@ -8586,7 +8633,7 @@ export default function DropYardBuyerDashboard({
     // map correctly. Falls back to the optimistic shape for demo flows.
     const insertedClaim = realClaim
       ? { ...(adaptBuyerClaim(realClaim) || {}), date: day, time: time }
-      : { id: insertId, itemId: item.id, e: item.img, t: item.title, price: item.price, seller: item.seller.name, status: "offer-pending", date: day, time: time, addr: null, channel: item.layer };
+      : { id: insertId, itemId: item.id, e: item.img, t: item.title, price: item.price, seller: item.seller.name, status: "offer-pending", date: day, time: time, channel: item.layer };
     // Upsert, not prepend. ClaimModal does two things after its POST returns
     // 201: calls onClaimCreated (which bumps claimsTick and refetches
     // /api/claims/mine, already containing the new claim) and calls onConfirm,
@@ -8629,7 +8676,7 @@ export default function DropYardBuyerDashboard({
   // backend would use itemId once the offer flow is wired end-to-end).
   const handleAcceptCounterByItemTitle = (itemTitle, counterAmount) => {
     setClaims(prev => prev.map(c => (c.t === itemTitle && c.status === "offer-pending")
-      ? { ...c, status: "pickup-scheduled", price: counterAmount || c.counterAmount || c.price, counterAmount: null, date: c.date || "TBD", time: c.time || "TBD", addr: c.addr || null }
+      ? { ...c, status: "pickup-scheduled", price: counterAmount || c.counterAmount || c.price, counterAmount: null, date: c.date || "TBD", time: c.time || "TBD" }
       : c));
   };
   const handleDeclineCounterByItemTitle = (itemTitle) => {

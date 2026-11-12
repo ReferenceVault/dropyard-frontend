@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { previewOnly } from "./previewOnly";
 
 const components: { slug: string; label: string; file: string; tag: string }[] = [
   // v1 dashboards now render directly from /buyer (mode-switched). Their
@@ -18,6 +19,7 @@ const tagColors: Record<string, string> = {
 };
 
 export default function PreviewIndex() {
+  previewOnly();
   return (
     <div className="min-h-screen bg-slate-50 p-8">
       <div className="mx-auto max-w-4xl">
