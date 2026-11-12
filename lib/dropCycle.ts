@@ -5,7 +5,7 @@
  * Thu-Fri:  Preview - Buyers browse and save, no claiming
  * Sat 8am:  DROP GOES LIVE - Claiming opens
  * Sat-Sun:  Claim & Pickup - 48-hour window
- * Sun 8pm:  Drop closes
+ * Sun 7pm:  Drop closes
  */
 
 // ─────────────────────────────────────────────────────────────────
@@ -22,8 +22,10 @@ export const DROP_OPEN_DAY  = 6;
 export const DROP_OPEN_HOUR = 8;
 /** Day the Drop closes. */
 export const DROP_CLOSE_DAY  = 0;
-/** Hour the Drop closes. 20 = 8 PM. */
-export const DROP_CLOSE_HOUR = 20;
+/** Hour the Drop closes. 19 = 7 PM.
+ *  ⚠ Keep in sync with DROP_CLOSE_HOUR in dropyard_backend/src/lib/dropCycle.ts,
+ *  which sets the Drop record's closedStart and the Sunday rollover cron. */
+export const DROP_CLOSE_HOUR = 19;
 
 const DAYS_FULL  = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -31,7 +33,7 @@ const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 // ─────────────────────────────────────────────────────────────────
 // Toronto timezone helpers — must mirror the backend's src/lib/dropCycle.ts
 //
-// The Drop runs on Toronto wall-clock: Sat 08:00 to Sun 20:00 America/Toronto.
+// The Drop runs on Toronto wall-clock: Sat 08:00 to Sun 19:00 America/Toronto.
 // This file used to read the boundaries off the BROWSER's clock (getDay /
 // getHours / setHours), so every viewer outside Eastern computed a different
 // phase from the server. A seller in Vancouver saw "Queue for the next Drop"
@@ -87,7 +89,7 @@ function torontoToUtc(year: number, month: number, day: number, hour = 0, minute
     }
   }
   // Only reachable for a wall-clock that doesn't exist (the skipped 2am hour
-  // on spring-forward). Our boundaries are 00:00 / 08:00 / 20:00, so this is
+  // on spring-forward). Our boundaries are 00:00 / 08:00 / 19:00, so this is
   // a guard rather than a real case; fall back to EST rather than throwing
   // and blanking the whole dashboard.
   return new Date(Date.UTC(year, month - 1, day, hour + 5, minute, 0, 0));
@@ -146,12 +148,12 @@ export function dropOpenHourLong(): string {
   return dropOpenHour().replace(" ", ":00 ");
 }
 
-/** "6:00 PM" — close hour explicit minute style. */
+/** "7:00 PM" — close hour explicit minute style. */
 export function dropCloseHourLong(): string {
   return dropCloseHour().replace(" ", ":00 ");
 }
 
-/** "8 PM" close-hour label. */
+/** "7 PM" close-hour label. */
 export function dropCloseHour(): string { return formatHour12(DROP_CLOSE_HOUR, "AM"); }
 /**
  * "Toronto time" — the zone label to print next to any Drop instant. Derived
@@ -172,8 +174,8 @@ export function dropCloseDay(short = false): string {
 export type DropPhase =
   | "SUBMISSION"   // Mon 00:00 - Wed 23:59
   | "PREVIEW"      // Thu 00:00 - Sat 07:59
-  | "LIVE"         // Sat 08:00 - Sun 20:00
-  | "CLOSED";      // Sun 20:01 - Mon 00:00
+  | "LIVE"         // Sat 08:00 - Sun 19:00
+  | "CLOSED";      // Sun 19:00 - Mon 00:00
 
 export interface DropCycleInfo {
   phase: DropPhase;
@@ -203,7 +205,7 @@ function getCurrentDropSaturday(ref: Date): Date {
   // Toronto wall-clock, not the viewer's. See the timezone note above.
   const { weekday: day, hour } = torontoParts(ref);
 
-  // Past the close moment (Sunday 8pm by default): next week's open day.
+  // Past the close moment (Sunday 7pm by default): next week's open day.
   if (day === DROP_CLOSE_DAY && hour >= DROP_CLOSE_HOUR) {
     return torontoShift(ref, 6, DROP_OPEN_HOUR);
   }
@@ -227,7 +229,7 @@ function getPreviewThursday(sat: Date): Date {
   return torontoShift(sat, -2, 0);
 }
 
-/** Get the Drop-close moment (Sunday 8pm Toronto) given the open Saturday */
+/** Get the Drop-close moment (Sunday 7pm Toronto) given the open Saturday */
 function getDropCloseSunday(sat: Date): Date {
   return torontoShift(sat, 1, DROP_CLOSE_HOUR);
 }
@@ -353,7 +355,7 @@ export function formatDropTime(d: Date): string {
 
 export type SellerOverviewPhase = "between" | "live" | "closing";
 
-/** Sunday 20:00 of the currently-relevant Drop weekend. */
+/** Sunday 19:00 of the currently-relevant Drop weekend. */
 export function dropCloseMoment(now: Date = new Date()): Date {
   const info = getDropCycleInfo(now);
   return getDropCloseSunday(info.currentDropDate);
@@ -379,7 +381,7 @@ export function toSellerOverviewPhase(
 }
 
 /**
- * Hours elapsed since the previous Drop closed (Sun 8 pm of last week).
+ * Hours elapsed since the previous Drop closed (Sun 7 pm of last week).
  * Useful for the "fresh recap" window in BetweenHero — we treat the first
  * ~30h after a Drop closes as "fresh" and lead with the recap.
  */
@@ -410,4 +412,24 @@ export function formatCompactCountdown(target: Date, now: Date = new Date()): st
   if (hours > 0) return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
   if (mins > 0)  return `${mins}m`;
   return `${secs}s`;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Live Drop card labels. Always Toronto wall-clock, whatever the viewer's
+// zone, and always read from a real Drop instant (the Drop record's start /
+// end) rather than the constants above, so a schedule change needs no edit.
+// ─────────────────────────────────────────────────────────────────
+
+/** Zone suffix for Drop times. "ET" is right all year; EST alone would be
+ *  wrong from March to November (EDT). */
+export const DROP_ZONE_ABBR = "ET";
+
+/** "Sunday" / "Sun" — the Toronto weekday of a Drop instant. */
+export function dropDayOf(d: Date, short = false): string {
+  return d.toLocaleDateString("en-US", { timeZone: OPERATING_TIMEZONE, weekday: short ? "short" : "long" });
+}
+
+/** "7:00 PM" — the Toronto time of a Drop instant, in the homepage's style. */
+export function dropTimeOf(d: Date): string {
+  return d.toLocaleTimeString("en-US", { timeZone: OPERATING_TIMEZONE, hour: "numeric", minute: "2-digit", hour12: true });
 }

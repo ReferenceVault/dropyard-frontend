@@ -263,8 +263,9 @@ p {
   }
 }
 
-/* Notifications bell — smaller and tighter on mobile. */
-.dy-seller-topnav__bell {
+/* Notifications bell (components/notifications/NotificationBell), in both
+   dashboards' top bars — smaller and tighter on mobile. */
+.dy-notif-bell {
   position: relative;
   width: 40px;
   height: 40px;
@@ -277,13 +278,55 @@ p {
   justify-content: center;
   transition: background 150ms ease;
 }
-.dy-seller-topnav__bell:hover {
+.dy-notif-bell:hover {
   background: #FBFDFB;
 }
+.dy-notif-bell:focus-visible,
+.dy-notif-entry:focus-visible,
+.dy-toast button:focus-visible {
+  outline: 3px solid var(--color-dy-orange);
+  outline-offset: 2px;
+}
+.dy-notif-bell[aria-expanded="true"] {
+  background: #E2EFE0;
+  border-color: #33802B;
+}
 @media (max-width: 768px) {
-  .dy-seller-topnav__bell {
+  .dy-notif-bell {
     width: 36px;
     height: 36px;
+    flex-shrink: 0;
+  }
+}
+.dy-notif-entry:hover {
+  background: #F0F3F0 !important;
+}
+.dy-notif-entry:focus-visible {
+  outline-offset: -3px;
+}
+
+/* Toasts (components/notifications/NotificationToasts): bottom-right on
+   wider screens; up to 768px, where the bottom navigation shows (see
+   .dy-mobile-bottom-nav), full width above it. */
+.dy-toast-stack {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: min(380px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+.dy-toast-stack > * {
+  pointer-events: auto;
+}
+@media (max-width: 768px) {
+  .dy-toast-stack {
+    left: 16px;
+    right: 16px;
+    width: auto;
+    bottom: calc(84px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -444,7 +487,9 @@ p {
   transform-origin: left;
   transition: transform var(--transition-normal);
 }
-.dy-navlink[aria-current="page"]::after {
+/* "location": the homepage section on screen (The Drop, The Shelf). */
+.dy-navlink[aria-current="page"]::after,
+.dy-navlink[aria-current="location"]::after {
   transform: scaleX(1);
 }
 @media (hover: hover) {
@@ -687,3 +732,34 @@ p {
   from { transform: scale(1.06); }
   to   { transform: scale(1); }
 }
+
+/* ── Dialog panels ────────────────────────────────────────────────────────
+   Every dialog's panel (the white card) fits the visible screen and scrolls
+   inside, with its title and action rows kept in view by dialogHead() /
+   dialogFoot() from lib/layers.ts. `dvh` follows mobile browser bars and an
+   open keyboard; the `vh` line is the fallback where `dvh` isn't supported.
+   Unlayered on purpose, like the dashboards' own reset, so it applies there. */
+.dy-dialog-panel {
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Bottom sheets (e.g. the category picker): same idea, taller cap. */
+.dy-sheet-panel {
+  max-height: 88vh;
+  max-height: 88dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+/* Under 300px of height there's no room to pin the title and buttons and
+   still see the field being typed in, so they scroll with the rest. */
+@media (max-height: 300px) {
+  .dy-dialog-panel, .dy-sheet-panel { --dy-dialog-sticky: static; }
+}
+/* Item page "Ask a question": a colour change on hover and press that works
+   with reduced motion too (.cta-primary adds the lift when motion is allowed),
+   and a focus ring that clears the button's own shadow. */
+.dy-ask-cta:not(:disabled):hover { filter: brightness(0.9); }
+.dy-ask-cta:not(:disabled):active { filter: brightness(0.8); }
+.dy-ask-cta:focus-visible { outline: 3px solid var(--color-dy-orange); outline-offset: 3px; }

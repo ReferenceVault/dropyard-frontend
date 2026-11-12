@@ -8,11 +8,13 @@ import { CalendarDays, ClipboardList, FileText, HandHeart, Truck, type LucideIco
 import EarlyAccessSection from "@/components/EarlyAccessSection";
 import { SELL_HREF } from "@/components/GlobalHeader";
 import { DropCycleProvider } from "@/context/DropCycleContext";
+import { dropDayOf, dropTimeOf } from "@/lib/dropCycle";
 import { LIVE_NEIGHBOURHOOD } from "@/lib/homeNeighbourhoods";
 import { ItemCard, ItemCardSkeleton, ItemsEmptyState } from "./ItemCard";
 import { NeighbourhoodsSection } from "./NeighbourhoodsSection";
-import { FEATURED_SECTION_ID, NextDropSection } from "./NextDropSection";
+import { FEATURED_SECTION_ID, NextDropSectionView } from "./NextDropSection";
 import { ShelfSection } from "./ShelfSection";
+import { useDropSchedule } from "./useDropSchedule";
 import { useHomeData, type HomeItem, type LoadState } from "./useHomeData";
 import { useSectionReveal } from "./useSectionReveal";
 
@@ -264,6 +266,42 @@ function GoodStuff() {
   );
 }
 
+/**
+ * The sections that follow the Drop's schedule: the live Drop section and the
+ * Shelf. One reading of the schedule for both, so they switch at the same
+ * instant (and one /api/drop/current fetch, not two). `between` is the
+ * sections in between, made by HomeContent: the clock ticks this component
+ * every second, but the same elements come back each time, so React leaves
+ * them alone.
+ */
+function ScheduledSections({ live, onDropOpened, neighbourCount, between, shelf, state, savedIds, onToggleSaved }: {
+  live: { state: LoadState; feedPhase: string | null };
+  onDropOpened: () => void;
+  neighbourCount: number | null;
+  between: React.ReactNode;
+  shelf: HomeItem[];
+  state: LoadState;
+  savedIds: Set<string>;
+  onToggleSaved: (id: string) => void;
+}) {
+  const schedule = useDropSchedule();
+  return (
+    <>
+      <NextDropSectionView schedule={schedule} live={live} onDropOpened={onDropOpened} neighbourCount={neighbourCount} />
+      {between}
+      <ShelfSection
+        items={shelf}
+        state={state}
+        savedIds={savedIds}
+        onToggleSaved={onToggleSaved}
+        live={schedule.ready ? schedule.status === "LIVE" : null}
+        liveEndsDay={dropDayOf(schedule.closesAt)}
+        liveEndsTime={dropTimeOf(schedule.closesAt)}
+      />
+    </>
+  );
+}
+
 export function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -282,15 +320,20 @@ export function HomeContent() {
       <Hero />
       <TrustStrip />
       <DropCycleProvider>
-        <NextDropSection
+        <ScheduledSections
           live={{ state, feedPhase }}
           onDropOpened={reload}
           neighbourCount={neighbourCount}
+          between={<>
+            <FeaturedSection items={featured} state={state} savedIds={savedIds} onToggleSaved={toggleSaved} />
+            <DropFeature />
+          </>}
+          shelf={shelf}
+          state={state}
+          savedIds={savedIds}
+          onToggleSaved={toggleSaved}
         />
       </DropCycleProvider>
-      <FeaturedSection items={featured} state={state} savedIds={savedIds} onToggleSaved={toggleSaved} />
-      <DropFeature />
-      <ShelfSection items={shelf} state={state} savedIds={savedIds} onToggleSaved={toggleSaved} />
       <HowItWorks />
       <NeighbourhoodsSection initialRequest={searchParams?.get("hood") ?? null} neighbourCount={neighbourCount} />
       <EarlyAccessSection />

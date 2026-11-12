@@ -1,4 +1,5 @@
 import type React from "react";
+import { Z, dialogHead as stickyHead, dialogFoot as stickyFoot } from "@/lib/layers";
 
 // Inline styles for the profile-picture settings and its dialogs, matching the
 // dashboards' `C` palette and `F` fonts (DropYard_BuyerDashboard.jsx /
@@ -37,14 +38,17 @@ export const T = {
     border: "1px solid " + c.claret + "40", borderRadius: 10, padding: "10px 12px",
   } as React.CSSProperties,
   overlay: {
-    position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15, 54, 11, 0.45)",
+    position: "fixed", inset: 0, zIndex: Z.modal, background: "rgba(15, 54, 11, 0.45)",
     display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflowY: "auto",
   } as React.CSSProperties,
   dialog: {
     width: "100%", background: c.paper, borderRadius: 20, padding: "20px 22px 22px",
-    boxShadow: "0 24px 60px rgba(15, 54, 11, 0.25)", maxHeight: "calc(100vh - 32px)", overflowY: "auto",
+    // Height cap and scrolling come from the DIALOG_PANEL class (lib/layers.ts).
+    boxShadow: "0 24px 60px rgba(15, 54, 11, 0.25)",
   } as React.CSSProperties,
-  dialogHead: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 } as React.CSSProperties,
+  // Title row and button row stay in view while the dialog body scrolls.
+  dialogHead: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, ...stickyHead(20, c.paper) } as React.CSSProperties,
+  dialogFoot: stickyFoot(22, c.paper),
   dialogTitle: { fontFamily: font, fontSize: 18, fontWeight: 800, color: c.ink, margin: 0 } as React.CSSProperties,
   iconButton: {
     width: 40, height: 40, flexShrink: 0, borderRadius: "50%", border: "1px solid " + c.fawn, background: c.paper,

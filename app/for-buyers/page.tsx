@@ -71,7 +71,7 @@ export default function ForBuyersPage() {
   const goShelf = () => router.push("/buyer");
 
   // Real phase-aware countdown. During LIVE phase, counts down to drop close
-  // (Sunday 8 PM) and labels itself "Drop ends in". Any other phase counts
+  // (Sunday 7 PM) and labels itself "Drop ends in". Any other phase counts
   // down to drop open (Saturday 8 AM) and labels itself "Drop opens in".
   // SSR-safe: `now` starts null so first server + client render match (zeros).
   const [now, setNow] = useState<Date | null>(null);

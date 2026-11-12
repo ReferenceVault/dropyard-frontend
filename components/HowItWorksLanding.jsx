@@ -5,7 +5,7 @@
 // Visual + copy is byte-for-byte identical to the preview.
 
 import React, { useState } from "react";
-import { dropOpenDay, dropOpenHourCompact } from "@/lib/dropCycle";
+import { dropCloseDay, dropCloseHour, dropOpenDay, dropOpenHourCompact } from "@/lib/dropCycle";
 
 const C = {
   gLightBg: "#F3F8F3",
@@ -203,7 +203,7 @@ function InfoSection({ onListShelf }) {
 
   const bullets = [
     ["List directly, anytime", "Upload photos on a Tuesday afternoon. Your item goes live the same day. No queue, no wait."],
-    ["Roll-over from the Drop", "Anything that didn't sell during the Saturday Drop moves to The Shelf automatically Sunday at 8 PM. No relisting needed."],
+    ["Roll-over from the Drop", `Anything that didn't sell during the Saturday Drop moves to The Shelf automatically ${dropCloseDay()} at ${dropCloseHour()}. No relisting needed.`],
     ["Smart price suggestions", "Items lingering past 7 days get a suggested price drop, so good stuff doesn't sit forever."],
     ["Calm, no countdown", "Buyers browse The Shelf without urgency timers. Perfect for items that need the right buyer, not the fastest one."],
   ];

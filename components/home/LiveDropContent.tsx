@@ -12,7 +12,8 @@ export function LiveDropContent() {
     <div className="flex-1 bg-dy-pale font-dy">
       <TrustStrip />
       <DropCycleProvider>
-        <NextDropSection upcomingOnly neighbourCount={neighbourCount} />
+        {/* Switches to the live card during the Drop, like the homepage. */}
+        <NextDropSection asPageHeading neighbourCount={neighbourCount} />
       </DropCycleProvider>
     </div>
   );

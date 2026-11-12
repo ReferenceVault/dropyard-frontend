@@ -2402,13 +2402,9 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToHistory
               <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, lineHeight: 1.2 }}>{seller.dist}</p>
             </div>
             <div style={{ padding: "14px 12px", borderRadius: 16, background: C.paper, border: "1.5px solid " + C.fawn, textAlign: "center" }}>
-              {item.layer === "drop" ? <Clock size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/> : <Package size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/>}
-              <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 3 }}>
-                {item.layer === "drop" ? "Claim ends" : "Listed"}
-              </p>
-              <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, lineHeight: 1.2 }}>
-                {item.layer === "drop" ? (item.timeLeft || "This weekend") : ((item.daysListed || 3) + "d ago")}
-              </p>
+              <Package size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/>
+              <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 700, color: C.ash, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 3 }}>Listed</p>
+              <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, lineHeight: 1.2 }}>{(item.daysListed || 3) + "d ago"}</p>
             </div>
             <div style={{ padding: "14px 12px", borderRadius: 16, background: C.paper, border: "1.5px solid " + C.fawn, textAlign: "center" }}>
               {(item.paymentMethod === "cash") ? <DollarSign size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/> : (item.paymentMethod === "etransfer") ? <Banknote size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/> : <Check size={16} style={{ color: accent, margin: "0 auto 6px", display: "block" }}/>}
