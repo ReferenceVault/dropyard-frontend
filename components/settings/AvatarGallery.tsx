@@ -30,7 +30,11 @@ export function AvatarGallery({ presets, loading, loadError, currentId, onCancel
   const focusIndex = Math.max(0, presets.findIndex((p) => p.id === (selected ?? currentId)));
 
   const onKeyDown = (e: React.KeyboardEvent, i: number) => {
-    const cols = Math.max(1, Math.round((e.currentTarget.parentElement?.clientWidth ?? 300) / (e.currentTarget.clientWidth || 80)));
+    // Columns as the grid actually laid them out. Dividing the grid's width by
+    // one button's ignored the 12px gaps, so 5 columns came out as 6 and Down
+    // landed one column to the right.
+    const grid = e.currentTarget.parentElement;
+    const cols = Math.max(1, grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length : 1);
     const delta: Record<string, number> = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: cols, ArrowUp: -cols };
     let next = i;
     if (e.key in delta) next = Math.min(presets.length - 1, Math.max(0, i + delta[e.key]));

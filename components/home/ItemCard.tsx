@@ -68,8 +68,13 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
     // A card surface (white, hairline border, soft shadow) so the details sit
     // on something instead of floating under the photo. Not overflow-hidden:
     // the link's focus ring draws outside the card and must not be clipped.
-    <article className="dy-item relative flex h-full flex-col rounded-2xl border border-dy-line bg-white shadow-(--shadow-card)">
-      <Link href={`/item/${encodeURIComponent(item.id)}`} className="dy-focus group flex flex-1 flex-col rounded-2xl">
+    //
+    // Only as tall as its content: no h-full or flex-grow, so a card is never
+    // stretched to the tallest one in its row or scroller. Cards still line
+    // up because they all have the same natural height: the title always
+    // reserves two lines (below) and every other line is a single line.
+    <article className="dy-item relative flex flex-col rounded-2xl border border-dy-line bg-white shadow-(--shadow-card)">
+      <Link href={`/item/${encodeURIComponent(item.id)}`} className="dy-focus group block rounded-2xl">
         {/* 15px = the card's 16px corner inside its 1px border. */}
         <div className="relative aspect-square overflow-hidden rounded-t-[15px] bg-dy-pale">
           {showPhoto ? (
@@ -99,11 +104,12 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
             ) : ribbon}
           </span>
         </div>
-        {/* A column that fills the card, so the seller row can sit at the
-            bottom: cards in a row are one height, and their seller rows
-            line up whether the title takes one line or two. */}
-        <div className={`flex flex-1 flex-col ${s.pad}`}>
-          <h3 className={`line-clamp-2 font-semibold leading-tight tracking-[-0.01em] text-dy-forest group-hover:text-dy-green-strong ${s.title}`}>
+        {/* Same padding on all four sides (s.pad), so the bottom matches the sides. */}
+        <div className={s.pad}>
+          {/* Two lines reserved (leading-tight = 1.25, so 2.5em), the same as
+              the clamp: a one-line title leaves its second line empty here
+              rather than at the bottom of the card, and seller rows line up. */}
+          <h3 className={`line-clamp-2 min-h-[2.5em] font-semibold leading-tight tracking-[-0.01em] text-dy-forest group-hover:text-dy-green-strong ${s.title}`}>
             {item.title}
           </h3>
           <p className={`mt-[0.35em] font-bold tracking-[-0.02em] ${item.price === 0 ? "text-dy-red" : "text-dy-green-strong"} ${s.price}`}>
@@ -115,10 +121,9 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
           </p>
           {/* No pickup days or hours on cards: they're on the item page. */}
           {/* Who's selling: their chosen profile picture and "First L." — the
-              public homepage never shows a full surname. The spacer keeps the
-              old 0.6em gap above it; mt-auto takes any extra height. */}
-          <span aria-hidden className={`block h-[0.6em] shrink-0 ${s.small}`} />
-          <p className={`mt-auto flex min-w-0 items-center gap-2 border-t border-dy-line pt-[0.6em] text-dy-forest ${s.small}`}>
+              public homepage never shows a full surname. Directly under the
+              content, not pushed to the bottom. */}
+          <p className={`mt-[0.6em] flex min-w-0 items-center gap-2 border-t border-dy-line pt-[0.6em] text-dy-forest ${s.small}`}>
             <UserAvatar avatar={item.sellerAvatar} name={item.sellerName} size={s.avatar} decorative />
             <span className="truncate font-medium">{item.sellerName}</span>
           </p>

@@ -794,3 +794,36 @@ p {
     box-shadow: 0 4px 14px -6px rgba(15, 54, 11, 0.30), 0 0 0 1px rgba(15, 54, 11, 0.06);
   }
 }
+/* Seller Inventory ⋯ menu (components/inventory/ItemActionsMenu.tsx): the
+   36px button gets a 44×44 touch target without changing the layout, hover
+   and pressed shades, and a visible focus ring; menu rows highlight on hover
+   and keyboard focus (red rows in a pale red). */
+.dy-item-menu-button { position: relative; transition: background 150ms; }
+.dy-item-menu-button::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+.dy-item-menu-button:hover { background: #F1F7F0 !important; }
+.dy-item-menu-button:focus-visible { outline: 3px solid var(--color-dy-orange); outline-offset: 2px; }
+.dy-item-menu-entry:not([aria-disabled="true"]):hover,
+.dy-item-menu-entry:focus { background: #F0F3F0 !important; outline: none; }
+.dy-item-menu-entry[data-danger]:not([aria-disabled="true"]):hover,
+.dy-item-menu-entry[data-danger]:focus { background: #FDECEC !important; }
+.dy-item-menu-entry:focus-visible { box-shadow: inset 0 0 0 2px var(--color-dy-orange); }
+
+/* Seller Inventory row: the item name opens the item. */
+.dy-row-name:hover { color: #33802B !important; text-decoration: underline; text-underline-offset: 3px; }
+.dy-row-name:focus-visible { outline: 2px solid #33802B; outline-offset: 2px; border-radius: 4px; }
+
+/* Buyer item page: the link to a claim's conversation. */
+.dy-claim-thread-link:hover { color: #1F4A1B !important; }
+.dy-claim-thread-link:focus-visible { outline: 2px solid #33802B; outline-offset: 2px; border-radius: 8px; }
+
+/* Orders → Scheduled pickups: the Today / Upcoming / Pending filter cards. */
+.dy-pickup-filter:hover { border-color: #2C6126 !important; }
+.dy-pickup-filter:focus-visible { outline: 2px solid #33802B; outline-offset: 2px; }
