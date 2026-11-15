@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { Check, CheckCircle, Clock, DollarSign, RefreshCw } from "lucide-react";
 import { expiryLabel } from "./format";
+import { tidyPickupTime } from "./claimStatus";
 import { MC, MF } from "./theme";
 
 export interface OfferBannerClaim {
@@ -110,8 +111,8 @@ function OfferBannerBody({
   const detail = proposed
     ? [`Listed at $${claim.listed}`, claim.expiresAt ? `Expires ${expiryLabel(claim.expiresAt)}` : null].filter(Boolean).join(" · ")
     : role === "buyer"
-      ? (receipt ? "You confirmed receipt. Thanks for picking it up!" : `Coordinate pickup here, then confirm receipt once you have the item.${claim.pickupSlot ? ` Pickup: ${claim.pickupSlot}.` : ""}`)
-      : (receipt ? `${otherName} confirmed receipt. Mark the pickup complete.` : `Coordinate pickup in this thread.${claim.pickupSlot ? ` Pickup: ${claim.pickupSlot}.` : ""}`);
+      ? (receipt ? "You confirmed receipt. Thanks for picking it up!" : `Coordinate pickup here, then confirm receipt once you have the item.${claim.pickupSlot ? ` Buyer suggested: ${tidyPickupTime(claim.pickupSlot)}.` : ""}`)
+      : (receipt ? `${otherName} confirmed receipt. Mark the pickup complete.` : `Coordinate pickup in this thread.${claim.pickupSlot ? ` Buyer suggested: ${tidyPickupTime(claim.pickupSlot)}.` : ""}`);
 
   let actions: ReactNode = null;
   if (proposed && mode === "counter") {

@@ -4,7 +4,7 @@ The avatars users can choose in Settings → Profile → Profile picture. The
 registry (ids, files, alt text) lives in
 `dropyard_backend/src/lib/avatarPresets.ts`; this folder holds only the artwork.
 
-## Illustrated faces — `neighbour-1.svg` … `neighbour-7.svg`
+## Illustrated faces — `neighbour-1.svg` … `neighbour-13.svg`
 
 - **Artwork:** Open Peeps by Pablo Stanley — https://www.openpeeps.com/
 - **Licence:** CC0 1.0 Universal (public domain dedication) —
@@ -18,7 +18,8 @@ registry (ids, files, alt text) lives in
   explicit options (hairstyle or head covering, expression, skin tone,
   glasses, clothing and a DropYard brand background colour), then committed as
   a static file. Nothing is fetched from DiceBear at runtime.
-- **Licence checked:** 9 November 2026, on openpeeps.com ("Free for commercial
+- **Licence checked:** 9 November 2026 (and again on 12 November 2026, for the
+  later additions), on openpeeps.com ("Free for commercial
   and personal use under CC0 License") and on DiceBear's licences and style
   pages ("a remix of: Open Peeps by Pablo Stanley, licensed under CC0 1.0").
 
@@ -31,6 +32,24 @@ registry (ids, files, alt text) lives in
 | neighbour-5.svg | head=grayBun, face=cute, glasses, skin=ffdbb4 | Older person with a grey bun and glasses |
 | neighbour-6.svg | head=twists, face=calm, skin=694d3d | Calm person with twists |
 | neighbour-7.svg | head=mediumBangs, face=smile, glasses4, skin=edb98a | Smiling person with a fringe and glasses |
+| neighbour-8.svg | head=short3, face=smile, skin=edb98a, clothing=78e185, background=fdf3e4 | Smiling person with short dark hair |
+| neighbour-9.svg | head=long, face=smile, skin=ffdbb4, clothing=ffcf77, background=d4e8d1 | Smiling person with long dark hair |
+| neighbour-10.svg | head=grayMedium, face=smile, skin=694d3d, hair=e8e1e1, clothing=e78276, background=e2efe0 | Smiling older person with wavy grey hair |
+| neighbour-11.svg | head=grayShort, face=smile, skin=694d3d, hair=e8e1e1, clothing=8fa7df, background=d4e8d1 | Smiling older person with short grey hair |
+| neighbour-12.svg | head=short1, face=smile, skin=d08b5b, clothing=9ddadb, background=fdf3e4 | Smiling person with short, neatly parted hair |
+| neighbour-13.svg | head=hatBeanie, face=smile, skin=ae5d29, clothing=78e185, background=ffe4c4 | Smiling person in a green beanie |
+
+`neighbour-8` … `neighbour-13` were added on 12 November 2026 the same way
+(DiceBear HTTP API 9.x, `seed=dropyard`, no glasses, facial hair or mask unless
+listed). `hair` is DiceBear's `headContrastColor`: it colours the grey
+hairstyles, which otherwise come out near-black. Regenerating `neighbour-6`
+with its options above gave a byte-identical file, so the new faces share the
+originals' size and framing. Each new file was checked for scripts, event
+handlers, embedded images and external references: none; the only `url(...)`
+is the file's own `#viewboxMask`.
+
+The gallery shows the faces in the order of `AVATAR_PRESETS`, mixed on purpose
+(skin tone, age and look alternate) rather than in id order.
 
 ## Neutral designs — `house.svg`, `leaf.svg`, `sun.svg`
 

@@ -27,7 +27,7 @@ import { ThreadMenu } from "@/components/messages/ThreadMenu";
 import { ReportDialog } from "@/components/messages/ReportDialog";
 import { useThreadAutoScroll, NewMessagesPill } from "@/components/messages/useThreadAutoScroll";
 import { ThreadEmptyState, matchesOpenTarget, conversationFromUrl } from "@/components/messages/ThreadEmptyState";
-import { claimPill, isLiveClaim } from "@/components/messages/claimStatus";
+import { claimPill, isLiveClaim, pickupWhen } from "@/components/messages/claimStatus";
 import { inboxTime, messageTime, previewText, withDaySeparators } from "@/components/messages/format";
 import { CategorySelect } from "@/components/CategorySelect";
 import { CATEGORIES, categoryFor, categoryLabel, categoryEmoji, categoryValueFromLabel } from "@/lib/categories";
@@ -66,6 +66,8 @@ import {
   Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag, Archive,
   Paperclip, Smile, Flag, ExternalLink
 } from "lucide-react";
+import { Pencil, Trash2, CalendarClock, UserX, Undo2, FileDown } from "lucide-react";
+import { ItemActionsMenu } from "@/components/inventory/ItemActionsMenu";
 
 /* ============================================================
    DESIGN SYSTEM — brand palette, site font
@@ -2532,12 +2534,8 @@ function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
       // pickupSlot is freeform ("Sat 2pm-4pm" / "Sun 10am-12pm" / a date), so
       // we detect "today" by checking the first whitespace-delimited token
       // against the current day's short name. "This week" = total confirmed.
-      const SHORT_DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-      const todayShort = SHORT_DAYS[new Date().getDay()].toLowerCase();
-      const pickupsToday = confirmed.filter((c) => {
-        const slot = String(c.pickupSlot || "").trim().toLowerCase();
-        return slot.startsWith(todayShort);
-      }).length;
+      // Same rule as Orders → Scheduled pickups and Messages (pickupWhen).
+      const pickupsToday = confirmed.filter((c) => pickupWhen(c.pickupSlot, { since: c.createdAt }).kind === "today").length;
       const pickupsWeek = confirmed.length;
       setActionBuckets({
         pickupsToday,
@@ -4331,12 +4329,7 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
       // Urgent = needs the seller today: every pending claim is waiting on an
       // answer, plus any pickup scheduled for today. Same day heuristic as
       // PickupsView's todayCount.
-      const SHORT_DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-      const todayShort = SHORT_DAYS[new Date().getDay()].toLowerCase();
-      const dueToday = pickups.filter((c) => {
-        const slot = String(c?.pickupSlot || "").trim().toLowerCase();
-        return slot.startsWith(todayShort) || slot.startsWith("today");
-      }).length;
+      const dueToday = pickups.filter((c) => pickupWhen(c?.pickupSlot, { since: c?.createdAt }).kind === "today").length;
       setOrdersUrgent(pending.length + dueToday);
     });
     return () => { cancelled = true; };
@@ -4584,7 +4577,7 @@ function QuestionsView({ onNav, accessToken = null, onQuestionsChanged = null })
   );
 }
 
-function OrdersView({ onNav, accessToken = null, onClaimsChanged = null }) {
+function OrdersView({ onNav, accessToken = null, onClaimsChanged = null, onOpenThread = null, onViewItem = null }) {
   // The Orders tab badge is no longer passed in from here — InventoryTabs
   // fetches it. This used to hold `scheduledCount = 4` / `todayCount = 1`,
   // placeholders that outlived the Phase B demo data and kept claiming four
@@ -4601,8 +4594,7 @@ function OrdersView({ onNav, accessToken = null, onClaimsChanged = null }) {
 
       {/* Scheduled pickups — wired to GET /api/claims/incoming?status=ACCEPTED */}
       <div>
-        <h2 style={{ fontFamily: F.head, fontSize: 16, fontWeight: 800, color: C.ink, marginBottom: 12, letterSpacing: "-0.01em" }}>Scheduled pickups</h2>
-        <PickupsView onNav={onNav} embedded={true} accessToken={accessToken} onChanged={onClaimsChanged}/>
+        <PickupsView onNav={onNav} embedded={true} accessToken={accessToken} onChanged={onClaimsChanged} onOpenThread={onOpenThread} onViewItem={onViewItem}/>
       </div>
     </div>
   );
@@ -4702,12 +4694,89 @@ function ClosingTimeBanner({ counts, onDiscount }) {
   );
 }
 
-function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefresh = null, sellerItemsLoading, accessToken }) {
+// Adapter: backend item shape -> UI item shape (My items, and the item page
+// Orders opens). Module level so both can use it.
+// Backend returns category/condition/placement/status enums; UI wants
+// `e` (emoji), `t` (title), `cat`/`cond` (labels), `publishedTo`, and a
+// `status` of "draft"|"published" so the existing lifecycleOf() logic works.
+function adaptSellerItem(api) {
+  if (!api) return null;
+  // Hide finished/archived items from My Items entirely. SOLD claims appear
+  // in the History tab; ARCHIVED is the seller's manual remove. CLAIMED items
+  // stay visible — they're in flight (buyer claimed, seller confirmed,
+  // pickup pending) and the seller still cares about them.
+  if (api.status === "SOLD" || api.status === "ARCHIVED") return null;
+  const placementUi = ENUM_TO_PLACEMENT_LABEL[api.placement] || "drop";
+  const isDraft = api.status === "DRAFT";
+  let shelfDays;
+  if (placementUi === "shelf" && api.createdAt) {
+    const ms = Date.now() - new Date(api.createdAt).getTime();
+    shelfDays = Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+  }
+  const saves = (api._count && typeof api._count.watchlist === "number")
+    ? api._count.watchlist
+    : (typeof api.watcherCount === "number" ? api.watcherCount : 0);
+  return {
+    id:          api.id,
+    e:           CATEGORY_EMOJI[api.category] || "📦",
+    t:           api.title,
+    cat:         ENUM_TO_CATEGORY_LABEL[api.category] || "Other",
+    // The stored value, for the Edit form's selector (HOME → APPLIANCES_KITCHEN).
+    catValue:    categoryFor(api.category).value,
+    cond:        ENUM_TO_CONDITION_LABEL[api.condition] || "Used - Good",
+    price:       api.price,
+    // Agreed sale amount when a claim is active (BUG-055 — was activeClaim.price,
+    // now activeClaim.amount). Null for items without an active claim.
+    // Inventory row + detail view prefer this over the listed price so the
+    // seller sees what they'll actually be paid.
+    soldPrice:   (api.activeClaim && typeof api.activeClaim.amount === "number") ? api.activeClaim.amount : null,
+    // Surface the buyer's "Confirm receipt" flag so the inventory/pickups
+    // view can show a high-priority badge on this item.
+    buyerConfirmedReceipt: !!(api.activeClaim && api.activeClaim.buyerConfirmedReceiptAt),
+    // The claim holding this item, so the row can close the sale itself.
+    // Only an ACCEPTED claim can be marked picked up — a PROPOSED one is
+    // still a request the seller hasn't answered.
+    activeClaimId:     api.activeClaim?.status === "ACCEPTED" ? api.activeClaim.id : null,
+    activeClaimBuyer:  api.activeClaim?.buyer?.name || "the buyer",
+    activeClaimBuyerAvatar: api.activeClaim?.buyer?.avatar || null,
+    // For the pickup card: the buyer's suggested time (pickupWhen), the
+    // conversation (Message buyer), and when the claim was made, which is
+    // what a bare weekday in the suggested time counts from.
+    activeClaimSlot:           api.activeClaim?.pickupSlot || null,
+    activeClaimConversationId: api.activeClaim?.conversationId || null,
+    activeClaimCreatedAt:      api.activeClaim?.createdAt || null,
+    // BUG-093 — set when the seller committed the item to a Drop. Distinguishes
+    // "queued for Saturday" from a private draft; both are backend DRAFT.
+    isQueued:    !!api.queuedAt,
+    isFree:      api.price === 0 && !isDraft,
+    photos:      Array.isArray(api.photos) ? api.photos.filter(Boolean) : [],
+    description: api.description || "",
+    // BUG-053: surface the raw backend status so lifecycleOf() can route
+    // CLAIMED items to their own pill instead of leaving them looking
+    // like they're still live.
+    backendStatus: api.status,
+    status:      isDraft ? "draft" : "published",
+    publishedTo: isDraft ? null : placementUi,
+    views:       0,
+    saves,
+    shelfDays,
+    isBundle:       !!api.isBundle,
+    bundleCount:    typeof api.bundleCount === "number" ? api.bundleCount : 0,
+    bundleContents: Array.isArray(api.bundleContents) ? api.bundleContents : [],
+    // From GET /api/items/mine: whether any buyer ever saved, asked about,
+    // messaged about or claimed it (then it can't be deleted), and how many
+    // offers / accepted claims are open (then it can't be removed).
+    hasBuyerActivity: !!api.hasBuyerActivity,
+    openClaimCount:   typeof api.openClaimCount === "number" ? api.openClaimCount : 0,
+    raw:         api,
+  };
+}
+
+function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefresh = null, sellerItemsLoading, accessToken, onOpenThread = null }) {
   const { isMobile, width } = useViewport();
   // The table's fixed tracks (photo, status, price, actions) need ~600px before
   // Item and Category get any room; beside the sidebar that's only there from
   // ~1200px. Below that the rows use the stacked card layout phones use.
-  const compactList = isMobile || width < 1200;
   // Drop-cycle wiring — coarse phase ("between" | "live" | "closing") drives
   // the Drop strip, lifecycle pills, and per-item actions (e.g. Make free).
   const cycle = useDropCycle();
@@ -4727,6 +4796,8 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
   // Modal state for the new draft "Publish" chooser and destructive delete confirm.
   const [publishChooserItem, setPublishChooserItem] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  // The item whose "Save to Drafts" is waiting for confirmation.
+  const [confirmRemove, setConfirmRemove] = useState(null);
 
   // (The pickups-badge fetch that used to live here moved into InventoryTabs,
   // which now owns the Orders count for every tab — BUG-103.)
@@ -4743,70 +4814,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     { id: 8, e: "\uD83D\uDD27",       t: "DeWalt Drill Set",         cat: "Tools & Garden",       cond: "New",              price: 65,  status: "published", publishedTo: "drop",  views: 31, saves: 7  },
   ]);
 
-  // Adapter: backend item shape -> UI item shape used by this view.
-  // Backend returns category/condition/placement/status enums; UI wants
-  // `e` (emoji), `t` (title), `cat`/`cond` (labels), `publishedTo`, and a
-  // `status` of "draft"|"published" so the existing lifecycleOf() logic works.
-  function adaptItem(api) {
-    if (!api) return null;
-    // Hide finished/archived items from My Items entirely. SOLD claims appear
-    // in the History tab; ARCHIVED is the seller's manual remove. CLAIMED items
-    // stay visible — they're in flight (buyer claimed, seller confirmed,
-    // pickup pending) and the seller still cares about them.
-    if (api.status === "SOLD" || api.status === "ARCHIVED") return null;
-    const placementUi = ENUM_TO_PLACEMENT_LABEL[api.placement] || "drop";
-    const isDraft = api.status === "DRAFT";
-    let shelfDays;
-    if (placementUi === "shelf" && api.createdAt) {
-      const ms = Date.now() - new Date(api.createdAt).getTime();
-      shelfDays = Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
-    }
-    const saves = (api._count && typeof api._count.watchlist === "number")
-      ? api._count.watchlist
-      : (typeof api.watcherCount === "number" ? api.watcherCount : 0);
-    return {
-      id:          api.id,
-      e:           CATEGORY_EMOJI[api.category] || "📦",
-      t:           api.title,
-      cat:         ENUM_TO_CATEGORY_LABEL[api.category] || "Other",
-      // The stored value, for the Edit form's selector (HOME → APPLIANCES_KITCHEN).
-      catValue:    categoryFor(api.category).value,
-      cond:        ENUM_TO_CONDITION_LABEL[api.condition] || "Used - Good",
-      price:       api.price,
-      // Agreed sale amount when a claim is active (BUG-055 — was activeClaim.price,
-      // now activeClaim.amount). Null for items without an active claim.
-      // Inventory row + detail view prefer this over the listed price so the
-      // seller sees what they'll actually be paid.
-      soldPrice:   (api.activeClaim && typeof api.activeClaim.amount === "number") ? api.activeClaim.amount : null,
-      // Surface the buyer's "Confirm receipt" flag so the inventory/pickups
-      // view can show a high-priority badge on this item.
-      buyerConfirmedReceipt: !!(api.activeClaim && api.activeClaim.buyerConfirmedReceiptAt),
-      // The claim holding this item, so the row can close the sale itself.
-      // Only an ACCEPTED claim can be marked picked up — a PROPOSED one is
-      // still a request the seller hasn't answered.
-      activeClaimId:     api.activeClaim?.status === "ACCEPTED" ? api.activeClaim.id : null,
-      activeClaimBuyer:  api.activeClaim?.buyer?.name || "the buyer",
-      // BUG-093 — set when the seller committed the item to a Drop. Distinguishes
-      // "queued for Saturday" from a private draft; both are backend DRAFT.
-      isQueued:    !!api.queuedAt,
-      isFree:      api.price === 0 && !isDraft,
-      photos:      Array.isArray(api.photos) ? api.photos.filter(Boolean) : [],
-      description: api.description || "",
-      // BUG-053: surface the raw backend status so lifecycleOf() can route
-      // CLAIMED items to their own pill instead of leaving them looking
-      // like they're still live.
-      backendStatus: api.status,
-      status:      isDraft ? "draft" : "published",
-      publishedTo: isDraft ? null : placementUi,
-      views:       0,
-      saves,
-      shelfDays,
-      isBundle:       !!api.isBundle,
-      bundleCount:    typeof api.bundleCount === "number" ? api.bundleCount : 0,
-      bundleContents: Array.isArray(api.bundleContents) ? api.bundleContents : [],
-      raw:         api,
-    };
-  }
+  const adaptItem = adaptSellerItem;
 
   // True when the parent supplies real backend items (the auth'd flow through
   // /buyer/page.tsx). False for the standalone /preview/seller-dashboard route
@@ -4889,7 +4897,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     draft:   { label: "Draft",                       color: C.ash,       bg: C.sand,       border: C.fawn },
     queued:  { label: "Queued for Saturday's Drop",  color: C.amberDeep, bg: C.amberMist,  border: C.amber + "30" },
     live:    { label: "Live in Drop",                color: C.greenDeep, bg: C.greenMist,  border: C.green + "40", pulse: true },
-    shelf:   { label: "On the Shelf",                color: C.ink,       bg: C.sand,       border: C.smoke },
+    shelf:   { label: "On the Shelf",                color: C.greenDeep, bg: C.greenMist,  border: C.green + "40" },
     claimed: { label: "Claimed · pickup pending",    color: C.ai,        bg: C.aiMist,     border: C.ai + "40" },
   };
 
@@ -4929,9 +4937,10 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     setPublishChooserItem(null);
     flash("Queued for Saturday's Drop.");
     try {
-      // Status flips DRAFT -> LIVE so it'll appear in the next phase
-      // transition (or immediately if backend phase is LIVE).
-      await apiPatchItem(id, { status: "LIVE", placement: "DROP" });
+      // Queued = DRAFT + DROP; the server stamps queuedAt and promotes it when
+      // the Drop opens. (This used to send LIVE, which the server now treats
+      // as the same request.)
+      await apiPatchItem(id, { status: "DRAFT", placement: "DROP" });
     } catch { /* flash already shown by apiPatchItem */ }
   }
   async function publishToShelf(id) {
@@ -4952,27 +4961,104 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     } catch {}
   }
 
+  // "Save to Drafts": off sale and back to Drafts, reversible; buyers' saves,
+  // questions and conversations are kept. The server clears the Drop queue
+  // marker (so a queued item really leaves the Drop and Sneak Peek) and
+  // refuses while a buyer's offer or accepted claim is open; the row is
+  // restored then, and apiPatchItem has already shown why.
   async function unpublish(id) {
-    setItems(prev => prev.map(i => i.id === id ? { ...i, status: "draft", publishedTo: null } : i));
-    flash("Unpublished · saved to Drafts.");
+    const snapshot = items;
+    const it = items.find(i => i.id === id);
+    setItems(prev => prev.map(i => i.id === id ? { ...i, status: "draft", publishedTo: null, isQueued: false } : i));
     try {
       await apiPatchItem(id, { status: "DRAFT" });
-    } catch {}
+      flash("Saved to Drafts: " + (it ? "\u201C" + it.t + "\u201D" : "your listing") + ". It\u2019s no longer for sale.");
+    } catch {
+      setItems(snapshot);
+    }
   }
 
-  async function deleteDraft(id) {
+  // Delete draft / Delete listing (asked first). The row goes at once and
+  // comes back if the server refuses (apiDeleteItem shows why); the toast
+  // waits for the server, so it never claims a delete that didn't happen.
+  async function deleteItem(id) {
     const snapshot = items;
+    const it = items.find(i => i.id === id);
+    const kind = it && lifecycleOf(it) === "draft" ? "Draft" : "Listing";
     setItems(prev => prev.filter(i => i.id !== id));
-    flash("Draft deleted.");
     try {
       await apiDeleteItem(id);
+      flash(kind + " deleted: " + (it ? "\u201C" + it.t + "\u201D" : "your item") + ".");
     } catch {
-      // Restore the row if the server rejected the delete
       setItems(snapshot);
     }
   }
 
   function beginPriceEdit(item) { setPriceEditId(item.id); setTempPrice(String(item.price)); }
+
+  // The ⋯ menu for one Inventory row: the same actions, under the same
+  // per-status rules, as the buttons it replaces. An action that applies to
+  // this kind of item but can't be used right now stays in the list,
+  // disabled, with the reason; one that never applies isn't listed.
+  function itemActions(item, lc) {
+    const share = { id: "share", label: "Share listing", icon: Share2, onSelect: () => shareSellerListing(item) };
+    const edit = { id: "edit", label: "Edit listing", icon: Pencil, onSelect: () => onEdit && onEdit(item) };
+    // Save to Drafts: off sale, back in Drafts; buyers' saves, questions and
+    // conversations are kept. Delete listing: permanent, so only while no
+    // buyer has saved, asked about, messaged about or claimed it (the server
+    // refuses otherwise). Both ask first.
+    const saveToDrafts = (reason) => ({ id: "drafts", label: "Save to Drafts", icon: FileDown, disabledReason: reason || null, onSelect: () => setConfirmRemove(item) });
+    const deleteListing = (reason) => ({ id: "delete", label: "Delete listing", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(item),
+      disabledReason: reason || (item.hasBuyerActivity ? DELETE_BLOCKED_BY_BUYERS : null) });
+    const offerOpen = item.openClaimCount > 0 ? REMOVE_BLOCKED_BY_OFFER : null;
+    if (lc === "draft") return [
+      { id: "publish", label: "Publish", icon: Send, onSelect: () => openPublishChooser(item) },
+      edit,
+      // Drafts aren't public (BUG-051), so there's nothing to share yet.
+      { ...share, disabledReason: "Publish it first to share it." },
+      // Permanent, so only for drafts no buyer ever touched: deleting one
+      // would erase buyers' saves, questions and messages.
+      { id: "delete", label: "Delete draft", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(item),
+        disabledReason: item.hasBuyerActivity ? "Buyers have saved or messaged about it, so it can't be deleted." : null },
+    ];
+    if (lc === "queued") return [
+      share,
+      { id: "move", label: "Move to Shelf", icon: ArrowRight, onSelect: () => makeLiveNow(item.id) },
+      edit,
+      saveToDrafts(offerOpen),
+      deleteListing(),
+    ];
+    if (lc === "live") return [
+      share,
+      ...(isClosing ? [item.isFree
+        ? { id: "unfree", label: "Undo free", icon: Heart, onSelect: () => undoFree(item.id) }
+        : { id: "free", label: "Make free", icon: Heart, onSelect: () => makeFree(item.id) }] : []),
+      edit,
+      // Locked only for items in the Drop (its live items, and drafts queued
+      // for it). Shelf items also show as live during the Drop, but they
+      // aren't in it: the usual rules apply (the server enforces the same).
+      ...(item.publishedTo === "shelf"
+        ? [saveToDrafts(offerOpen), deleteListing()]
+        : [saveToDrafts("Can't save to Drafts while it's in the live Drop."), deleteListing("Can't delete while it's in the live Drop.")]),
+    ];
+    if (lc === "shelf") return [
+      share,
+      { id: "lower", label: "Lower price", icon: TrendingDown, onSelect: () => beginPriceEdit(item) },
+      edit,
+      saveToDrafts(offerOpen),
+      deleteListing(),
+    ];
+    // "claimed": a buyer's claim has been accepted. Not shared (BUG-089: the
+    // sale is already in flight), not edited, not removed.
+    return [
+      item.activeClaimId
+        ? { id: "pickup", label: "Mark as picked up", icon: Check, onSelect: () => openRowPickup(item), disabledReason: pickupBusyId === item.id ? "Saving…" : null }
+        : { id: "review", label: "Review claim", icon: ClipboardList, onSelect: () => onNav && onNav("orders") },
+      { ...edit, disabledReason: "Can't edit while a sale is in progress." },
+      saveToDrafts("Can't save to Drafts while a sale is in progress. Manage it in Orders."),
+      deleteListing("Can't delete while a sale is in progress."),
+    ];
+  }
   async function commitPriceEdit() {
     const next = Number(tempPrice);
     const id = priceEditId;
@@ -4985,7 +5071,14 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       await apiPatchItem(id, { price: next });
     } catch {}
   }
-  function flash(msg) { setSuccessMsg(msg); setTimeout(() => setSuccessMsg(null), 3500); }
+  // One timer at a time, so an earlier message's timer can't clear a newer one early.
+  const flashTimer = useRef(null);
+  function flash(msg) {
+    setSuccessMsg(msg);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setSuccessMsg(null), 3500);
+  }
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
 
   // ── Mark picked up, straight from the inventory row ──────────────────────
   // A claimed item could only be closed out from its message thread, and the
@@ -5002,6 +5095,37 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
   // The server marks it picked up first (markClaimPickedUp); the rating
   // prompt opens only after that succeeds. A refused claim (cancelled since
   // the list loaded, say) shows the server's reason and the list refetches.
+  // Claimed items are pickup cards (PickupCard). Every action on one asks
+  // first: Mark picked up, Mark as no-show and Release item (PickupConfirmDialog).
+  const [pendingPickup, setPendingPickup] = useState(null);
+  function pickupCardActions(item) {
+    return pickupMenuActions({
+      onMessage: item.activeClaimConversationId && onOpenThread ? () => onOpenThread(item.activeClaimConversationId) : null,
+      onView: onView ? () => onView(item) : null,
+      onNoShow: () => setPendingPickup({ kind: "no-show", item }),
+      onRelease: () => setPendingPickup({ kind: "release", item }),
+    });
+  }
+  async function confirmPendingPickup() {
+    const p = pendingPickup;
+    setPendingPickup(null);
+    if (!p) return;
+    if (p.kind === "pickup") { await openRowPickup(p.item); return; }
+    // No-show / release: the claim is cancelled and the item is back on sale.
+    if (!accessToken || (typeof p.item.id === "string" && p.item.id.startsWith("demo-"))) {
+      setItems(prev => prev.map(i => i.id === p.item.id ? { ...i, backendStatus: "LIVE", status: "published", publishedTo: i.publishedTo || "shelf", activeClaimId: null } : i));
+      flash(pickupCancelToast(p.kind, p.item.t));
+      return;
+    }
+    try {
+      await cancelAcceptedClaim(p.item.activeClaimId, p.kind, accessToken);
+      flash(pickupCancelToast(p.kind, p.item.t));
+    } catch (err) {
+      flash(pickupCancelErrorText(p.kind, err));
+    }
+    if (onRefresh) onRefresh();
+  }
+
   async function openRowPickup(item) {
     const claimId = item.activeClaimId;
     // Standalone preview / demo rows: reflect it locally.
@@ -5144,15 +5268,23 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       </div>
       )}
 
-      {/* Success toast */}
+      {/* Success toast. Pinned to the bottom of the screen (above the phone's
+          bottom bar), not the top of the list: a seller acting on a row far
+          down the list has to see what happened. */}
       {successMsg && (
-        <div role="status" className="fade-in" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 14, background: C.greenMist, border: "1px solid " + C.green + "30", marginBottom: 16 }}>
-          <CheckCircle size={16} style={{ color: C.greenDeep }}/>
-          <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.greenDeep, flex: 1 }}>{successMsg}</p>
-          <button onClick={() => setSuccessMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-            <X size={14} style={{ color: C.greenDeep }}/>
-          </button>
-        </div>
+        <ModalPortal>
+          {/* The wrapper places it, so .fade-in's transform on the toast can't move
+              it. Up to 768px the bottom navigation shows; sit above it. */}
+          <div style={{ position: "fixed", left: 16, right: 16, bottom: width <= 768 ? "calc(84px + env(safe-area-inset-bottom, 0px))" : 24, zIndex: Z.toast, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+          <div role="status" className="fade-in" style={{ pointerEvents: "auto", width: "100%", maxWidth: 520, display: "flex", alignItems: "center", gap: 10, padding: "12px 14px 12px 16px", borderRadius: 14, background: C.greenMist, border: "1px solid " + C.green + "40", boxShadow: "0 12px 32px -8px rgba(15, 54, 11, 0.3)" }}>
+            <CheckCircle size={16} style={{ color: C.greenDeep, flexShrink: 0 }} aria-hidden="true"/>
+            <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.greenDeep, flex: 1, overflowWrap: "anywhere" }}>{successMsg}</p>
+            <button onClick={() => setSuccessMsg(null)} aria-label="Dismiss" style={{ background: "none", border: "none", cursor: "pointer", padding: 0, width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <X size={14} style={{ color: C.greenDeep }} aria-hidden="true"/>
+            </button>
+          </div>
+          </div>
+        </ModalPortal>
       )}
 
       {/* Claimed items quick link — more elegant */}
@@ -5202,360 +5334,126 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
         </div>
       )}
 
-      {/* Items table — column headers + single-column list of rows aligned
-          to the same grid tracks (Photo · Item · Category · Status · Price · Actions).
-          Mobile skips the header row and stacks each item into a vertical card. */}
-      {filtered.length > 0 && !compactList && (
-        <div style={{ display: "grid", gridTemplateColumns: MY_ITEMS_COLUMNS, gap: 14, padding: "6px 16px", marginBottom: 4, fontFamily: F.head, fontSize: 11, fontWeight: 650, color: ROW.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-          <span aria-hidden="true"/>
-          <span>Item</span>
-          <span>Category</span>
-          <span>Status</span>
-          <span style={{ textAlign: "right" }}>Price</span>
-          <span style={{ textAlign: "right", paddingRight: 4 }}>Actions</span>
-        </div>
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: compactList ? 10 : 8 }}>
+      {/* Item rows: one compact card at every width, as in the client's
+          mockup. Thumbnail | name, "time on status · condition", status pill
+          (and, for a claimed item, Mark as picked up) | price over the ⋯ menu.
+          No column header and no Category / Status columns. Full width, with
+          larger sizes from 640px up (RS below). */}
+      <div style={{ display: "flex", flexDirection: "column", gap: width >= 640 ? 12 : 10 }}>
         {filtered.map(item => {
           const lc = lifecycleOf(item);
           const meta = lifecycleMeta[lc];
-          // Mobile card layout — vertical stack: thumb+title+price top row,
-          // meta + status pills middle, action row bottom. Keeps every action
-          // accessible without horizontal scroll.
-          if (compactList) {
+          const RS = width >= 640 ? ROW_SIZE.large : ROW_SIZE.phone;
+          const pillSize = { fontSize: RS.pill, padding: RS.pillPad };
+          const details = [rowStatusText(item, lc), item.cond.replace(" - ", " – ")];
+          if (item.saves > 0) details.push(item.saves === 1 ? "1 save" : item.saves + " saves");
+          // A claimed item is a pickup: the shared pickup card (as in Orders).
+          if (lc === "claimed" && item.activeClaimId) {
             return (
-              <article key={item.id} style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px", borderRadius: 14, border: "1px solid " + ROW.border, background: C.paper }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                  <button
-                    type="button"
-                    onClick={() => onView && onView(item)}
-                    title="View details"
-                    style={{ width: 56, height: 56, borderRadius: 12, background: ROW.thumb, border: "1px solid " + ROW.border, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", padding: 0, cursor: "pointer" }}
-                  >
-                    {item.photos && item.photos.length > 0 ? (
-                      <img src={item.photos[0]} alt={item.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
-                    ) : (
-                      <span style={{ fontSize: 26 }}>{item.e}</span>
-                    )}
-                  </button>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => onView && onView(item)}
-                      style={{ fontFamily: F.head, fontSize: 15, fontWeight: 700, color: ROW.ink, letterSpacing: "-0.01em", background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.3 }}
-                    >
-                      {item.t}
-                    </button>
-                    <p style={{ marginTop: 3, fontFamily: F.body, fontSize: 12, fontWeight: 500, color: ROW.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {item.cat} · {item.cond}
-                    </p>
-                    <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-                      <span style={{ ...ROW_PILL, background: meta.bg, color: meta.color, border: "1px solid " + meta.border }}>
-                        {meta.pulse && <span style={{ position: "relative", display: "inline-flex", width: 6, height: 6, flexShrink: 0 }}>
-                          <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: meta.color, opacity: 0.4, animation: "pulseLive 1.8s ease-in-out infinite" }}/>
-                          <span style={{ position: "relative", width: 6, height: 6, borderRadius: "50%", background: meta.color }}/>
-                        </span>}
-                        {meta.label}
-                      </span>
-                      {item.isBundle && (
-                        <span style={{ ...ROW_PILL, gap: 4, background: C.tealMist, color: C.teal, border: "1px solid " + C.teal + "30" }}>
-                          <Package size={11} strokeWidth={2.2}/> Bundle of {item.bundleCount || (item.bundleContents || []).length || 2}
-                        </span>
-                      )}
-                      {item.isFree && (
-                        <span style={{ ...ROW_PILL, gap: 4, background: C.claret, color: "#fff", border: "1px solid " + C.claret }}>
-                          <Heart size={11} strokeWidth={2.2}/> Free pile
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0, textAlign: "right" }}>
-                    {priceEditId === item.id ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 2, justifyContent: "flex-end" }}>
-                        <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 900, color: C.green }}>$</span>
-                        <input type="text" value={tempPrice} autoFocus onChange={e => setTempPrice(e.target.value.replace(/[^0-9.]/g, ""))}
-                          onBlur={commitPriceEdit}
-                          onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setPriceEditId(null); }}
-                          style={{ width: 56, padding: "2px 6px", borderRadius: 6, border: "1.5px solid " + C.green, fontFamily: F.head, fontSize: 14, fontWeight: 900, color: C.green, outline: "none", background: C.paper, textAlign: "center" }}/>
-                      </div>
-                    ) : (
-                      <p style={{ fontFamily: F.head, fontSize: 17, fontWeight: 750, color: item.isFree ? C.claret : C.green, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums" }}>
-                        {item.isFree ? "FREE" : (
-                          typeof item.soldPrice === "number" && item.soldPrice !== item.price ? (
-                            <>
-                              <span>{"$" + item.soldPrice}</span>
-                              <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 700, color: C.ash, textDecoration: "line-through" }}>{"$" + item.price}</span>
-                            </>
-                          ) : ("$" + item.price)
-                        )}
-                      </p>
-                    )}
-                    {(item.views > 0 || item.saves > 0 || (lc === "shelf" && item.shelfDays > 0)) && (
-                      <p style={{ marginTop: 4, fontFamily: F.body, fontSize: 11, fontWeight: 500, color: ROW.muted, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        {item.views > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><Eye size={9}/> {item.views}</span>}
-                        {item.saves > 0 && <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}><Heart size={9}/> {item.saves}</span>}
-                        {lc === "shelf" && item.shelfDays > 0 && <span>{item.shelfDays}d</span>}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Mobile twin of the same label, removed for the same
-                    reason — a Shelf item is not queued for the Drop. */}
-
-                <div style={{ display: "flex", gap: 6, alignItems: "center", paddingTop: 10, borderTop: "1px solid " + ROW.border }}>
-                  {/* Share — the table row's button, same allow-list. The card
-                      layout never had it, so phones (and now tablets, which
-                      use cards too) couldn't share a listing. */}
-                  {["queued", "live", "shelf"].includes(lc) && (
-                    <button
-                      onClick={async (e) => { e.stopPropagation(); await shareSellerListing(item); }}
-                      aria-label="Share this listing"
-                      title="Share"
-                      style={actionBtnIcon}
-                    >
-                      <Share2 size={13} style={{ color: C.greenDeep }} strokeWidth={2.4}/>
-                    </button>
-                  )}
-                  {lc === "draft" && (
-                    <>
-                      <button onClick={() => openPublishChooser(item)} className="cta-primary" style={{ ...actionBtnSolid(C.green, C.greenDeep), flex: 1 }}>Publish</button>
-                      <button onClick={() => onEdit && onEdit(item)} style={{ ...actionBtnOutlined, flex: 1 }}>Edit</button>
-                      <button onClick={() => setConfirmDelete(item)} title="Delete draft" aria-label="Delete draft" style={actionBtnIcon}>
-                        <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
-                      </button>
-                    </>
-                  )}
-                  {lc === "queued" && (
-                    <>
-                      <button onClick={() => makeLiveNow(item.id)} className="cta-primary" style={{ ...actionBtnSolid(C.amber, C.amberDeep), flex: 1 }}>Move to Shelf</button>
-                      <button onClick={() => onEdit && onEdit(item)} style={{ ...actionBtnOutlined, flex: 1 }}>Edit</button>
-                      <button onClick={() => unpublish(item.id)} title="Unpublish" aria-label="Unpublish" style={actionBtnIcon}>
-                        <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
-                      </button>
-                    </>
-                  )}
-                  {lc === "live" && (
-                    <>
-                      {isClosing && (
-                        item.isFree ? (
-                          <button onClick={() => undoFree(item.id)} style={{ ...actionBtnOutlined, flex: 1 }}>
-                            Undo free
-                          </button>
-                        ) : (
-                          <button onClick={() => makeFree(item.id)} style={{ ...actionBtnOutlined, flex: 1, color: C.claret, borderColor: C.claret + "40" }}>
-                            <Heart size={12} strokeWidth={2.4}/> Make free
-                          </button>
-                        )
-                      )}
-                      <button onClick={() => onEdit && onEdit(item)} style={{ ...actionBtnOutlined, flex: 1 }}>Edit</button>
-                    </>
-                  )}
-                  {lc === "shelf" && (
-                    <>
-                      <button onClick={() => beginPriceEdit(item)} style={{ ...actionBtnOutlined, flex: 1 }}>
-                        <TrendingDown size={12}/> Lower price
-                      </button>
-                      <button onClick={() => onEdit && onEdit(item)} style={{ ...actionBtnOutlined, flex: 1 }}>Edit</button>
-                      <button onClick={() => unpublish(item.id)} title="Unpublish" aria-label="Unpublish" style={actionBtnIcon}>
-                        <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
-                      </button>
-                    </>
-                  )}
-                  {lc === "claimed" && (
-                    item.activeClaimId ? (
-                      <button onClick={() => openRowPickup(item)} disabled={pickupBusyId === item.id} className="cta-primary" style={{ ...actionBtnSolid(C.green, C.greenDeep), flex: 1 }}>
-                        <Check size={12} strokeWidth={3}/> Mark as Picked Up
-                      </button>
-                    ) : (
-                      <button onClick={() => onNav && onNav("orders")} style={{ ...actionBtnOutlined, flex: 1 }}>Review claim</button>
-                    )
-                  )}
-                </div>
-              </article>
+              <PickupCard
+                key={item.id}
+                item={item}
+                buyer={item.activeClaimBuyer}
+                buyerAvatar={item.activeClaimBuyerAvatar}
+                price={typeof item.soldPrice === "number" ? item.soldPrice : item.price}
+                when={pickupWhen(item.activeClaimSlot, { since: item.activeClaimCreatedAt })}
+                width={width}
+                busy={pickupBusyId === item.id}
+                onPickup={() => setPendingPickup({ kind: "pickup", item })}
+                onOpen={onView ? () => onView(item) : null}
+                actions={pickupCardActions(item)}
+              />
             );
           }
           return (
-            <article key={item.id} style={{ display: "grid", gridTemplateColumns: MY_ITEMS_COLUMNS, alignItems: "center", gap: 14, padding: "12px 16px", borderRadius: 14, border: "1px solid " + ROW.border, background: C.paper, transition: "border-color 150ms" }}>
-              {/* Col 1 — Photo */}
-              <button
-                type="button"
-                onClick={() => onView && onView(item)}
-                title="View details"
-                style={{ width: 60, height: 60, borderRadius: 12, background: ROW.thumb, border: "1px solid " + ROW.border, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", padding: 0, cursor: "pointer" }}
-              >
-                {item.photos && item.photos.length > 0 ? (
-                  <img src={item.photos[0]} alt={item.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
-                ) : (
-                  <span style={{ fontSize: 28 }}>{item.e}</span>
-                )}
-              </button>
-
-              {/* Col 2 — Item (name + meta line: views/saves/shelf) */}
-              <div style={{ minWidth: 0 }}>
+            <article key={item.id} style={{ display: "flex", flexDirection: "column", gap: 12, padding: width < 400 ? "14px" : RS.pad, borderRadius: 16, border: "1px solid " + ROW.border, background: C.paper }}>
+              <div style={{ display: "flex", alignItems: "center", gap: RS.gap }}>
+                {/* The name below is the row's keyboard stop for opening the
+                    item; the thumbnail is the same link for the mouse. */}
                 <button
                   type="button"
+                  tabIndex={-1}
+                  aria-hidden="true"
                   onClick={() => onView && onView(item)}
-                  title="View details"
-                  style={{ fontFamily: F.head, fontSize: 15, fontWeight: 700, color: ROW.ink, letterSpacing: "-0.01em", lineHeight: 1.3, background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left", display: "block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                  onMouseEnter={e => { e.currentTarget.style.color = C.green; e.currentTarget.style.textDecoration = "underline"; e.currentTarget.style.textUnderlineOffset = "3px"; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = ROW.ink; e.currentTarget.style.textDecoration = "none"; }}
+                  style={{ width: RS.thumb, height: RS.thumb, borderRadius: RS.thumbRadius, background: ROW.thumb, border: "1px solid " + ROW.border, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", padding: 0, cursor: "pointer" }}
                 >
-                  {item.t}
-                </button>
-                {/* "In Saturday's Drop" used to sit here on every Shelf item
-                    while the Drop wasn't live, directly contradicting the
-                    STATUS column beside it. Shelf is the always-available
-                    carryover pool — those items are browsable every day and
-                    are not queued for the Drop, so the label misreported the
-                    placement the seller had chosen. The Queued-for-Drop items
-                    carry their own "Queued for Saturday" status already. */}
-                {(item.views > 0 || item.saves > 0 || (lc === "shelf" && item.shelfDays > 0)) && (
-                  <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 10, fontFamily: F.body, fontSize: 12, fontWeight: 500, color: ROW.muted }}>
-                    {item.views > 0 && (<span style={{ display: "flex", alignItems: "center", gap: 3 }}><Eye size={10}/> {item.views}</span>)}
-                    {item.saves > 0 && (<span style={{ display: "flex", alignItems: "center", gap: 3 }}><Heart size={10}/> {item.saves}</span>)}
-                    {lc === "shelf" && item.shelfDays > 0 && (<span>{item.shelfDays}d on Shelf</span>)}
-                  </div>
-                )}
-              </div>
-
-              {/* Col 3 — Category (with condition underneath) */}
-              <div style={{ minWidth: 0 }}>
-                <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: ROW.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.cat}</p>
-                <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 450, color: ROW.muted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.cond}</p>
-              </div>
-
-              {/* Col 4 — Status pill (+ Free pile pill underneath when active) */}
-              <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-                <span style={{ ...ROW_PILL, background: meta.bg, color: meta.color, border: "1px solid " + meta.border }}>
-                  {meta.pulse && <span style={{ position: "relative", display: "inline-flex", width: 6, height: 6, flexShrink: 0 }}>
-                    <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: meta.color, opacity: 0.4, animation: "pulseLive 1.8s ease-in-out infinite" }}/>
-                    <span style={{ position: "relative", width: 6, height: 6, borderRadius: "50%", background: meta.color }}/>
-                  </span>}
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meta.label}</span>
-                </span>
-                {item.isBundle && (
-                  <span title={(item.bundleContents || []).join(" · ")} style={{ ...ROW_PILL, gap: 4, background: C.tealMist || C.greenMist, color: C.teal || C.greenDeep, border: "1px solid " + (C.teal || C.greenDeep) + "30" }}>
-                    <Package size={11} strokeWidth={2.2}/> Bundle of {item.bundleCount || (item.bundleContents || []).length || 2}
-                  </span>
-                )}
-                {item.isFree && (
-                  <span style={{ ...ROW_PILL, gap: 4, background: C.claret, color: "#fff", border: "1px solid " + C.claret }}>
-                    <Heart size={11} strokeWidth={2.2}/> Free pile
-                  </span>
-                )}
-              </div>
-
-              {/* Col 5 — Inline-editable price (FREE when item is in the free pile) */}
-              <div onClick={e => e.stopPropagation()} style={{ textAlign: "right" }}>
-                {priceEditId === item.id ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 2, justifyContent: "flex-end" }}>
-                    <span style={{ fontFamily: F.head, fontSize: 16, fontWeight: 900, color: C.green }}>$</span>
-                    <input type="text" value={tempPrice} autoFocus onChange={e => setTempPrice(e.target.value.replace(/[^0-9.]/g, ""))}
-                      onBlur={commitPriceEdit}
-                      onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setPriceEditId(null); }}
-                      style={{ width: 64, padding: "2px 6px", borderRadius: 6, border: "1.5px solid " + C.green, fontFamily: F.head, fontSize: 16, fontWeight: 900, color: C.green, outline: "none", background: C.paper, textAlign: "center" }}/>
-                  </div>
-                ) : (
-                  <p style={{ fontFamily: F.head, fontSize: 18, fontWeight: 750, color: item.isFree ? C.claret : C.green, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums" }}>
-                    {item.isFree ? "FREE" : (
-                      typeof item.soldPrice === "number" && item.soldPrice !== item.price ? (
-                        <>
-                          <span>{"$" + item.soldPrice}</span>
-                          <span style={{ marginLeft: 6, fontSize: 13, fontWeight: 700, color: C.ash, textDecoration: "line-through" }}>{"$" + item.price}</span>
-                        </>
-                      ) : ("$" + item.price)
-                    )}
-                  </p>
-                )}
-              </div>
-
-              {/* Col 6 — Row actions, lifecycle-aware */}
-              <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end" }}>
-                {/* Share icon — only for lifecycles a new buyer could still act on.
-                    Hidden on drafts (not publicly viewable — BUG-051) and on
-                    claimed items (BUG-089): the sale is already in flight, so
-                    sharing sends people to a listing nobody else can claim.
-                    Written as an allow-list so a future lifecycle has to opt in
-                    rather than silently inheriting a Share button. */}
-                {["queued", "live", "shelf"].includes(lc) && (
-                  <button
-                    onClick={async (e) => { e.stopPropagation(); await shareSellerListing(item); }}
-                    aria-label="Share this listing"
-                    title="Share"
-                    style={actionBtnIcon}
-                  >
-                    <Share2 size={13} style={{ color: C.greenDeep }} strokeWidth={2.4}/>
-                  </button>
-                )}
-                {lc === "draft" && (
-                  <>
-                    <button onClick={() => openPublishChooser(item)} className="cta-primary" style={actionBtnSolid(C.green, C.greenDeep)}>Publish</button>
-                    <button onClick={() => onEdit && onEdit(item)} style={actionBtnOutlined}>Edit</button>
-                    <button onClick={() => setConfirmDelete(item)} title="Delete draft" aria-label="Delete draft" style={actionBtnIcon}>
-                      <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
-                    </button>
-                  </>
-                )}
-                {lc === "queued" && (
-                  <>
-                    <button onClick={() => makeLiveNow(item.id)} className="cta-primary" style={actionBtnSolid(C.amber, C.amberDeep)}>Move to Shelf</button>
-                    <button onClick={() => onEdit && onEdit(item)} style={actionBtnOutlined}>Edit</button>
-                    <button onClick={() => unpublish(item.id)} title="Unpublish" aria-label="Unpublish" style={actionBtnIcon}>
-                      <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
-                    </button>
-                  </>
-                )}
-                {lc === "live" && (
-                  <>
-                    {isClosing && (
-                      item.isFree ? (
-                        <button onClick={() => undoFree(item.id)} style={actionBtnOutlined}>
-                          Undo free
-                        </button>
-                      ) : (
-                        <button onClick={() => makeFree(item.id)} style={{ ...actionBtnOutlined, color: C.claret, borderColor: C.claret + "40" }}>
-                          <Heart size={12} strokeWidth={2.4}/> Make free
-                        </button>
-                      )
-                    )}
-                    <button onClick={() => onEdit && onEdit(item)} title="Edit (price changes take effect at next Drop reset)" style={actionBtnOutlined}>Edit</button>
-                  </>
-                )}
-                {lc === "shelf" && (
-                  <>
-                    <button onClick={() => beginPriceEdit(item)} style={actionBtnOutlined}>
-                      <TrendingDown size={12}/> Lower price
-                    </button>
-                    <button onClick={() => onEdit && onEdit(item)} style={actionBtnOutlined}>Edit</button>
-                    <button onClick={() => unpublish(item.id)} title="Unpublish" aria-label="Unpublish" style={actionBtnIcon}>
-                      <X size={13} style={{ color: C.claret }} strokeWidth={2.4}/>
-                    </button>
-                  </>
-                )}
-                {lc === "claimed" && (
-                  item.activeClaimId ? (
-                    <button
-                      onClick={() => openRowPickup(item)}
-                      disabled={pickupBusyId === item.id}
-                      className="cta-primary"
-                      title={"Mark picked up by " + item.activeClaimBuyer}
-                      style={actionBtnSolid(C.green, C.greenDeep)}
-                    >
-                      <Check size={12} strokeWidth={3}/> Mark as Picked Up
-                    </button>
+                  {item.photos && item.photos.length > 0 ? (
+                    <img src={item.photos[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
                   ) : (
-                    // Claim is still PROPOSED — there's nothing to hand over
-                    // until the seller accepts it in Orders.
-                    <button onClick={() => onNav && onNav("orders")} style={actionBtnOutlined}>Review claim</button>
-                  )
-                )}
+                    <span style={{ fontSize: RS.emoji }}>{item.e}</span>
+                  )}
+                </button>
+
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => onView && onView(item)}
+                    className="dy-row-name"
+                    style={{ fontFamily: F.head, fontSize: RS.name, fontWeight: 700, color: ROW.ink, letterSpacing: "-0.01em", lineHeight: 1.3, background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left", maxWidth: "100%", overflow: "hidden", overflowWrap: "anywhere", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}
+                  >
+                    {item.t}
+                  </button>
+                  <p style={{ marginTop: RS.detailsGap, fontFamily: F.body, fontSize: RS.details, fontWeight: 500, color: ROW.muted, lineHeight: 1.4, overflowWrap: "anywhere" }}>
+                    {/* Each part keeps its " ·" and moves to the next line whole, so
+                        the line wraps between parts and never starts with a dot; a
+                        part wider than the column (narrowest phones) wraps inside. */}
+                    {details.map((d, i) => <span key={i}>{i > 0 && " "}<span style={{ display: "inline-block", maxWidth: "100%" }}>{d}{i < details.length - 1 && " ·"}</span></span>)}
+                  </p>
+                  <div style={{ marginTop: RS.pillGap, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                    <span style={{ ...ROW_PILL, ...pillSize, whiteSpace: "normal", background: meta.bg, color: meta.color, border: "1px solid " + meta.border }}>
+                      {meta.pulse && <span style={{ position: "relative", display: "inline-flex", width: 6, height: 6, flexShrink: 0 }}>
+                        <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: meta.color, opacity: 0.4, animation: "pulseLive 1.8s ease-in-out infinite" }}/>
+                        <span style={{ position: "relative", width: 6, height: 6, borderRadius: "50%", background: meta.color }}/>
+                      </span>}
+                      {/* Wraps onto a second line on the narrowest phones rather than cutting the status off. */}
+                      <span>{meta.label}</span>
+                    </span>
+                    {item.isBundle && (
+                      <span style={{ ...ROW_PILL, ...pillSize, gap: 4, background: C.tealMist || C.greenMist, color: C.teal || C.greenDeep, border: "1px solid " + (C.teal || C.greenDeep) + "30" }}>
+                        <Package size={11} strokeWidth={2.2}/> Bundle of {item.bundleCount || (item.bundleContents || []).length || 2}
+                      </span>
+                    )}
+                    {item.isFree && (
+                      <span style={{ ...ROW_PILL, ...pillSize, gap: 4, background: C.claret, color: "#fff", border: "1px solid " + C.claret }}>
+                        <Heart size={11} strokeWidth={2.2}/> Free pile
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Price on top, the ⋯ menu under it, both right-aligned. */}
+                <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
+                  {priceEditId === item.id ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 2, justifyContent: "flex-end" }}>
+                      <span style={{ fontFamily: F.head, fontSize: 15, fontWeight: 900, color: C.green }}>$</span>
+                      <input type="text" value={tempPrice} autoFocus aria-label={"New price for " + item.t} onChange={e => setTempPrice(e.target.value.replace(/[^0-9.]/g, ""))}
+                        onBlur={commitPriceEdit}
+                        onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setPriceEditId(null); }}
+                        style={{ width: 60, padding: "2px 6px", borderRadius: 6, border: "1.5px solid " + C.green, fontFamily: F.head, fontSize: 15, fontWeight: 900, color: C.green, outline: "none", background: C.paper, textAlign: "center" }}/>
+                    </div>
+                  ) : (
+                    <p style={{ fontFamily: F.head, fontSize: RS.price, fontWeight: 750, color: item.isFree ? C.claret : C.green, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", textAlign: "right" }}>
+                      {item.isFree ? "FREE" : (
+                        typeof item.soldPrice === "number" && item.soldPrice !== item.price ? (
+                          <>
+                            <span>{"$" + item.soldPrice}</span>
+                            <span style={{ marginLeft: 6, fontSize: RS.strike, fontWeight: 700, color: C.ash, textDecoration: "line-through" }}>{"$" + item.price}</span>
+                          </>
+                        ) : ("$" + item.price)
+                      )}
+                    </p>
+                  )}
+                  <ItemActionsMenu itemName={item.t} actions={itemActions(item, lc)} size={RS.menu}/>
+                </div>
               </div>
             </article>
           );
         })}
       </div>
+
+      {pendingPickup && (
+        <PickupConfirmDialog kind={pendingPickup.kind} item={{ ...pendingPickup.item, price: typeof pendingPickup.item.soldPrice === "number" ? pendingPickup.item.soldPrice : pendingPickup.item.price }} buyer={pendingPickup.item.activeClaimBuyer} isMobile={isMobile} onCancel={() => setPendingPickup(null)} onConfirm={confirmPendingPickup}/>
+      )}
 
       {/* Rate the buyer, same prompt the messages and Orders surfaces use.
           Either button completes the pickup; only "Submit Rating" also posts
@@ -5711,116 +5609,54 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
         </ModalPortal>
       )}
 
-      {/* Delete-draft confirmation — destructive, can't be undone */}
-      {confirmDelete && (
-        <ModalPortal>
-        <div
-          onClick={() => setConfirmDelete(null)}
-          style={{
-            position: "fixed", inset: 0,
-            background: "rgba(31, 29, 25, 0.5)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            zIndex: Z.modal, padding: isMobile ? 16 : 24,
-            backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
-          }}
-        >
-          <ModalA11y label="Delete this draft" onClose={() => setConfirmDelete(null)}/>
-          <div
-            onClick={e => e.stopPropagation()}
-            className={"fade-in " + DIALOG_PANEL}
-            style={{
-              width: 460, maxWidth: "100%",
-              borderRadius: 24,
-              background: C.paper,
-              boxShadow: "0 24px 60px rgba(31, 29, 25, 0.25)",
-            }}
-          >
-            <div style={{ padding: "18px 24px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
-                <div style={{
-                  width: 40, height: 40, borderRadius: 12,
-                  background: "linear-gradient(135deg, " + C.claretMist + " 0%, " + C.claretMist + "70 100%)",
-                  border: "1px solid " + C.claret + "30",
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                }}>
-                  <AlertCircle size={18} style={{ color: C.claret }} strokeWidth={2.3}/>
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <h3 style={{ fontFamily: F.head, fontSize: 17, fontWeight: 900, color: C.ink, letterSpacing: "-0.015em" }}>Delete this listing?</h3>
-                  <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, marginTop: 2 }}>
-                    This action can't be undone.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setConfirmDelete(null)}
-                style={{
-                  background: C.sand, border: "none", width: 32, height: 32, borderRadius: "50%",
-                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                }}
-                aria-label="Close"
-              >
-                <X size={15} style={{ color: C.mink }}/>
-              </button>
-            </div>
-
-            <div style={{ padding: "20px 24px" }}>
-              <div style={{
-                display: "flex", alignItems: "center", gap: 12,
-                padding: "12px 14px", borderRadius: 12,
-                background: C.sand, border: "1px solid " + C.fawn,
-              }}>
-                <div style={{
-                  width: 44, height: 44, borderRadius: 11,
-                  background: "linear-gradient(135deg, " + C.sand + " 0%, " + C.fawn + "80 100%)",
-                  border: "1px solid " + C.fawn,
-                  display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 22, flexShrink: 0,
-                }}>
-                  {confirmDelete.photos && confirmDelete.photos.length > 0
-                    ? <img src={confirmDelete.photos[0]} alt={confirmDelete.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
-                    : <span>{confirmDelete.e}</span>}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{confirmDelete.t}</p>
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink }}>
-                    Draft · {confirmDelete.cat}
-                  </p>
-                </div>
-              </div>
-              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.55, marginTop: 14 }}>
-                You'll have to recreate the listing from scratch if you change your mind. Photos, description, and price will all be lost.
-              </p>
-            </div>
-
-            <div style={{ padding: "14px 24px", borderTop: "1px solid " + C.fawn, background: C.sand + "80", display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setConfirmDelete(null)}
-                style={{
-                  padding: "10px 20px", borderRadius: 999,
-                  border: "1.5px solid " + C.fawn,
-                  cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800,
-                  background: C.paper, color: C.ink,
-                }}
-              >
-                Keep
-              </button>
-              <button
-                onClick={() => { const id = confirmDelete.id; setConfirmDelete(null); deleteDraft(id); }}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  padding: "10px 22px", borderRadius: 999, border: "none", cursor: "pointer",
-                  fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
-                  background: "linear-gradient(180deg, " + C.claret + " 0%, #A8281C 100%)",
-                  color: "#fff",
-                  boxShadow: "0 2px 0 #A8281C",
-                }}
-              >
-                <X size={13} strokeWidth={2.6}/> Delete
-              </button>
-            </div>
-          </div>
-        </div>
-        </ModalPortal>
+      {/* Delete draft / Delete listing — destructive, can't be undone */}
+      {confirmDelete && (lifecycleOf(confirmDelete) === "draft" ? (
+        <ConfirmListingDialog
+          item={confirmDelete}
+          isMobile={isMobile}
+          ariaLabel="Delete this draft"
+          title="Delete this draft?"
+          subtitle="This can't be undone."
+          statusLabel="Draft"
+          body="The draft and its photos, description and price will be deleted. No buyer has saved, asked about or messaged about it."
+          confirmLabel="Delete draft"
+          cancelLabel="Keep draft"
+          confirmIcon={Trash2}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => { const id = confirmDelete.id; setConfirmDelete(null); deleteItem(id); }}
+        />
+      ) : (
+        <ConfirmListingDialog
+          item={confirmDelete}
+          isMobile={isMobile}
+          ariaLabel="Delete this listing"
+          title="Delete this listing?"
+          subtitle="No buyer has saved, asked about or messaged about it."
+          statusLabel={(lifecycleMeta[lifecycleOf(confirmDelete)] || lifecycleMeta.shelf).label}
+          body="This permanently deletes the listing. This can't be undone."
+          confirmLabel="Delete listing"
+          cancelLabel="Keep listing"
+          confirmIcon={Trash2}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => { const id = confirmDelete.id; setConfirmDelete(null); deleteItem(id); }}
+        />
+      ))}
+      {confirmRemove && (
+        <ConfirmListingDialog
+          item={confirmRemove}
+          isMobile={isMobile}
+          ariaLabel="Save to Drafts"
+          title="Save to Drafts?"
+          subtitle="You can relist it any time."
+          statusLabel={(lifecycleMeta[lifecycleOf(confirmRemove)] || lifecycleMeta.shelf).label}
+          body="It will be removed from sale and buyers won't see it anymore. It stays in your Drafts, so you can relist it later."
+          confirmLabel="Save to Drafts"
+          cancelLabel="Keep listing"
+          confirmIcon={FileDown}
+          tone="primary"
+          onCancel={() => setConfirmRemove(null)}
+          onConfirm={() => { const id = confirmRemove.id; setConfirmRemove(null); unpublish(id); }}
+        />
       )}
     </div>
   );
@@ -5834,62 +5670,246 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
 const ROW = {
   border: "#E7E3DD",
   ink:    "#111827",
-  muted:  "#74777D",
+  muted:  "#6B6E74",   // 5.0:1 on white (was #74777D, 4.49:1)
   thumb:  "#F4F5F3",
 };
-// Header and rows share these tracks. Each row is its own grid, so the
-// actions column has to be a fixed width: as "auto" it sized to each row's
-// buttons ("Move to Shelf" vs "Lower price"…) and pushed the price column
-// left or right row by row. 256px fits the widest set (Share · Lower price ·
-// Edit · ×, 251px).
-const MY_ITEMS_COLUMNS = "60px minmax(0, 1.6fr) minmax(0, 0.9fr) minmax(140px, 0.9fr) 80px 256px";
+// The first half of an Inventory row's grey details line ("9 days on Shelf ·
+// Used – Good"): how long it has been in its current state, or the state.
+// Shelf days count from when the item was created (there is no separate
+// published-at date), as the old "9d on Shelf" did.
+function rowStatusText(item, lc) {
+  if (lc === "shelf") {
+    const d = item.shelfDays;
+    if (typeof d !== "number") return "On the Shelf";
+    return d === 0 ? "Added to Shelf today" : d === 1 ? "1 day on Shelf" : d + " days on Shelf";
+  }
+  if (lc === "queued") return "Queued for Saturday";
+  if (lc === "live") return "Live in the Drop";
+  if (lc === "claimed") return "Claimed · pickup pending";
+  return "Draft";
+}
+
+// Shown when Save to Drafts is unavailable because a buyer's offer or accepted
+// claim is open. Matches the server's refusal (PATCH /api/items/:id).
+const REMOVE_BLOCKED_BY_OFFER = "Can't save to Drafts while a buyer's offer is open. Decline it in Orders first.";
+// Delete listing is unavailable once any buyer has saved, asked about,
+// messaged about or claimed the item (the server refuses too).
+const DELETE_BLOCKED_BY_BUYERS = "Buyers have interacted with this item. Save it to Drafts instead.";
+// Inventory row sizes: phones (under 640px) and everything wider.
+const ROW_SIZE = {
+  phone: { pad: "14px 16px", gap: 14, thumb: 64, thumbRadius: 13, emoji: 30, name: 16, details: 13.5, detailsGap: 4, pill: 12, pillPad: "4px 10px", pillGap: 8, price: 19, strike: 13, menu: 38 },
+  large: { pad: "18px 22px", gap: 20, thumb: 84, thumbRadius: 16, emoji: 40, name: 18, details: 14.5, detailsGap: 5, pill: 13, pillPad: "5px 12px", pillGap: 10, price: 22, strike: 14, menu: 42 },
+};
 // One pill size for status, bundle and free-pile labels.
 const ROW_PILL = { display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 11, fontWeight: 650, lineHeight: 1.2, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap", maxWidth: "100%" };
 
-// Reusable button style helpers — defined at module scope for clarity
-/* Action-row button system — ALL buttons share a fixed height of 34px and the same border radius,
-   so the row reads as a unified horizontal rhythm regardless of label length.  */
-const ACTION_BTN_BASE = {
-  height: 34,
-  borderRadius: 10,
-  cursor: "pointer",
-  fontFamily: F.head,
-  fontSize: 12,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 5,
-  whiteSpace: "nowrap",
-  boxSizing: "border-box",
-};
-// Flat, like the buyer card's CTA: no 2px underglow. Call sites still pass
-// the old shadow colour as a second argument; it's simply unused now.
-function actionBtnSolid(bg) {
-  return {
-    ...ACTION_BTN_BASE,
-    padding: "0 14px",
-    border: "none",
-    fontWeight: 700,
-    color: "#fff",
-    background: bg,
-  };
+// ── Pickup cards ───────────────────────────────────────────────────────────
+// One card for an accepted claim waiting to be picked up, shared by My items
+// (Claimed · pickup pending) and Orders → Scheduled pickups: the client's
+// design. Photo | title, buyer and price, the buyer's suggested time |
+// "Pickup pending", Mark picked up and the ⋯ menu (pickupMenuActions). On
+// phones the button takes the full width under the details, ⋯ beside it.
+const PICKUP_PILL = { bg: "#F1F2EF", ink: "#3D4148", border: "#DCDFD9" };
+function PickupCard({ item, buyer, buyerAvatar = null, price, when, width, busy = false, onPickup, onOpen = null, actions }) {
+  const wide = width >= 640;
+  const thumb = wide ? 84 : 64;
+  const photo = item.photos && item.photos.length > 0 ? item.photos[0] : null;
+  const priceLabel = price === 0 ? "Free" : "$" + price;
+  const pill = (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 12, fontWeight: 650, lineHeight: 1.2, padding: "4px 10px", borderRadius: 999, background: PICKUP_PILL.bg, color: PICKUP_PILL.ink, border: "1px solid " + PICKUP_PILL.border, whiteSpace: "nowrap" }}>
+      <Clock size={12} strokeWidth={2.3} aria-hidden="true"/> Pickup pending
+    </span>
+  );
+  const button = (
+    <button
+      type="button"
+      onClick={onPickup}
+      disabled={busy}
+      aria-label={"Mark picked up: " + item.t}
+      className="cta-primary"
+      style={{ minHeight: 44, padding: "0 18px", borderRadius: 999, border: "none", background: C.green, color: "#fff", boxShadow: "0 2px 0 " + C.greenDeep, fontFamily: F.head, fontSize: 14, fontWeight: 750, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, whiteSpace: "nowrap", cursor: busy ? "wait" : "pointer", opacity: busy ? 0.7 : 1, flex: wide ? "0 0 auto" : 1 }}
+    >
+      <Check size={16} strokeWidth={2.8} aria-hidden="true"/> {busy ? "Saving…" : "Mark picked up"}
+    </button>
+  );
+  const menu = <ItemActionsMenu itemName={item.t} actions={actions} size={wide ? 42 : 44}/>;
+  const thumbStyle = { width: thumb, height: thumb, borderRadius: wide ? 16 : 13, background: ROW.thumb, border: "1px solid " + ROW.border, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", padding: 0 };
+  const thumbInner = photo
+    ? <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+    : <span style={{ fontSize: wide ? 40 : 30 }} aria-hidden="true">{item.e}</span>;
+  const titleStyle = { fontFamily: F.head, fontSize: wide ? 17 : 16, fontWeight: 700, color: ROW.ink, letterSpacing: "-0.01em", lineHeight: 1.3, overflowWrap: "anywhere", display: "-webkit-box", WebkitLineClamp: wide ? 2 : 3, WebkitBoxOrient: "vertical", overflow: "hidden" };
+  const lineStyle = { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontFamily: F.body, fontSize: wide ? 14 : 13.5, fontWeight: 500, color: ROW.muted, lineHeight: 1.4 };
+  return (
+    <article style={{ display: "flex", flexDirection: "column", gap: 14, padding: wide ? "18px 20px" : "14px", borderRadius: 16, border: "1px solid " + ROW.border, background: C.paper }}>
+      <div style={{ display: "flex", alignItems: wide ? "center" : "flex-start", gap: wide ? 18 : 12 }}>
+        {onOpen ? (
+          <button type="button" tabIndex={-1} aria-hidden="true" onClick={onOpen} style={{ ...thumbStyle, cursor: "pointer" }}>{thumbInner}</button>
+        ) : (
+          <div style={thumbStyle}>{thumbInner}</div>
+        )}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {!wide && <div style={{ marginBottom: 6 }}>{pill}</div>}
+          {onOpen ? (
+            <button type="button" onClick={onOpen} className="dy-row-name" style={{ ...titleStyle, background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left", maxWidth: "100%" }}>{item.t}</button>
+          ) : (
+            <p style={titleStyle}>{item.t}</p>
+          )}
+          <p style={{ ...lineStyle, marginTop: 5 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              {buyerAvatar
+                ? <UserAvatar avatar={buyerAvatar} name={buyer} size={20} decorative initialsBg={avatarBg(buyer)} fontFamily={F.head} fontSize={8}/>
+                : <User size={15} strokeWidth={2.2} aria-hidden="true" style={{ flexShrink: 0 }}/>}
+              <span style={{ overflowWrap: "anywhere" }}>{buyer}</span>
+            </span>
+            <span style={{ fontFamily: F.head, fontSize: wide ? 16 : 15, fontWeight: 750, color: C.green, fontVariantNumeric: "tabular-nums" }}>{priceLabel}</span>
+          </p>
+          {/* The icon stays beside the text; only the text wraps. */}
+          <p style={{ ...lineStyle, marginTop: 4, flexWrap: "nowrap", alignItems: "flex-start", color: when.kind === "today" ? C.greenDeep : ROW.muted, fontWeight: when.kind === "today" ? 650 : 500 }}>
+            <CalendarClock size={15} strokeWidth={2.2} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}/>
+            <span style={{ overflowWrap: "anywhere", minWidth: 0 }}>
+              {when.label}
+              {when.kind === "today" && " "}
+              {when.kind === "today" && (
+                <span style={{ display: "inline-block", marginLeft: 2, fontFamily: F.head, fontSize: 11.5, fontWeight: 700, lineHeight: 1.4, padding: "1px 8px", borderRadius: 999, background: C.greenMist, color: C.greenDeep }}>Today</span>
+              )}
+            </span>
+          </p>
+        </div>
+        {wide && (
+          <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12 }}>
+            {pill}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>{button}{menu}</div>
+          </div>
+        )}
+      </div>
+      {!wide && <div style={{ display: "flex", alignItems: "center", gap: 10 }}>{button}{menu}</div>}
+    </article>
+  );
 }
-const actionBtnOutlined = {
-  ...ACTION_BTN_BASE,
-  padding: "0 14px",
-  border: "1px solid " + ROW.border,
-  fontWeight: 600,
-  color: ROW.ink,
-  background: C.paper,
-};
-const actionBtnIcon = {
-  ...ACTION_BTN_BASE,
-  width: 34,
-  padding: 0,
-  border: "1px solid " + ROW.border,
-  background: C.paper,
-  color: C.claret,
-};
+
+// The pickup card's ⋯ menu: Message buyer · View details · — · Mark as no-show
+// · Release item (the last two in red, each confirmed first).
+function pickupMenuActions({ onMessage, onView, onNoShow, onRelease }) {
+  return [
+    { id: "message", label: "Message buyer", icon: MessageCircle, onSelect: onMessage || (() => {}), disabledReason: onMessage ? null : "There's no conversation with this buyer yet." },
+    { id: "view", label: "View details", icon: Eye, onSelect: onView || (() => {}), disabledReason: onView ? null : "This item can't be opened from here." },
+    { id: "no-show", label: "Mark as no-show", icon: UserX, danger: true, onSelect: onNoShow },
+    { id: "release", label: "Release item", icon: Undo2, danger: true, onSelect: onRelease },
+  ];
+}
+
+// Mark as no-show and Release item both cancel the accepted claim at once
+// (PATCH /api/claims/:id/cancel; only the reason differs). The item goes
+// straight back on sale, the buyer is notified the claim was cancelled, and
+// a note goes into the conversation. Nothing else happens: no waiting
+// period, no notice to people who saved it, nothing on the buyer's record.
+const PICKUP_CANCEL_REASON = { "no-show": "no-show", release: "released-at-pickup" };
+async function cancelAcceptedClaim(claimId, kind, token) {
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Request timed out. Please try again.")), 20000));
+  return Promise.race([
+    apiRequest("/api/claims/" + encodeURIComponent(claimId) + "/cancel", { method: "PATCH", token, body: JSON.stringify({ reason: PICKUP_CANCEL_REASON[kind] }) }),
+    timeout,
+  ]);
+}
+function pickupCancelToast(kind, title) {
+  return kind === "no-show"
+    ? "\u201C" + title + "\u201D marked as no-show. The claim is cancelled and the item is back on sale."
+    : "\u201C" + title + "\u201D released. The claim is cancelled and the item is back on sale.";
+}
+function pickupCancelErrorText(kind, err) {
+  return (kind === "no-show" ? "Couldn't mark the no-show: " : "Couldn't release the item: ") + (err && err.message ? err.message : "try again");
+}
+
+// The three pickup confirmations, in ConfirmListingDialog. The no-show and
+// release texts say exactly what happens (see cancelAcceptedClaim).
+function PickupConfirmDialog({ kind, item, buyer, isMobile, onCancel, onConfirm }) {
+  const who = buyer || "The buyer";
+  const sameEffect = "The claim is cancelled now and the item goes back on sale straight away, so anyone can claim it. " + who + " is notified that the claim was cancelled";
+  const copy = kind === "pickup" ? {
+    ariaLabel: "Confirm item pickup", title: "Confirm item pickup?", subtitle: who + " claimed this item.",
+    body: "Please confirm that the buyer has collected the item. This will mark the transaction as completed and move it to your sales history.",
+    confirmLabel: "Confirm pickup", cancelLabel: "Not yet", confirmIcon: Check, tone: "primary",
+  } : kind === "no-show" ? {
+    ariaLabel: "Mark as no-show", title: "Mark as no-show?", subtitle: who + " didn't come to collect it.",
+    body: sameEffect + ", and a note that you marked a no-show is added to your conversation.",
+    confirmLabel: "Mark as no-show", cancelLabel: "Keep claim", confirmIcon: UserX, tone: "danger",
+  } : {
+    ariaLabel: "Release item", title: "Release this item?", subtitle: "Cancel " + who + "\u2019s claim and put it back on sale.",
+    body: sameEffect + ", and a note that you released the item is added to your conversation.",
+    confirmLabel: "Release item", cancelLabel: "Keep claim", confirmIcon: Undo2, tone: "danger",
+  };
+  return <ConfirmListingDialog item={item} isMobile={isMobile} statusLabel="Pickup pending" {...copy} onCancel={onCancel} onConfirm={onConfirm}/>;
+}
+
+// Confirmation for Save to Drafts / Delete listing / Delete draft: names the item and its
+// current status, says plainly what happens, red confirm button. The shared
+// dialog pattern (ModalPortal, ModalA11y, Z.modal, DIALOG_PANEL).
+function ConfirmListingDialog({ item, isMobile, ariaLabel, title, subtitle, statusLabel, body, confirmLabel, cancelLabel, confirmIcon: ConfirmIcon, onCancel, onConfirm, tone = "danger" }) {
+  const primary = tone === "primary";
+  return (
+    <ModalPortal>
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(31, 29, 25, 0.5)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: Z.modal, padding: isMobile ? 16 : 24,
+        backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+      }}
+    >
+      <ModalA11y label={ariaLabel} onClose={onCancel}/>
+      <div onClick={e => e.stopPropagation()} className={"fade-in " + DIALOG_PANEL} style={{ width: 460, maxWidth: "100%", borderRadius: 24, background: C.paper, boxShadow: "0 24px 60px rgba(31, 29, 25, 0.25)" }}>
+        <div style={{ padding: "18px 24px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: primary ? C.greenMist : C.claretMist, border: "1px solid " + (primary ? C.green : C.claret) + "30", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {primary
+                ? <CheckCircle size={18} style={{ color: C.greenDeep }} strokeWidth={2.3} aria-hidden="true"/>
+                : <AlertCircle size={18} style={{ color: "#B42318" }} strokeWidth={2.3} aria-hidden="true"/>}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <h3 style={{ fontFamily: F.head, fontSize: 17, fontWeight: 900, color: C.ink, letterSpacing: "-0.015em" }}>{title}</h3>
+              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, marginTop: 2 }}>{subtitle}</p>
+            </div>
+          </div>
+          <button onClick={onCancel} aria-label="Close" style={{ background: C.sand, border: "none", width: 36, height: 36, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <X size={15} style={{ color: C.mink }} aria-hidden="true"/>
+          </button>
+        </div>
+        <div style={{ padding: "20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 12, background: C.sand, border: "1px solid " + C.fawn }}>
+            <div style={{ width: 44, height: 44, borderRadius: 11, background: "linear-gradient(135deg, " + C.sand + " 0%, " + C.fawn + "80 100%)", border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 22, flexShrink: 0 }}>
+              {item.photos && item.photos.length > 0
+                ? <img src={item.photos[0]} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
+                : <span aria-hidden="true">{item.e}</span>}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, marginBottom: 2, overflowWrap: "anywhere" }}>{item.t}</p>
+              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink }}>
+                {[statusLabel, item.cat, typeof item.price === "number" ? (item.price === 0 ? "Free" : "$" + item.price) : null].filter(Boolean).join(" · ")}
+              </p>
+            </div>
+          </div>
+          <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.mink, lineHeight: 1.55, marginTop: 14 }}>{body}</p>
+        </div>
+        <div style={{ padding: "14px 24px", borderTop: "1px solid " + C.fawn, background: C.sand + "80", display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <button onClick={onCancel} style={{ minHeight: 44, padding: "10px 20px", borderRadius: 999, border: "1.5px solid " + C.fawn, cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800, background: C.paper, color: C.ink }}>
+            {cancelLabel}
+          </button>
+          {/* #B42318: white text 6.6:1. */}
+          <button onClick={onConfirm} style={{ minHeight: 44, display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 22px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em", background: primary ? C.green : "#B42318", color: "#fff", boxShadow: "0 2px 0 " + (primary ? C.greenDeep : "#8A1A12") }}>
+            <ConfirmIcon size={14} strokeWidth={2.6} aria-hidden="true"/> {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+    </ModalPortal>
+  );
+}
+
+// Reusable button style helpers — defined at module scope for clarity
+/* The Inventory row's action buttons (and their style helpers) became the ⋯
+   menu: components/inventory/ItemActionsMenu.tsx. */
 
 
 /* ============================== CLAIMS ============================== */
@@ -6637,6 +6657,8 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   const [chatBusyClaimId, setChatBusyClaimId] = useState(null);
   // Rate-the-buyer prompt, opened by Mark Picked up in the chat banner.
   const [rateClaim, setRateClaim] = useState(null);
+  // The banner's Mark picked up, waiting for "Confirm pickup".
+  const [confirmChatPickup, setConfirmChatPickup] = useState(null);
   const [rateStars, setRateStars] = useState(0);
   const [rateNote,  setRateNote]  = useState("");
   // BUG-055.1 — every chat action surfaces its error so a 400/404/conflict
@@ -7542,14 +7564,24 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
                     id: pc.id, status: pc.status, amount: pc.amount,
                     listed: pc.item?.price ?? active.item.price ?? 0,
                     expiresAt: pc.expiresAt, myTurn: pc.status === "PROPOSED" && pc.lastAmountBy !== myId,
-                    buyerConfirmedReceiptAt: pc.buyerConfirmedReceiptAt, pickupSlot: pc.pickupSlot,
+                    buyerConfirmedReceiptAt: pc.buyerConfirmedReceiptAt, pickupSlot: pc.pickupSlot, createdAt: pc.createdAt,
                   }}
                   otherName={activeBuyerName}
                   busy={chatBusyClaimId === pc.id}
                   onAccept={() => chatAccept(pc)}
                   onCounter={(amt) => chatCounterSubmit(pc, amt)}
                   onDecline={() => chatDecline(pc)}
-                  onMarkPickedUp={() => chatMarkPickedUp(pc)}
+                  onMarkPickedUp={() => setConfirmChatPickup({
+                    claim: pc,
+                    buyer: activeBuyerName,
+                    item: {
+                      t: pc.item?.title || active.item.title,
+                      photos: Array.isArray(pc.item?.photos) ? pc.item.photos.filter(Boolean) : [],
+                      e: CATEGORY_EMOJI[pc.item?.category] || "\u{1F4E6}",
+                      cat: ENUM_TO_CATEGORY_LABEL[pc.item?.category] || "",
+                      price: typeof pc.amount === "number" ? pc.amount : pc.item?.price,
+                    },
+                  })}
                   compact={isMobile}
                 />
               );
@@ -7716,7 +7748,10 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
             onClose={() => setReportOpen(false)}
           />
         )}
-        {rateClaim && (
+        {confirmChatPickup && (
+        <PickupConfirmDialog kind="pickup" item={confirmChatPickup.item} buyer={confirmChatPickup.buyer} isMobile={isMobile} onCancel={() => setConfirmChatPickup(null)} onConfirm={() => { const c = confirmChatPickup.claim; setConfirmChatPickup(null); chatMarkPickedUp(c); }}/>
+      )}
+      {rateClaim && (
           <RateBuyerModal
             title="Item Picked Up!"
             subtitle={(rateClaim.item?.title || "The item") + " — picked up by " + (rateClaim.buyer?.name || "the buyer")}
@@ -7752,14 +7787,16 @@ const DEMO_PICKUPS = [
   { id: "demo-p4", e: "\u{1F527}", t: "DeWalt Drill Set", price: 65, buyer: "Tom W.", date: "Mon, Apr 27", time: "5:00 - 7:00 PM", isToday: false },
 ];
 
-const SHORT_DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = null }) {
-  const { isMobile } = useViewport();
+function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = null, onOpenThread = null, onViewItem = null }) {
+  const { isMobile, width } = useViewport();
   const [ratingItem, setRatingItem] = useState(null);
   const [ratingStars, setRatingStars] = useState(0);
   const [ratingNote, setRatingNote] = useState("");
-  const [noShowItem, setNoShowItem] = useState(null);
+  // Mark picked up / Mark as no-show / Release item, waiting for "yes".
+  const [pendingPickup, setPendingPickup] = useState(null);
+  // Today / Upcoming / Pending filter cards. "pending" is every pickup.
+  const [pickupFilter, setPickupFilter] = useState("pending");
   const [successMsg, setSuccessMsg] = useState(null);
   const [errorMsg, setErrorMsg]     = useState(null);
   const [loading, setLoading]       = useState(!!accessToken);
@@ -7774,8 +7811,9 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
   function adaptPickup(api) {
     if (!api) return null;
     const slot = api.pickupSlot || "";
-    const todayName = SHORT_DAY_NAMES[new Date().getDay()];
-    const isToday = slot.toLowerCase().startsWith(todayName.toLowerCase());
+    // Today / upcoming / past / unscheduled, and the card's time label.
+    const when = pickupWhen(slot, { since: api.createdAt });
+    const isToday = when.kind === "today";
     return {
       id:      api.id,
       // Same fix as the pending-claims rows: the item's photos come down with
@@ -7786,9 +7824,11 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
       price:   (typeof api.amount === "number" ? api.amount : api.item?.price) ?? 0,
       buyer:   api.buyer?.name || "Buyer",
       buyerAvatar: api.buyer?.avatar || null,
-      date:    isToday ? "Today" : (slot.split(/\s+/)[0] || slot),
-      time:    isToday ? slot.replace(/^\S+\s*/, "") : slot.replace(/^\S+\s*/, ""),
+      when,
       isToday,
+      itemId:  api.item?.id || api.itemId || null,
+      conversationId: api.conversationId || null,
+      cat:     ENUM_TO_CATEGORY_LABEL[api.item?.category] || "",
       // BUG-055 — buyer-side "Confirm receipt" pings the seller. Surfaces
       // as a high-priority badge so the seller knows the buyer is waiting
       // for them to mark the pickup complete.
@@ -7829,8 +7869,16 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
   // one — either way refetch so the scheduled-pickups list stays current.
   useSocketEvent("claim:updated", () => reloadPickups());
 
-  const todayCount = pickups.filter(p => p.isToday).length;
-  const upcomingCount = pickups.filter(p => !p.isToday).length;
+  // Pending = every pickup; Today / Upcoming by the buyer's suggested time
+  // (pickupWhen). Unscheduled and past times count under Pending only.
+  const whenOf = (p) => p.when || pickupWhen([p.date, p.time].filter(Boolean).join(" · "));
+  const todayCount = pickups.filter(p => whenOf(p).kind === "today").length;
+  const upcomingCount = pickups.filter(p => whenOf(p).kind === "upcoming").length;
+  const shownPickups = pickupFilter === "pending" ? pickups : pickups.filter(p => whenOf(p).kind === pickupFilter);
+  const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
+  const filterAnnouncement = pickupFilter === "today" ? "Showing " + plural(shownPickups.length, "pickup") + " for today."
+    : pickupFilter === "upcoming" ? "Showing " + plural(shownPickups.length, "upcoming pickup") + "."
+    : "Showing all " + plural(shownPickups.length, "pending pickup") + ".";
 
   // The server marks it picked up first (markClaimPickedUp); the rating
   // prompt opens only after that succeeds. This used to open the rating
@@ -7910,78 +7958,45 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
     }
   }
 
-  function handleNoShow(item) {
-    setNoShowItem(item);
-  }
-
-  async function confirmNoShow() {
-    const item = noShowItem;
-    setNoShowItem(null);
-    if (!item) return;
-    // Optimistic — remove from the pickups list immediately. On API failure
-    // we restore the row so the seller can retry.
+  // Mark as no-show / Release item (each confirmed first): the claim is
+  // cancelled and the item is back on sale at once (cancelAcceptedClaim).
+  // Optimistic; the card comes back if the server refuses.
+  async function cancelPickup(item, kind) {
     const snapshot = pickups;
     setPickups(prev => prev.filter(p => p.id !== item.id));
-    if (accessToken && item.id) {
-      const noShowTimeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Request timed out. Please try again.")), 20000)
-      );
+    if (accessToken && !(typeof item.id === "string" && item.id.startsWith("demo-"))) {
       try {
-        await Promise.race([
-          apiRequest("/api/claims/" + encodeURIComponent(item.id) + "/cancel", {
-            method: "PATCH",
-            token:  accessToken,
-            body:   JSON.stringify({ reason: "no-show" }),
-          }),
-          noShowTimeout,
-        ]);
+        await cancelAcceptedClaim(item.id, kind, accessToken);
       } catch (err) {
         // eslint-disable-next-line no-console
-        if (typeof console !== "undefined") console.error("[PickupsView] no-show failed:", err);
+        if (typeof console !== "undefined") console.error("[PickupsView] " + kind + " failed:", err);
         setPickups(snapshot);
         reloadPickups();
-        setSuccessMsg("Couldn't mark as no-show: " + (err?.message || "try again"));
-        setTimeout(() => setSuccessMsg(null), 4000);
+        setErrorMsg(pickupCancelErrorText(kind, err));
+        setTimeout(() => setErrorMsg(null), 4500);
         return;
       }
     }
-    setSuccessMsg(item.t + " marked as no-show. Item is back on the Shelf — other neighbours can claim it.");
+    setSuccessMsg(pickupCancelToast(kind, item.t));
     setTimeout(() => setSuccessMsg(null), 4500);
+    // The item is back on sale: refresh My items too.
+    if (onChanged) onChanged();
   }
-
-  async function handleRelease(item) {
-    const snapshot = pickups;
-    setPickups(prev => prev.filter(p => p.id !== item.id));
-    if (accessToken && item.id) {
-      const releaseTimeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Request timed out. Please try again.")), 20000)
-      );
-      try {
-        await Promise.race([
-          apiRequest("/api/claims/" + encodeURIComponent(item.id) + "/cancel", {
-            method: "PATCH",
-            token:  accessToken,
-            body:   JSON.stringify({ reason: "released-at-pickup" }),
-          }),
-          releaseTimeout,
-        ]);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        if (typeof console !== "undefined") console.error("[PickupsView] release failed:", err);
-        setPickups(snapshot);
-        reloadPickups();
-        setSuccessMsg("Couldn't release the claim: " + (err?.message || "try again"));
-        setTimeout(() => setSuccessMsg(null), 4000);
-        return;
-      }
-    }
-    setSuccessMsg(item.t + " released. Back on the Shelf — waitlisted buyers will be notified.");
-    setTimeout(() => setSuccessMsg(null), 4000);
+  async function confirmPendingPickup() {
+    const p = pendingPickup;
+    setPendingPickup(null);
+    if (!p) return;
+    if (p.kind === "pickup") await handlePickedUp(p.item);
+    else await cancelPickup(p.item, p.kind);
   }
-
-  // Release / No-show are now wired to the backend (item #9). Show the
-  // buttons in both demo and real mode.
-  const showLegacyActions = true;
+  function pickupActions(p) {
+    return pickupMenuActions({
+      onMessage: p.conversationId && onOpenThread ? () => onOpenThread(p.conversationId) : null,
+      onView: p.itemId && onViewItem ? () => onViewItem(p.itemId) : null,
+      onNoShow: () => setPendingPickup({ kind: "no-show", item: p }),
+      onRelease: () => setPendingPickup({ kind: "release", item: p }),
+    });
+  }
 
   return (
     <div>
@@ -8005,36 +8020,39 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
         </div>
       )}
 
-      {/* Summary strip — 3-up on desktop, stacks vertically on mobile. */}
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: isMobile ? 8 : 12, marginBottom: isMobile ? 16 : 20 }}>
-        <div style={{ padding: isMobile ? 14 : 16, borderRadius: 14, border: todayCount > 0 ? "2px solid #FECACA" : "1px solid #f0f0f0", backgroundColor: todayCount > 0 ? "#FFF5F5" : "#fff", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: todayCount > 0 ? "#FEF2F2" : "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <MapPin size={18} style={{ color: todayCount > 0 ? "#DC2626" : "#94a3b8" }} />
-          </div>
-          <div>
-            <p style={{ fontSize: 22, fontWeight: 900, color: todayCount > 0 ? "#DC2626" : "#94a3b8", fontFamily: F.head }}>{todayCount}</p>
-            <p style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>Today</p>
-          </div>
-        </div>
-        <div style={{ padding: isMobile ? 14 : 16, borderRadius: 14, border: "1px solid " + C.fawn, background: C.paper, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Calendar size={18} style={{ color: C.gPrimary }} />
-          </div>
-          <div>
-            <p style={{ fontSize: 22, fontWeight: 900, color: C.gPrimary, fontFamily: F.head }}>{upcomingCount}</p>
-            <p style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>Upcoming</p>
-          </div>
-        </div>
-        <div style={{ padding: isMobile ? 14 : 16, borderRadius: 14, border: "1px solid " + C.fawn, background: C.paper, display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: C.oLightBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Package size={18} style={{ color: C.amberDeep }} />
-          </div>
-          <div>
-            <p style={{ fontSize: 22, fontWeight: 900, color: C.amberDeep, fontFamily: F.head }}>{pickups.length}</p>
-            <p style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>Total Pending</p>
-          </div>
-        </div>
+      {/* Scheduled pickups: the total, then Today / Upcoming / Pending cards
+          that filter the list below (Pending = all of them). */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <h2 style={{ fontFamily: F.head, fontSize: 16, fontWeight: 800, color: C.ink, letterSpacing: "-0.01em" }}>Scheduled pickups</h2>
+        <span style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: ROW.muted }}>{pickups.length} pending</span>
       </div>
+      <div role="group" aria-label="Filter pickups" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: width < 400 ? 6 : isMobile ? 8 : 12, marginBottom: 16 }}>
+        {[["today", "Today", todayCount, MapPin], ["upcoming", "Upcoming", upcomingCount, Calendar], ["pending", "Pending", pickups.length, Package]].map(([key, label, count, Icon]) => {
+          const on = pickupFilter === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setPickupFilter(key)}
+              className="dy-pickup-filter"
+              style={{ minHeight: 56, display: "flex", alignItems: "center", gap: width < 400 ? 0 : 10, padding: width < 400 ? "10px 10px" : "12px 14px", borderRadius: 14, border: "1px solid " + (on ? C.greenDeep : ROW.border), boxShadow: on ? "inset 0 0 0 1px " + C.greenDeep : "none", background: on ? C.greenMist : C.paper, cursor: "pointer", textAlign: "left", minWidth: 0 }}
+            >
+              {width >= 400 && (
+                <span aria-hidden="true" style={{ width: 36, height: 36, borderRadius: 11, background: on ? C.paper : ROW.thumb, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Icon size={17} style={{ color: on ? C.greenDeep : ROW.muted }}/>
+                </span>
+              )}
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", fontFamily: F.head, fontSize: isMobile ? 19 : 22, fontWeight: 800, lineHeight: 1.1, color: on ? C.greenDeep : C.ink, fontVariantNumeric: "tabular-nums" }}>{count}</span>
+                <span style={{ display: "block", fontFamily: F.body, fontSize: 12.5, fontWeight: 650, color: on ? C.greenDeep : ROW.muted, marginTop: 2 }}>{label}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {/* Says what the list now shows when a filter card is chosen. */}
+      <p aria-live="polite" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>{filterAnnouncement}</p>
 
       {/* Loading */}
       {loading && (
@@ -8065,63 +8083,27 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {pickups.map(p => {
-          const isBusy = busyId === p.id;
-          return (
-          <div key={p.id} style={{ padding: isMobile ? "14px 14px" : "16px 18px", borderRadius: 16, border: p.buyerConfirmedReceipt ? "2px solid " + (C.amber || "#f59e0b") : (p.isToday ? "2px solid #FECACA" : "1px solid #f0f0f0"), backgroundColor: p.buyerConfirmedReceipt ? (C.amberMist || "#fef3c7") : (p.isToday ? "#FFF5F5" : "#fff"), opacity: isBusy ? 0.6 : 1 }}>
-            {/* BUG-055 — buyer pinged "Confirm receipt" → high-priority badge
-                so the seller knows the buyer is waiting for them to mark
-                pickup complete. Outranks the "pickup-today" badge. */}
-            {p.buyerConfirmedReceipt && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", borderRadius: 999, background: C.amber || "#f59e0b", color: "#fff", fontSize: 10, fontWeight: 800, fontFamily: F.head, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  <CheckCircle size={11}/> Buyer waiting — confirm pickup
-                </span>
-              </div>
-            )}
-            {!p.buyerConfirmedReceipt && p.isToday && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-                <StatusBadge status="pickup-today" size="sm"/>
-                <span style={{ fontSize: 11, color: "#DC2626", fontWeight: 600, fontFamily: F.body }}>{p.time}</span>
-              </div>
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, flexWrap: "wrap" }}>
-              <div style={{ width: isMobile ? 46 : 52, height: isMobile ? 46 : 52, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 24, flexShrink: 0, overflow: "hidden" }}>
-                {p.photos && p.photos.length > 0 ? (
-                  <img src={p.photos[0]} alt={p.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
-                ) : (
-                  <span>{p.e}</span>
-                )}
-              </div>
-              <div style={{ flex: 1, minWidth: isMobile ? "60%" : 0 }}>
-                <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.head, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.t}</p>
-                <div style={{ display: "flex", gap: 12, marginTop: 4, fontSize: 12, color: C.mink, fontFamily: F.body, flexWrap: "wrap" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}><UserAvatar avatar={p.buyerAvatar} name={p.buyer} size={20} decorative initialsBg={avatarBg(p.buyer)} fontFamily={F.head} fontSize={8}/> {p.buyer}</span>
-                  <span style={{ fontWeight: 700, color: C.gPrimary }}>${p.price}</span>
-                  {!p.isToday && <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Calendar size={11} /> {p.date}</span>}
-                  {!p.isToday && <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> {p.time}</span>}
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0, width: isMobile ? "100%" : "auto", marginTop: isMobile ? 8 : 0 }}>
-                <button onClick={() => handlePickedUp(p)} disabled={isBusy} className="cta-primary" style={{ minHeight: 44, padding: "8px 14px", borderRadius: 10, border: "none", cursor: isBusy ? "not-allowed" : "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 800, background: C.green, color: "#fff", boxShadow: "0 2px 0 " + C.greenDeep, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flex: isMobile ? 1 : "0 0 auto" }}>
-                  <Check size={12} strokeWidth={2.8}/> Picked up
-                </button>
-                {showLegacyActions && !p.buyerConfirmedReceipt && (
-                  <>
-                    <button onClick={() => handleRelease(p)} title="Buyer came, inspected, declined — release immediately" style={{ minHeight: 44, padding: "8px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, cursor: "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 700, background: C.paper, color: C.mink, flex: isMobile ? 1 : "0 0 auto" }}>
-                      Release
-                    </button>
-                    <button onClick={() => handleNoShow(p)} title="Mark no-show (2h grace before auto-relist)" style={{ minHeight: 44, padding: "8px 12px", borderRadius: 10, border: "1.5px solid " + C.claret + "25", cursor: "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 700, background: C.paper, color: C.claret, flex: isMobile ? 1 : "0 0 auto" }}>
-                      No-show
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-          );
-        })}
+      {!loading && pickups.length > 0 && shownPickups.length === 0 && (
+        <p style={{ padding: "28px 16px", textAlign: "center", fontFamily: F.body, fontSize: 13.5, fontWeight: 500, color: ROW.muted, border: "1px dashed " + ROW.border, borderRadius: 14 }}>
+          {pickupFilter === "today" ? "No pickups suggested for today." : "No upcoming pickups with a suggested time."}
+        </p>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {shownPickups.map(p => (
+          <PickupCard
+            key={p.id}
+            item={p}
+            buyer={p.buyer}
+            buyerAvatar={p.buyerAvatar}
+            price={p.price}
+            when={whenOf(p)}
+            width={width}
+            busy={busyId === p.id}
+            onPickup={() => setPendingPickup({ kind: "pickup", item: p })}
+            onOpen={p.itemId && onViewItem ? () => onViewItem(p.itemId) : null}
+            actions={pickupActions(p)}
+          />
+        ))}
       </div>
 
       {/* Rating modal */}
@@ -8168,48 +8150,8 @@ function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = 
         </ModalPortal>
       )}
 
-      {/* No-show confirmation modal */}
-      {noShowItem && (
-        <ModalPortal>
-        <div onClick={() => setNoShowItem(null)} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: 24, backdropFilter: "blur(4px)" }}>
-          <ModalA11y label="Mark as no-show" onClose={() => setNoShowItem(null)}/>
-          <div onClick={e => e.stopPropagation()} className={"fade-in " + DIALOG_PANEL} style={{ width: 460, maxWidth: "100%", borderRadius: 24, background: C.paper, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
-            <div style={{ padding: "18px 24px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 12, background: C.claretMist, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <AlertCircle size={18} style={{ color: C.claret }}/>
-                </div>
-                <div>
-                  <h3 style={{ fontFamily: F.head, fontSize: 17, fontWeight: 900, color: C.ink, letterSpacing: "-0.01em" }}>Mark as no-show?</h3>
-                  <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, marginTop: 2 }}>{noShowItem.buyer} didn\'t pick up {noShowItem.t}.</p>
-                </div>
-              </div>
-              <button aria-label="Close" onClick={() => setNoShowItem(null)} style={{ background: C.sand, border: "none", width: 40, height: 40, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <X size={14} style={{ color: C.mink }}/>
-              </button>
-            </div>
-
-            <div style={{ padding: "20px 24px" }}>
-              <div style={{ padding: "14px 16px", borderRadius: 14, background: C.amberMist, border: "1px solid " + C.amber + "25", display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 16 }}>
-                <Clock size={15} style={{ color: C.amberDeep, flexShrink: 0, marginTop: 2 }}/>
-                <div>
-                  <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.amberDeep, marginBottom: 3 }}>Auto-relists in 2 hours</p>
-                  <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>We\'ll release {noShowItem.t} automatically so it can be picked up by someone else. {noShowItem.buyer.split(" ")[0]} can still reach out to reschedule before then.</p>
-                </div>
-              </div>
-
-              <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, lineHeight: 1.5, fontStyle: "italic" }}>Waitlisted buyers will be notified when the item becomes available again.</p>
-            </div>
-
-            <div style={{ padding: "14px 24px", borderTop: "1px solid " + C.fawn, background: C.sand, display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button onClick={() => setNoShowItem(null)} style={{ padding: "10px 20px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
-              <button onClick={confirmNoShow} className="cta-primary" style={{ padding: "10px 22px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800, background: C.claret, color: "#fff", boxShadow: "0 2px 0 #8B2010", display: "flex", alignItems: "center", gap: 6 }}>
-                <AlertCircle size={13}/> Mark no-show
-              </button>
-            </div>
-          </div>
-        </div>
-        </ModalPortal>
+      {pendingPickup && (
+        <PickupConfirmDialog kind={pendingPickup.kind} item={pendingPickup.item} buyer={pendingPickup.item.buyer} isMobile={isMobile} onCancel={() => setPendingPickup(null)} onConfirm={confirmPendingPickup}/>
       )}
     </div>
   );
@@ -10485,6 +10427,10 @@ function ProfileTab({ user, onSuccess }) {
 
 /* ───── SUBSCRIPTION TAB ───── */
 function SubscriptionTab({ user, onSuccess }) {
+  const { width } = useViewport();
+  // Phones: the waitlist field and button stack, the button full width. Side
+  // by side, "Join waitlist" ran off the card at 360px with larger text.
+  const stackWaitlist = width < 640;
   const [email, setEmail] = useState(user?.email || "");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -10595,19 +10541,19 @@ function SubscriptionTab({ user, onSuccess }) {
           ) : (
             <form onSubmit={handleJoin} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <p style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.mink, letterSpacing: "0.14em", textTransform: "uppercase" }}>Join the early-access waitlist</p>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", flexDirection: stackWaitlist ? "column" : "row", flexWrap: "wrap", gap: 8 }}>
                 <input
                   type="email"
                   value={email}
                   onChange={e => { setEmail(e.target.value); if (error) setError(""); }}
                   placeholder="you@email.com"
                   disabled={submitting}
-                  style={{ flex: 1, padding: "10px 14px", borderRadius: 10, border: "1.5px solid " + C.fawn, background: C.paper, fontFamily: F.body, fontSize: 13, color: C.ink, outline: "none" }}
+                  style={{ flex: stackWaitlist ? "0 0 auto" : 1, minWidth: 0, width: stackWaitlist ? "100%" : undefined, padding: "10px 14px", borderRadius: 10, border: "1.5px solid " + C.fawn, background: C.paper, fontFamily: F.body, fontSize: 13, color: C.ink, outline: "none" }}
                 />
                 <button
                   type="submit"
                   disabled={submitting}
-                  style={{ padding: "10px 20px", borderRadius: 999, border: "none", cursor: submitting ? "not-allowed" : "pointer", background: "linear-gradient(135deg, #7C3AED, #6D28D9)", color: "#fff", fontFamily: F.head, fontSize: 13, fontWeight: 800, opacity: submitting ? 0.7 : 1, boxShadow: "0 2px 0 #5B21B6" }}
+                  style={{ padding: "10px 20px", borderRadius: 999, border: "none", cursor: submitting ? "not-allowed" : "pointer", background: "linear-gradient(135deg, #7C3AED, #6D28D9)", color: "#fff", fontFamily: F.head, fontSize: 13, fontWeight: 800, opacity: submitting ? 0.7 : 1, boxShadow: "0 2px 0 #5B21B6", ...(stackWaitlist ? { width: "100%", minHeight: 44 } : {}) }}
                 >
                   {submitting ? "Saving..." : "Join waitlist"}
                 </button>
@@ -11496,6 +11442,18 @@ export default function DropYardSellerDashboard({
 
   function goToEdit(item) { setEditingItem(item); setView("edit-item"); }
   function goToView(item) { setEditingItem(item); setView("item-detail"); }
+  // Pickup cards: Message buyer opens the claim's conversation; Orders' View
+  // details opens the item from the seller's own list.
+  function openConversation(conversationId) {
+    if (!conversationId) return;
+    setOpenThread({ conversationId });
+    setView("messages");
+  }
+  function openItemById(itemId) {
+    const raw = Array.isArray(sellerItems) ? sellerItems.find(i => i && i.id === itemId) : null;
+    const item = raw ? adaptSellerItem(raw) : null;
+    if (item) goToView(item);
+  }
   // Deep-link into a specific Settings pane. `null` = normal entry (Account on
   // desktop, section list on mobile). Used by the listing form's "Set your
   // default" payment link, which previously called onGoToItems("ai-setup") —
@@ -11584,12 +11542,12 @@ export default function DropYardSellerDashboard({
           <Sidebar activeView={view} onNav={safeNav} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount} questionsPending={questionsPending} otherUnread={inbox?.unread.buyer || 0}/>
           <main className={"dy-seller-main" + (view === "messages" ? " dy-seller-main--flush" : "")}>
             {view === "overview" && <Overview onNav={safeNav} user={user} sellerItems={sellerItems} accessToken={accessToken}/>}
-            {view === "items" && <MyItemsView onNav={safeNav} onEdit={goToEdit} onView={goToView} sellerItems={sellerItems} onItemsChange={onItemsChange} onRefresh={onItemCreated} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
+            {view === "items" && <MyItemsView onNav={safeNav} onEdit={goToEdit} onView={goToView} onOpenThread={openConversation} sellerItems={sellerItems} onItemsChange={onItemsChange} onRefresh={onItemCreated} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
             {view === "questions" && <QuestionsView onNav={safeNav} accessToken={accessToken} onQuestionsChanged={onQuestionsChanged}/>}
             {view === "item-detail" && <ItemDetailView item={editingItem} onBack={() => setView("items")} onEdit={() => setView("edit-item")} accessToken={accessToken}/>}
-            {view === "orders" && <OrdersView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated}/>}
+            {view === "orders" && <OrdersView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated} onOpenThread={openConversation} onViewItem={openItemById}/>}
             {view === "claims" && <ClaimsView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated}/>}
-            {view === "pickups" && <PickupsView onNav={setView} accessToken={accessToken} onChanged={onItemCreated}/>}
+            {view === "pickups" && <PickupsView onNav={setView} accessToken={accessToken} onChanged={onItemCreated} onOpenThread={openConversation} onViewItem={openItemById}/>}
             {view === "messages" && <SellerMessagesView user={user} accessToken={accessToken} convList={convList} onConvListChange={setConvList} openThread={openThread} onConsumeOpenThread={() => setOpenThread(null)}/>}
             {view === "history" && <SellerHistoryView accessToken={accessToken}/>}
             {/* Keyed on the requested pane so arriving from a deep link while

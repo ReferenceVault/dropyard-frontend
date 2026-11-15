@@ -567,6 +567,69 @@ function uniqueSellers(items) {
 }
 
 /* ============================================================
+   NEIGHBOURS SELLING NOW — the avatar row on the Discover hero
+   ============================================================ */
+// Every seller with something for sale right now: available Shelf items,
+// items queued for the current Drop and, while it's live, live Drop items.
+// GET /api/drop/sellers works this out on the server (the item feed is
+// paginated, so the loaded items would miss sellers), de-duplicated by seller
+// id, without the signed-in viewer (the session cookie tells it who that is),
+// newest first. Refetched when the Drop's status changes (e.g. it opens) and
+// on a timer: every minute while live, every five minutes otherwise.
+// null until the first answer, or if the server can't be reached: the row then
+// stays hidden rather than showing invented neighbours.
+function useActiveSellers(status) {
+  const [summary, setSummary] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => apiRequest("/api/drop/sellers?limit=10")
+      .then((d) => {
+        if (cancelled || !d || typeof d.total !== "number") return;
+        setSummary({ total: d.total, sellers: Array.isArray(d.sellers) ? d.sellers : [] });
+      })
+      .catch(() => { /* keep what's shown */ });
+    load();
+    const id = setInterval(load, status === "LIVE" ? 60_000 : 5 * 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [status]);
+  return summary;
+}
+
+// How many avatars fit nicely across the banner before the "+N" pill.
+function sellerRowMax(width) {
+  return width < 640 ? 5 : width < 1024 ? 7 : 9;
+}
+
+// One group, one label ("12 neighbours are selling right now"); the avatars
+// inside are decorative. Nothing at all when nobody is selling.
+function SellerAvatarRow({ summary, max, label, ring, pillBg }) {
+  if (!summary || summary.total <= 0 || summary.sellers.length === 0) return null;
+  const shown = summary.sellers.slice(0, Math.min(max, summary.total));
+  const more = summary.total - shown.length;
+  return (
+    <div role="img" aria-label={label} style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", maxWidth: "100%" }}>
+      {shown.map((n, i) => (
+        <UserAvatar key={n.id} avatar={n.avatar} name={n.name} size={32} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={10}
+          style={{ border: "2px solid " + ring, marginLeft: i === 0 ? 0 : -8, zIndex: shown.length - i, position: "relative", flexShrink: 0 }}/>
+      ))}
+      {more > 0 && (
+        <div aria-hidden="true" style={{ minWidth: 32, height: 32, padding: "0 7px", borderRadius: 999, background: pillBg, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + ring, marginLeft: -8, position: "relative", flexShrink: 0 }}>
+          +{more}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The group's label, worded for the state the hero is in.
+function sellersLabel(total, mode, openDay) {
+  const who = total === 1 ? "1 neighbour is" : total + " neighbours are";
+  if (mode === "live") return who + " selling in the live Drop";
+  if (mode === "preview") return who + " selling now or in " + openDay + "'s Drop";
+  return who + " selling right now";
+}
+
+/* ============================================================
    GLOBAL STYLE
    ============================================================ */
 // Viewport hook — used by TopBar, MobileBottomNav, and every view that has
@@ -1445,7 +1508,7 @@ function DropReminderModal({ view, accessToken, onClose, onSaved }) {
   );
 }
 
-function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = null }) {
+function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
   // Counts to the Drop record's opening: useDropSchedule reads the backend's
   // Drop row (Toronto time) and only falls back to the local Saturday 8 AM
   // calculation when the row can't be read, or under ?simulate=. This used to
@@ -1465,22 +1528,15 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = 
   };
   const pad = (n) => n < 10 ? "0" + n : "" + n;
 
-  // Avatar stack — derive from the actual queued sellers when we have them.
-  // Falls back to a fixed 5-name cast when the prop wasn't passed (i.e.
-  // /preview/buyer-dashboard runs without a fetch). Always 5 max so the
-  // visual rhythm holds; the +N pill below conveys overflow.
-  const fallbackNeighbours = [
-    { name: "Priya M." },
-    { name: "Sarah L." },
-    { name: "Tom R." },
-    { name: "Jane D." },
-    { name: "Alex K." },
-  ];
-  // `sellers` are { id, name, avatar }, one per seller (deduped by id
-  // upstream), so each shows their own profile picture.
-  const neighbours = (Array.isArray(sellers) && sellers.length > 0)
-    ? sellers.slice(0, 5)
-    : fallbackNeighbours;
+  // The avatar row: every neighbour selling right now (useActiveSellers), not
+  // only those with items queued for the Drop. Preview gets its own wording.
+  const sellerSummary = useActiveSellers(schedule.status);
+  const inPreview = schedule.ready && getDropCycleInfo(schedule.now).phase === "PREVIEW";
+  const sellerRow = (ring) => (
+    <SellerAvatarRow summary={sellerSummary} max={sellerRowMax(width)} ring={ring} pillBg={C.amberDeep}
+      label={sellerSummary ? sellersLabel(sellerSummary.total, inPreview ? "preview" : "between", openDay) : ""}/>
+  );
+  const hasSellers = !!sellerSummary && sellerSummary.total > 0;
   // Display count: prefer the real queued seller count when provided; fall
   // back to the demo's "47 neighbours" only when no prop was passed (i.e.
   // the standalone /preview/buyer-dashboard route).
@@ -1504,19 +1560,7 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = 
         pill={"Opens " + openDay}
         headline="Good finds. Right around the corner."
         body={bodyCopy}
-        avatars={displayCount > 0 ? (
-          <div role="img" aria-label="Neighbours with items in this Drop" style={{ display: "flex", alignItems: "center" }}>
-            {neighbours.map((n, i) => (
-              <UserAvatar key={n.id || i} avatar={n.avatar} name={n.name} size={32} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={10}
-                style={{ border: "2px solid " + HERO_CREAM, marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i, position: "relative" }}/>
-            ))}
-            {displayCount > neighbours.length && (
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.amberDeep, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + HERO_CREAM, marginLeft: -8 }}>
-                +{displayCount - neighbours.length}
-              </div>
-            )}
-          </div>
-        ) : null}
+        avatars={hasSellers ? sellerRow(HERO_CREAM) : null}
         cardLabel="Drop opens in"
         totalSec={schedule.ready ? totalSec : null}
         when={openWhen}
@@ -1584,22 +1628,8 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null, sellers = 
             {bodyCopy}
           </p>
 
-          {/* Avatar stack — only render when at least one neighbour has queued
-              items. The "+N" pill computes overflow from displayCount instead
-              of the hardcoded "+42". */}
-          {displayCount > 0 && (
-            <div role="img" aria-label="Neighbours with items in this Drop" style={{ display: "flex", alignItems: "center" }}>
-              {neighbours.map((n, i) => (
-                <UserAvatar key={n.id || i} avatar={n.avatar} name={n.name} size={32} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={10}
-                  style={{ border: "2px solid #FFF4E0", marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i, position: "relative" }}/>
-              ))}
-              {displayCount > neighbours.length && (
-                <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.amberDeep, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid #FFF4E0", marginLeft: -8 }}>
-                  +{displayCount - neighbours.length}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Avatar row — every neighbour selling right now (see sellerRow). */}
+          {hasSellers && sellerRow("#FFF4E0")}
         </div>
 
       </div>
@@ -1745,7 +1775,7 @@ function DropCloseDial({ t, pad, remainingSec }) {
    Deep ink/charcoal hero. LIVE NOW pill, headline with amber
    underline on "Barrhaven", avatar stack, countdown dial.
    ============================================================ */
-function WelcomeBand({ itemsCount = null, sellers = null }) {
+function WelcomeBand({ itemsCount = null }) {
   // Countdown to Drop close (Sunday 7 PM by default), read from the shared
   // Drop clock rather than a private `new Date()` tick. Two reasons: the band
   // now draws an arc of the window remaining, which is nonsense if it
@@ -1770,28 +1800,18 @@ function WelcomeBand({ itemsCount = null, sellers = null }) {
   };
   const pad = (n) => n < 10 ? "0" + n : "" + n;
 
-  const fallbackNeighbours = [
-    { name: "Jane D." },
-    { name: "Mike T." },
-    { name: "Anna W." },
-    { name: "Tom R." },
-    { name: "Alex K." },
-  ];
-  // A real array always wins over the demo names, even when it's empty —
-  // otherwise an empty Drop would render five invented neighbours.
-  const neighbours = Array.isArray(sellers)
-    ? sellers.slice(0, 5)
-    : fallbackNeighbours;
   // Claimable items in this Drop. Null = not known (no prop passed) — the
   // copy then drops the number entirely rather than inventing one. This used
   // to be a hardcoded "89" that never moved no matter what was listed.
   const displayCount = typeof itemsCount === "number" ? itemsCount : null;
-  // The "+N" pill counts NEIGHBOURS past the five avatars — not items. The
-  // old hardcoded "+89" just repeated the item count, which is a different
-  // quantity entirely.
-  const overflowCount = Array.isArray(sellers)
-    ? Math.max(0, sellers.length - neighbours.length)
-    : 0;
+  // The avatar row: every neighbour selling in the live Drop (Shelf included,
+  // since it joins the Drop), from useActiveSellers.
+  const sellerSummary = useActiveSellers(schedule.status);
+  const hasSellers = !!sellerSummary && sellerSummary.total > 0;
+  const sellerRow = (ring) => (
+    <SellerAvatarRow summary={sellerSummary} max={sellerRowMax(width)} ring={ring} pillBg={C.green}
+      label={sellerSummary ? sellersLabel(sellerSummary.total, "live") : ""}/>
+  );
 
   if (width < PHONE_HERO_MAX) {
     const closeDay = dropDayOf(closesAt);
@@ -1814,19 +1834,7 @@ function WelcomeBand({ itemsCount = null, sellers = null }) {
         ) : (
           <>Nothing is claimable in this Drop right now — new items show up here the moment a neighbour posts one. The window closes {closeDay} at {closeTime}.</>
         )}
-        avatars={neighbours.length > 0 ? (
-          <div role="img" aria-label="Neighbours selling in this Drop" style={{ display: "flex", alignItems: "center" }}>
-            {neighbours.map((n, i) => (
-              <UserAvatar key={n.id || i} avatar={n.avatar} name={n.name} size={32} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={10}
-                style={{ border: "2px solid " + HERO_CREAM, marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i, position: "relative" }}/>
-            ))}
-            {overflowCount > 0 && (
-              <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.green, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + HERO_CREAM, marginLeft: -8 }}>
-                +{overflowCount}
-              </div>
-            )}
-          </div>
-        ) : null}
+        avatars={hasSellers ? sellerRow(HERO_CREAM) : null}
         cardLabel="Drop closes in"
         totalSec={now ? totalSec : null}
         when={closeDay + " " + closeTime}
@@ -1916,20 +1924,8 @@ function WelcomeBand({ itemsCount = null, sellers = null }) {
               <>Nothing is claimable in this Drop right now — new items show up here the moment a neighbour posts one. The window closes {dropCloseDay()} at {dropCloseHour()}.</>
             )}
           </p>
-          {/* Avatar stack */}
-          {neighbours.length > 0 && (
-            <div role="img" aria-label="Neighbours selling in this Drop" style={{ display: "flex", alignItems: "center" }}>
-              {neighbours.map((n, i) => (
-                <UserAvatar key={n.id || i} avatar={n.avatar} name={n.name} size={32} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={10}
-                  style={{ border: "2px solid " + C.ink, marginLeft: i === 0 ? 0 : -8, zIndex: neighbours.length - i, position: "relative" }}/>
-              ))}
-              {overflowCount > 0 && (
-                <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.green, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + C.ink, marginLeft: -8 }}>
-                  +{overflowCount}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Avatar row — every neighbour selling in the live Drop. */}
+          {hasSellers && sellerRow(C.ink)}
         </div>
         {/* Right: countdown dial */}
         <DropCloseDial t={t} pad={pad} remainingSec={totalSec}/>
@@ -1946,6 +1942,8 @@ function WelcomeBand({ itemsCount = null, sellers = null }) {
 // in a slide-up bottom sheet behind a filter pill that surfaces the active
 // filter count. State toggle (Everything / On the Shelf) sits below when
 // applicable. Activated by the parent (DiscoverPage) via useViewport().
+const SEARCH_PLACEHOLDER_FULL = "Search items, categories…";
+
 function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, hood, setHood, cond, setCond, sort, setSort, state, accent, chipFill, sorts, hoods = [], activeFilterCount, onReset }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   // The full, searchable category list, expanded inside the filter sheet.
@@ -1956,16 +1954,41 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, ho
   // panel; the rest of the sheet (focus ring, count badge, Show results) stays
   // on the lighter accent.
   const selected = chipFill || accent;
+  // The full placeholder where it fits; "Search items…" where it would be cut
+  // off (a 320px phone, or larger text). Measured against the field's own font
+  // and padding, again whenever the field or window resizes or the font loads.
+  const searchRef = useRef(null);
+  const [shortPlaceholder, setShortPlaceholder] = useState(false);
+  useEffect(() => {
+    const el = searchRef.current;
+    if (!el || typeof window === "undefined") return;
+    const ctx = document.createElement("canvas").getContext("2d");
+    const measure = () => {
+      if (!ctx) return;
+      const cs = getComputedStyle(el);
+      ctx.font = cs.fontWeight + " " + cs.fontSize + " " + cs.fontFamily;
+      const room = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      setShortPlaceholder(ctx.measureText(SEARCH_PLACEHOLDER_FULL).width > room - 2);
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro) ro.observe(el);
+    window.addEventListener("resize", measure);
+    if (document.fonts) document.fonts.ready.then(measure).catch(() => {});
+    return () => { if (ro) ro.disconnect(); window.removeEventListener("resize", measure); };
+  }, []);
   return (
     <section style={{ padding: "8px 0 16px", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ flex: 1, position: "relative" }}>
           <Search size={16} style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", color: C.ash }}/>
           <input
+            ref={searchRef}
             type="search"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search items, categories…"
+            aria-label="Search items and categories"
+            placeholder={shortPlaceholder ? "Search items…" : SEARCH_PLACEHOLDER_FULL}
             style={{
               width: "100%", height: 44, padding: "0 14px 0 38px",
               borderRadius: 999, border: "1.5px solid " + C.fawn,
@@ -2656,11 +2679,71 @@ const CARD = {
 };
 
 /* ============================================================
+   THE BUYER'S OWN CLAIM ON AN ITEM
+   One reading of it, shared by the item card and the item page so the
+   two can't disagree. (They did: the card said "Claim pending" while the
+   page still offered "Claim at $120", which only led to the backend's
+   "You already have an offer on this item".)
+   ============================================================ */
+// "pending"   — my claim or offer is waiting for the seller
+// "countered" — the seller has put a different amount on the table: my turn
+// "accepted"  — the seller accepted; the pickup is still to come
+// null        — no open claim. Declined, expired and cancelled claims never
+//               reach the claims list, so the item is claimable again.
+function myClaimState(claim) {
+  if (!claim) return null;
+  if (claim.status === "offer-pending") return claim.iMadeTheOffer === false ? "countered" : "pending";
+  if (claim.status === "pickup-scheduled" || claim.status === "pickup-today") return "accepted";
+  return null;
+}
+// The card's claim pill colours. The text is a shade darker than
+// C.amberDeep: amberDeep on amberSoft is 4.2:1, under AA for text this
+// size; this ink is 5.6:1 on the same background.
+const CLAIM_AMBER_INK = "#8A4B00";
+const CLAIM_TONE = {
+  amber: { bg: C.amberSoft, color: CLAIM_AMBER_INK, border: C.amber + "55" },
+  green: { bg: C.greenMist, color: C.greenDeep,     border: C.green + "55" },
+};
+// Every word the card and the item page say about the claim, per state.
+// The amount is the claim's current one (mine, or the seller's counter).
+function myClaimLabels(kind, claim, sellerName, listedPrice) {
+  const amount = priceText(claim && typeof claim.price === "number" ? claim.price : listedPrice);
+  const seller = sellerName || "The seller";
+  if (kind === "countered") return {
+    tone: CLAIM_TONE.amber, Icon: RefreshCw,
+    badge: "Seller countered", cta: "Respond to " + amount + " counter",
+    status: "Seller countered: " + amount,
+    note: seller + " offered " + amount + " instead. Accept, counter or decline in Messages.",
+    link: "Respond in Messages",
+  };
+  if (kind === "accepted") return {
+    tone: CLAIM_TONE.green, Icon: Check,
+    badge: "Item claimed", cta: "Pick up pending",
+    status: "Item claimed · pick up pending",
+    note: seller + " accepted at " + amount + ". Arrange the pickup in Messages.",
+    link: "Arrange pickup in Messages",
+  };
+  return {
+    tone: CLAIM_TONE.amber, Icon: Clock,
+    badge: "Claim pending", cta: "Waiting for seller",
+    status: "Claim pending",
+    note: claim && typeof claim.price === "number" && typeof listedPrice === "number" && claim.price !== listedPrice
+      ? "You offered " + amount + " (listed at " + priceText(listedPrice) + "). Waiting for " + seller + " to answer."
+      : "You claimed it at " + amount + ". Waiting for " + seller + " to accept.",
+    link: "View in Messages",
+  };
+}
+
+/* ============================================================
    ITEM CARD  — works for drop / shelf
    ============================================================ */
-function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null, answerReady = false }) {
+function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMode, fromPeek, claimedByMe = false, purchasedByMe = false, offerPending = false, isOwn = false, onSwitchRole = null, answerReady = false, myClaim = null, onOpenClaimThread = null }) {
   const { isMobile } = useViewport();
   const [hovered, setHovered] = useState(false);
+  // This viewer's own open claim on the item (myClaimState above), when the
+  // page passes it. offerPending / claimedByMe still work on their own.
+  const claimKind = myClaimState(myClaim);
+  const claimUi = claimKind ? myClaimLabels(claimKind, myClaim, item.seller, item.p) : null;
   // Tracked separately from `hovered` so the CTA only darkens when the
   // pointer is actually on it, not anywhere on the card.
   const [ctaHovered, setCtaHovered] = useState(false);
@@ -2698,7 +2781,7 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   // stage the way a pending claim does: a badge ("Item claimed") and a
   // parked CTA ("Pick up pending").
   const isPurchasedByMe = purchasedByMe === true;
-  const isClaimedByMe = claimedByMe === true && !isPurchasedByMe;
+  const isClaimedByMe = (claimedByMe === true || claimKind === "accepted") && !isPurchasedByMe;
   // An accepted claim makes the item RESERVED, which adapts to "claimed".
   // When the claim is this viewer's, it isn't someone else's.
   const isClaimedByOther = item.status === "claimed" && !isClaimedByMe;
@@ -2714,13 +2797,16 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
   // because the backend refuses a second claim from the same buyer ("you
   // already have an offer on this item"), so offering it would be an
   // invitation to an error toast.
-  const hasPendingOffer = offerPending === true && !isClaimed && !isPreview;
+  const hasPendingOffer = (offerPending === true || claimKind === "pending" || claimKind === "countered") && !isClaimed && !isPreview;
+  // The seller countered: it's this buyer's move, so the CTA is live again
+  // and goes to the claim's conversation, where they answer it.
+  const isCountered = hasPendingOffer && claimKind === "countered";
   // The viewer is the seller. The card stays in the feed — this is how a
   // seller sees their listing exactly as the neighbourhood sees it — but
   // every buyer-side action comes off it: no claim (the backend refuses a
   // self-claim), no save (watching your own item is meaningless). Opening
   // the card still works; ItemDetail offers the Seller-view switch there.
-  const ctaDisabled = isOwn || isClaimed || isPreview || hasPendingOffer;
+  const ctaDisabled = isOwn || isClaimed || isPreview || (hasPendingOffer && !isCountered);
   // The claim CTA is always the brand green. It's the same action on every
   // card, so it reads as one button across the feed.
   const ctaBg = CARD.green;
@@ -2804,15 +2890,15 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             doesn't reserve anything, so the item is still listed and every
             other neighbour still sees an ordinary claimable card. Only this
             viewer sees the badge. */}
-        {offerPending && !isOwn && !isClaimed && !isPreview && (
-          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: CARD.font, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: C.amberSoft, color: C.amberDeep, border: "1px solid " + C.amber + "55", display: "flex", alignItems: "center", gap: 4 }}>
-            <Clock size={11}/> Claim pending
+        {hasPendingOffer && !isOwn && (
+          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: CARD.font, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: CLAIM_TONE.amber.bg, color: CLAIM_TONE.amber.color, border: "1px solid " + CLAIM_TONE.amber.border, display: "flex", alignItems: "center", gap: 4 }}>
+            {isCountered ? <RefreshCw size={11}/> : <Clock size={11}/>} {isCountered ? claimUi.badge : "Claim pending"}
           </span>
         )}
         {/* Stage two of the same claim: the seller accepted it. Same pill,
             green instead of amber, until the pickup completes. */}
         {isClaimedByMe && !isOwn && (
-          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: CARD.font, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: C.greenMist, color: C.greenDeep, border: "1px solid " + C.green + "55", display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ position: "absolute", bottom: 14, right: 14, fontFamily: CARD.font, fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: CLAIM_TONE.green.bg, color: CLAIM_TONE.green.color, border: "1px solid " + CLAIM_TONE.green.border, display: "flex", alignItems: "center", gap: 4 }}>
             <Check size={11} strokeWidth={2.8}/> Item claimed
           </span>
         )}
@@ -2922,10 +3008,11 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             // actually does something — jump to the Seller view to manage it.
             // Falls back to opening the detail, which carries the same switch.
             if (isOwn) { if (onSwitchRole) onSwitchRole(); else if (onOpen) onOpen(); return; }
+            if (isCountered) { if (onOpenClaimThread) onOpenClaimThread(myClaim); else if (onOpen) onOpen(); return; }
             if (ctaDisabled) { if (isPreview && onOpen) onOpen(); return; }
             if (onClaimNow) onClaimNow(); else if (onOpen) onOpen();
           }}
-          disabled={!isOwn && (isClaimed || hasPendingOffer)}
+          disabled={!isOwn && (isClaimed || (hasPendingOffer && !isCountered))}
           onMouseEnter={() => setCtaHovered(true)}
           onMouseLeave={() => setCtaHovered(false)}
           className="cta-primary"
@@ -2937,7 +3024,7 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             background: isOwn ? C.paper : isPreview ? C.sand : hasPendingOffer ? C.amberMist : isClaimedByMe ? C.greenMist : (ctaHovered && !ctaDisabled ? CARD.greenHover : ctaBg),
             color: isOwn ? CARD.ink : isPreview ? CARD.muted : hasPendingOffer ? C.amberDeep : isClaimedByMe ? C.greenDeep : "#fff",
             fontFamily: CARD.font, fontSize: 15, fontWeight: 700,
-            cursor: (!isOwn && (isClaimed || hasPendingOffer)) ? "not-allowed" : "pointer",
+            cursor: (!isOwn && (isClaimed || (hasPendingOffer && !isCountered))) ? "not-allowed" : "pointer",
             opacity: (isClaimed && !isOwn && !isClaimedByMe) ? 0.4 : 1,
             marginTop: "auto",
             // The handoff asks for a flat button; the 2px underglow that gave
@@ -2950,7 +3037,7 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
             : isPreview
               ? <><Clock size={16}/> Opens {dropOpenDay()} {dropOpenHour()}</>
               : hasPendingOffer
-                ? <><Clock size={16}/> Waiting for seller</>
+                ? (isCountered ? <><RefreshCw size={16}/> {claimUi.cta}</> : <><Clock size={16}/> Waiting for seller</>)
                 : isClaimedByMe
                   ? <><Clock size={16}/> Pick up pending</>
                   : <><ShoppingBag size={16} strokeWidth={2}/> {ctaLabel}</>}
@@ -3193,7 +3280,10 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
 function sneakCardType(isMobile) {
   return {
     category: { fontFamily: CARD.font, fontSize: 11, fontWeight: 700, color: C.mink, padding: "3px 8px", borderRadius: 999, background: C.sand, letterSpacing: "0.04em" },
-    title:    { fontFamily: CARD.font, fontSize: isMobile ? 16 : 18, fontWeight: 700, color: CARD.ink, letterSpacing: "-0.01em", lineHeight: 1.3, marginBottom: 6, overflowWrap: "anywhere" },
+    // Two lines at most, and always two reserved (lineHeight 1.3 → 2.6em), so
+    // every card has the same natural height: cards in a row line up without
+    // being stretched, and a one-line title doesn't leave a gap further down.
+    title:    { fontFamily: CARD.font, fontSize: isMobile ? 16 : 18, fontWeight: 700, color: CARD.ink, letterSpacing: "-0.01em", lineHeight: 1.3, marginBottom: 6, overflowWrap: "anywhere", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", minHeight: "2.6em" },
     sellerRow: { display: "flex", alignItems: "baseline", gap: 5, minWidth: 0, marginBottom: 12 },
     seller:   { fontFamily: CARD.font, fontSize: 14, fontWeight: 650, color: CARD.ink, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
     place:    { fontFamily: CARD.font, fontSize: 12, fontWeight: 450, color: CARD.muted, lineHeight: 1.4, whiteSpace: "nowrap" },
@@ -3357,7 +3447,7 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
                     <span style={type.seller}>{item.seller.split(" ")[0]}</span>
                     <span style={type.place}>· {item.dist}</span>
                   </p>
-                  <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                     {!isFreePrice(item.estPrice) && <span style={type.around}>Around</span>}
                     <span style={type.price(item.estPrice)}>{priceText(item.estPrice)}</span>
                   </div>
@@ -3492,7 +3582,7 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
                 </p>
 
                 {/* Price estimate — framed as approximate */}
-                <div style={{ marginTop: "auto", display: "flex", alignItems: "baseline", gap: 6 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                   {!isFreePrice(item.estPrice) && <span style={type.around}>Around</span>}
                   <span style={type.price(item.estPrice)}>{priceText(item.estPrice)}</span>
                 </div>
@@ -4415,7 +4505,7 @@ function PhotoLightbox({ src, title, index, count, onPrev, onNext, onClose }) {
   );
 }
 
-function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller, onViewSeller, savedIds, onToggleSave, accessToken = null, onGoToMessages = null, onClaimCreated = null, currentUserId = null, onSwitchRole = null, dropState = "between" }) {
+function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller, onViewSeller, savedIds, onToggleSave, accessToken = null, onGoToMessages = null, onClaimCreated = null, currentUserId = null, onSwitchRole = null, dropState = "between", myClaim = null, onOpenClaimThread = null }) {
   // Own listings are in the buyer feed by design, so a seller opening their
   // own item detail is now the ordinary path, not just the deep-link /
   // watchlist edge case it was when the feed filtered them out. Either way:
@@ -4535,6 +4625,9 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
   // describing a flow the buyer can't open. Computed here rather than inside
   // the CTA's IIFE so the hint can share it.
   const notClaimable = item.status === "claimed" || item.status === "preview";
+  // My own open claim on this item, if any — see myClaimState.
+  const myClaimKind = isMyOwnItem ? null : myClaimState(myClaim);
+  const myClaimUi = myClaimKind ? myClaimLabels(myClaimKind, myClaim, item.seller?.name, item.price) : null;
   const accent = C.green;
   const accentBg = C.greenMist;
   const discount = item.origPrice ? Math.round((1 - item.price / item.origPrice) * 100) : null;
@@ -4978,6 +5071,34 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
               </>
             ) : (
               <>
+                {/* My own open claim on this item (myClaimState — the same reading
+                    the card uses). It replaces the claim button: claiming again
+                    only fails ("You already have an offer on this item"). A
+                    status, not a disabled button, and announced when it changes
+                    (the seller accepts, counters or declines while it's open). */}
+                {myClaimUi ? (
+                  <>
+                    <div role="status" aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ padding: "14px 16px", borderRadius: 12, background: myClaimUi.tone.bg, border: "1px solid " + myClaimUi.tone.border, color: myClaimUi.tone.color, fontFamily: D.font, fontSize: 15, fontWeight: 650, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center" }}>
+                        <myClaimUi.Icon size={17} strokeWidth={2.2} aria-hidden="true" style={{ flexShrink: 0 }}/> {myClaimUi.status}
+                      </div>
+                      <p style={{ fontFamily: D.font, fontSize: 12.5, fontWeight: 500, color: C.mink, textAlign: "center", lineHeight: 1.45 }}>{myClaimUi.note}</p>
+                    </div>
+                    {/* A real link (the ?conversation= deep link), handled in-app. */}
+                    <a
+                      href={"/buyer?mode=buyer&tab=messages" + (myClaim.raw?.conversationId ? "&conversation=" + encodeURIComponent(myClaim.raw.conversationId) : "")}
+                      onClick={e => {
+                        if (!onOpenClaimThread || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                        e.preventDefault();
+                        onOpenClaimThread(myClaim);
+                      }}
+                      className="dy-claim-thread-link"
+                      style={{ alignSelf: "center", display: "inline-flex", alignItems: "center", gap: 6, minHeight: 44, padding: "0 12px", fontFamily: D.font, fontSize: 13.5, fontWeight: 650, color: C.greenDeep, textDecoration: "underline", textUnderlineOffset: 3 }}
+                    >
+                      <MessageCircle size={15} aria-hidden="true"/> {myClaimUi.link}
+                    </a>
+                  </>
+                ) : (<>
                 {/* Primary claim CTA — works for all item types including Shelf.
                     Disabled for claimed items, and for Drop-pool items still in
                     PREVIEW ("preview"): the backend rejects those until the Drop
@@ -5014,6 +5135,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                       : "Or make an offer during claim — you can propose your own price."}
                   </p>
                 )}
+                </>)}
 
                 {/* Secondary row: Save + Ask */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -5144,7 +5266,7 @@ function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedI
 /* ============================================================
    SAVED PAGE
    ============================================================ */
-function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggleSave, onBrowse, onBack, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, state = "between", currentUserId = null, onSwitchRole = null, answeredIds = new Set() }) {
+function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggleSave, onBrowse, onBack, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, state = "between", currentUserId = null, onSwitchRole = null, answeredIds = new Set(), claimsByItem = new Map(), onOpenClaimThread = null }) {
   // Authed users render directly from the watchlist API result (full Item
   // objects, including SOLD ones + ones the user owns themselves). Preview
   // mode falls back to filtering the demo pool by savedIds — the original
@@ -5159,7 +5281,7 @@ function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggle
         <EmptyState illustration={<EmptySavedIllustration/>} title="Nothing saved yet" message="Tap the heart on items you’re interested in — they’ll gather here so you can claim them when the Drop opens." cta="Browse Discover" onCtaClick={onBrowse} accent={C.amber}/>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} answerReady={answeredIds.has(i.id)} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
+          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} myClaim={claimsByItem.get(i.id) || null} onOpenClaimThread={onOpenClaimThread} answerReady={answeredIds.has(i.id)} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
         </div>
       )}
     </>
@@ -6881,7 +7003,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                     id: pc.id, status: pc.status, amount: pc.amount,
                     listed: pc.item?.price ?? active.item.price ?? 0,
                     expiresAt: pc.expiresAt, myTurn: pc.status === "PROPOSED" && pc.lastAmountBy !== pc.buyerId,
-                    buyerConfirmedReceiptAt: pc.buyerConfirmedReceiptAt, pickupSlot: pc.pickupSlot,
+                    buyerConfirmedReceiptAt: pc.buyerConfirmedReceiptAt, pickupSlot: pc.pickupSlot, createdAt: pc.createdAt,
                   }}
                   otherName={activeSellerName}
                   busy={chatBusyClaimId === pc.id}
@@ -7628,7 +7750,7 @@ function BottomReveal({ children }) {
 /* ============================================================
    DISCOVER — Between Drops state
    ============================================================ */
-function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, reminded, onRemindMe, savedPreview, togglePreview, onSwitchRole, onPreviewItem, onSeeAllPreviews, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, itemsLoading = false, sneakPeekSource = null, currentUserId = null, answeredIds = new Set() }) {
+function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, reminded, onRemindMe, savedPreview, togglePreview, onSwitchRole, onPreviewItem, onSeeAllPreviews, claimedIds = new Set(), purchasedIds = new Set(), offeredIds = new Set(), itemsSource = null, itemsLoading = false, sneakPeekSource = null, currentUserId = null, answeredIds = new Set(), claimsByItem = new Map(), onOpenClaimThread = null }) {
   // A seller's own listings are part of the feed (see the fetch in
   // BuyerDashboard). This is what marks them so the card can drop its
   // buyer-side actions — null for the unauthed preview routes, where every
@@ -7666,7 +7788,6 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   // no source was passed (preview routes) so the band keeps its demo numbers.
   const liveClaimable = Array.isArray(itemsSource) ? itemsSource.filter(i => i.status === "live") : null;
   const liveItemsCount = liveClaimable ? liveClaimable.length : null;
-  const liveSellers = liveClaimable ? uniqueSellers(liveClaimable) : null;
 
   // (The hero's backdrop used to be built here — a flattened list of the
   // feed's own listing photos, tiled across the band by HeroPhotoMosaic.
@@ -7678,8 +7799,8 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   if (itemsLoading) {
     return (
       <>
-        {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellers={queuedSellers}/>}
-        {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellers={liveSellers}/>}
+        {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount}/>}
+        {state === "live" && <WelcomeBand itemsCount={liveItemsCount}/>}
         <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} hood={hood} setHood={setHood} cond={cond} setCond={setCond} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state} hoods={hoods}/>
         <DiscoverSkeleton/>
       </>
@@ -7724,8 +7845,8 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
 
   return (
     <>
-      {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount} sellers={queuedSellers}/>}
-      {state === "live" && <WelcomeBand itemsCount={liveItemsCount} sellers={liveSellers}/>}
+      {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount}/>}
+      {state === "live" && <WelcomeBand itemsCount={liveItemsCount}/>}
 
       <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} hood={hood} setHood={setHood} cond={cond} setCond={setCond} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state} hoods={hoods}/>
 
@@ -7749,7 +7870,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           })()}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {liveUnifiedPool.map((item, i) => (
-              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} liveMode={true} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
+              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} liveMode={true} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} myClaim={claimsByItem.get(item.id) || null} onOpenClaimThread={onOpenClaimThread} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
             ))}
           </div>
         </>
@@ -7764,7 +7885,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
             <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" titleStyle={REFRESHED_HEADING} subtitle={betweenPool.length + " items you can grab today — Shelf items available for pickup anytime."} pulse={true}/>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
               {betweenPool.map((item, i) => (
-                <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
+                <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} myClaim={claimsByItem.get(item.id) || null} onOpenClaimThread={onOpenClaimThread} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
               ))}
             </div>
           </>
@@ -7777,7 +7898,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
           <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" titleStyle={REFRESHED_HEADING} subtitle={shelfItems.length + " items ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {shelfItems.map((item, i) => (
-              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
+              <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} myClaim={claimsByItem.get(item.id) || null} onOpenClaimThread={onOpenClaimThread} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
             ))}
           </div>
         </>
@@ -8470,32 +8591,29 @@ export default function DropYardBuyerDashboard({
   // or already picked up. Threads into ItemCard so cards show the right overlay
   // ("YOU CLAIMED THIS" / "PICKED UP") whenever the same item appears in
   // Discover or Saved.
+  // This buyer's open claim per item, read through myClaimState — the one
+  // thing both the cards and the item page go by. `claims` refetches on the
+  // claim:new / claim:updated socket events, so a seller's accept, counter
+  // or decline reaches both without a reload.
+  const myClaimByItem = useMemo(() => {
+    const byItem = new Map();
+    for (const c of claims) if (c.itemId != null && myClaimState(c)) byItem.set(c.itemId, c);
+    return byItem;
+  }, [claims]);
+  // Accepted claims: the card's "Item claimed" / "Pick up pending" state.
   const claimedIds = useMemo(() => {
     const live = new Set();
-    for (const c of claims) {
-      if (c.itemId == null) continue;
-      // Anything that isn't already picked up or fully cancelled counts as
-      // "actively claimed" for overlay purposes.
-      if (c.status === "picked-up" || c.status === "completed" || c.status === "cancelled" || c.status === "rejected") continue;
-      // A claim the seller hasn't answered yet doesn't hold the item: it is
-      // still listed and any neighbour can claim it too, so the card must not
-      // go into the "YOU CLAIMED THIS" state and lock its own CTA. Tracked
-      // separately as offeredIds, which draws the "Claim pending" badge.
-      if (c.status === "offer-pending") continue;
-      live.add(c.itemId);
-    }
+    for (const [itemId, c] of myClaimByItem) if (myClaimState(c) === "accepted") live.add(itemId);
     return live;
-  }, [claims]);
-  // Items this buyer has an un-answered claim on. Shown as a quiet "Claim
-  // pending" badge on their own copy of the card; the listing itself stays
-  // live for everyone, since the seller is the one who picks a buyer.
+  }, [myClaimByItem]);
+  // Claims the seller hasn't settled (mine waiting, or their counter): the
+  // "Claim pending" / "Seller countered" badge. Such a claim doesn't hold the
+  // item; it stays listed and claimable for every other neighbour.
   const offeredIds = useMemo(() => {
     const pending = new Set();
-    for (const c of claims) {
-      if (c.itemId != null && c.status === "offer-pending") pending.add(c.itemId);
-    }
+    for (const [itemId, c] of myClaimByItem) if (myClaimState(c) !== "accepted") pending.add(itemId);
     return pending;
-  }, [claims]);
+  }, [myClaimByItem]);
   const purchasedIds = useMemo(() => {
     const done = new Set();
     for (const c of claims) {
@@ -8665,6 +8783,15 @@ export default function DropYardBuyerDashboard({
     setOpenThreadPage(page);
     if (openThreadPage === "messages" && openThread) setOpenThread(null);
   }
+  // The conversation that belongs to one of my claims (the card's counter
+  // CTA and the item page's "View in Messages").
+  const openClaimThread = (claim) => {
+    if (!claim) return;
+    const conversationId = claim.raw?.conversationId || null;
+    setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null);
+    setOpenThread(conversationId ? { conversationId } : { itemId: claim.itemId, title: claim.t });
+    setPage("messages");
+  };
   const openMessageThread = (itemTitle, alsoHighlightClaimId = null) => {
     setOpenThread({ title: itemTitle });
     if (alsoHighlightClaimId) setHighlightId(alsoHighlightClaimId);
@@ -8730,7 +8857,7 @@ export default function DropYardBuyerDashboard({
             <RegularSellerProfile sellerName={viewingSellerName} onBack={() => { setViewingSellerName(null); if (sellerBackItem) { setViewingItem(sellerBackItem); setSellerBackItem(null); } }} onSelect={setViewingItem} onClaimNow={setClaimItem} savedIds={savedIds} onToggleSave={toggleSave} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole}/>
           )}
           {viewingItem && (
-            <ItemDetail item={viewingItem} onBack={() => setViewingItem(null)} onClaimComplete={handleClaimComplete} onGoToClaims={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("claims"); }}  onViewSeller={(name) => { setSellerBackItem(viewingItem); setViewingItem(null); setViewingSellerName(name); }} savedIds={savedIds} onToggleSave={toggleSave} accessToken={accessToken} onGoToMessages={(item) => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); if (item?.id) setOpenThread({ itemId: item.id, title: item.title }); setPage("messages"); }} onClaimCreated={handleClaimCreated} currentUserId={user?.id || null} onSwitchRole={onSwitchRole} dropState={dropState}/>
+            <ItemDetail item={viewingItem} onBack={() => setViewingItem(null)} onClaimComplete={handleClaimComplete} onGoToClaims={() => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); setPage("claims"); }}  onViewSeller={(name) => { setSellerBackItem(viewingItem); setViewingItem(null); setViewingSellerName(name); }} savedIds={savedIds} onToggleSave={toggleSave} accessToken={accessToken} onGoToMessages={(item) => { setViewingItem(null); setViewingSellerName(null); setSellerBackItem(null); if (item?.id) setOpenThread({ itemId: item.id, title: item.title }); setPage("messages"); }} onClaimCreated={handleClaimCreated} currentUserId={user?.id || null} onSwitchRole={onSwitchRole} dropState={dropState} myClaim={myClaimByItem.get(viewingItem.id) || null} onOpenClaimThread={openClaimThread}/>
           )}
 
           {!viewingItem && !viewingSellerName && (
@@ -8741,8 +8868,8 @@ export default function DropYardBuyerDashboard({
               {page === "discover" && !viewingPreview && showSneakList && (
                 <SneakPeekListPage savedPreview={peekSaved} togglePreview={peekToggle} onPreviewItem={setViewingPreview} onBack={() => setShowSneakList(false)} sneakPeekSource={sneakPeekForUI}/>
               )}
-              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={peekSaved} togglePreview={peekToggle} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null} answeredIds={answeredIds}/>}
-              {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole} answeredIds={answeredIds}/>}
+              {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={peekSaved} togglePreview={peekToggle} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} claimsByItem={myClaimByItem} onOpenClaimThread={openClaimThread} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null} answeredIds={answeredIds}/>}
+              {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} claimsByItem={myClaimByItem} onOpenClaimThread={openClaimThread} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole} answeredIds={answeredIds}/>}
               {page === "claims"   && <ClaimsPage claims={claims} setClaims={setClaims} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} onGoToMessages={() => setPage("messages")} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} accessToken={accessToken} completedTotal={completedClaimsTotal} onClaimsChanged={() => setClaimsTick((t) => t + 1)}/>}
               {page === "messages" && <MessagesPage user={user} accessToken={accessToken} claims={claims} onAcceptCounter={handleAcceptCounterByItemTitle} onDeclineCounter={handleDeclineCounterByItemTitle} openThread={openThread} onConsumeOpenThread={() => setOpenThread(null)} onBack={() => setPage("discover")} onOpenDiscover={() => setPage("discover")} convList={convList} onConvListChange={setConvList}/>}
               {page === "history"  && <HistoryPage highlightId={highlightId} onClearHighlight={() => setHighlightId(null)} onOpenThread={(itemTitle) => openMessageThread(itemTitle)} accessToken={accessToken} onBack={() => setPage("discover")}/>}
