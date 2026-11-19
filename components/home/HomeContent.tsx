@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { memo, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -8,11 +8,11 @@ import { CalendarDays, ClipboardList, FileText, HandHeart, Truck, type LucideIco
 import EarlyAccessSection from "@/components/EarlyAccessSection";
 import { SELL_HREF } from "@/components/GlobalHeader";
 import { DropCycleProvider } from "@/context/DropCycleContext";
-import { dropDayOf, dropTimeOf } from "@/lib/dropCycle";
+import { setHomepageDropLive } from "@/lib/homepageDropLive";
 import { LIVE_NEIGHBOURHOOD } from "@/lib/homeNeighbourhoods";
 import { ItemCard, ItemCardSkeleton, ItemsEmptyState } from "./ItemCard";
 import { NeighbourhoodsSection } from "./NeighbourhoodsSection";
-import { FEATURED_SECTION_ID, NextDropSectionView } from "./NextDropSection";
+import { FEATURED_SECTION_ID, LivePill, NextDropSectionView } from "./NextDropSection";
 import { ShelfSection } from "./ShelfSection";
 import { useDropSchedule } from "./useDropSchedule";
 import { useHomeData, type HomeItem, type LoadState } from "./useHomeData";
@@ -116,18 +116,30 @@ export function TrustStrip() {
   );
 }
 
-function FeaturedSection({ items, state, savedIds, onToggleSaved }: {
+/**
+ * "Worth a closer look." While the Drop is open, everything here can be
+ * claimed, so it wears the Shelf section's live look: the red "LIVE DROP ·
+ * NOW OPEN" pill (LivePill) for the eyebrow and red "LIVE DROP" ribbons.
+ * `live` is the same schedule reading as the live Drop section and the Shelf
+ * (ScheduledSections), so all three switch together without a reload. Silent
+ * when it switches: the live Drop card and the Shelf already say so, and a
+ * third announcement would only repeat them.
+ */
+const FeaturedSection = memo(function FeaturedSection({ items, state, savedIds, onToggleSaved, live = null }: {
   items: HomeItem[];
   state: LoadState;
   savedIds: Set<string>;
   onToggleSaved: (id: string) => void;
+  /** Is the Drop open right now? null until the schedule is known. */
+  live?: boolean | null;
 }) {
+  const isLive = live === true;
   return (
     <section id={FEATURED_SECTION_ID} tabIndex={-1} aria-labelledby="featured-heading" className="dy-section scroll-mt-20 bg-white outline-none xl:scroll-mt-[92px]">
       <div className="dy-wrap">
         <div className="flex flex-wrap items-center justify-between gap-5">
           <div>
-            <p className="dy-eyebrow">This Week&apos;s Find</p>
+            {isLive ? <LivePill label="Live Drop · Now open" /> : <p className="dy-eyebrow">This Week&apos;s Find</p>}
             <h2 id="featured-heading" className="dy-h2 mt-3">Worth a closer <span className="text-dy-accent">look.</span></h2>
             <p className="dy-body mt-3">A few things your neighbours are putting up for grabs.</p>
           </div>
@@ -148,7 +160,7 @@ function FeaturedSection({ items, state, savedIds, onToggleSaved }: {
                 ? [0, 1, 2, 3].map((i) => <li key={i} className="min-w-0"><ItemCardSkeleton /></li>)
                 : items.map((item) => (
                     <li key={item.id} className="min-w-0">
-                      <ItemCard tight item={item} ribbon="New" saved={savedIds.has(item.id)} onToggleSaved={onToggleSaved} />
+                      <ItemCard tight item={item} ribbon={isLive ? "Live Drop" : "New"} saved={savedIds.has(item.id)} onToggleSaved={onToggleSaved} />
                     </li>
                   ))}
             </ul>
@@ -157,7 +169,7 @@ function FeaturedSection({ items, state, savedIds, onToggleSaved }: {
       </div>
     </section>
   );
-}
+});
 
 function DropFeature() {
   return (
@@ -234,8 +246,8 @@ function GoodStuff() {
         <div className="flex flex-col">
           <div className="relative aspect-[3/2] lg:aspect-auto lg:flex-1 lg:min-h-[clamp(420px,38vw,724px)]">
             <Image
-              src="/images/good-stuff-exchange.jpg"
-              alt="A smiling woman in a rust-orange top hands a box of soft toys to a neighbour"
+              src="/images/good-stuff-exchange-new.jpg"
+              alt="Two smiling neighbours: one hands a box of soft toys and a wooden robot to a woman in a rust-orange top"
               fill
               sizes="(min-width: 1024px) 60vw, 100vw"
               className="object-cover object-center"
@@ -267,17 +279,20 @@ function GoodStuff() {
 }
 
 /**
- * The sections that follow the Drop's schedule: the live Drop section and the
- * Shelf. One reading of the schedule for both, so they switch at the same
- * instant (and one /api/drop/current fetch, not two). `between` is the
+ * The sections that follow the Drop's schedule: the live Drop section, "Worth
+ * a closer look" and the Shelf (left out while the Drop is live). One reading
+ * of the schedule for all three, so they switch at the same instant (and one
+ * /api/drop/current fetch). `between` is the
  * sections in between, made by HomeContent: the clock ticks this component
  * every second, but the same elements come back each time, so React leaves
  * them alone.
  */
-function ScheduledSections({ live, onDropOpened, neighbourCount, between, shelf, state, savedIds, onToggleSaved }: {
+function ScheduledSections({ live, onDropOpened, neighbourCount, featured, between, shelf, state, savedIds, onToggleSaved }: {
   live: { state: LoadState; feedPhase: string | null };
   onDropOpened: () => void;
   neighbourCount: number | null;
+  /** "Worth a closer look": switches with the other two (FeaturedSection is memo'd, so the clock's ticks pass it by). */
+  featured: HomeItem[];
   between: React.ReactNode;
   shelf: HomeItem[];
   state: LoadState;
@@ -285,19 +300,35 @@ function ScheduledSections({ live, onDropOpened, neighbourCount, between, shelf,
   onToggleSaved: (id: string) => void;
 }) {
   const schedule = useDropSchedule();
+  const isLive = schedule.ready ? schedule.status === "LIVE" : null;
+
+  // The header's "The Shelf" link follows this same reading (lib/homepageDropLive).
+  useEffect(() => { setHomepageDropLive(isLive); }, [isLive]);
+  useEffect(() => () => setHomepageDropLive(null), []);
+
+  // Said once when the Drop opens or closes, never on page load (nothing
+  // changed for the reader then). Here rather than in a section, because the
+  // Shelf isn't on the page during the Drop. Adjusted during render, React's
+  // pattern for state that follows a value.
+  const [seenLive, setSeenLive] = useState(isLive);
+  const [announcement, setAnnouncement] = useState("");
+  if (isLive !== seenLive) {
+    setSeenLive(isLive);
+    if (seenLive !== null && isLive !== null) {
+      setAnnouncement(isLive ? "The Live Drop is open." : "The Live Drop has closed. The Shelf is open between Drops.");
+    }
+  }
+
   return (
     <>
+      <p className="sr-only" aria-live="polite">{announcement}</p>
       <NextDropSectionView schedule={schedule} live={live} onDropOpened={onDropOpened} neighbourCount={neighbourCount} />
+      <FeaturedSection items={featured} state={state} savedIds={savedIds} onToggleSaved={onToggleSaved} live={isLive} />
       {between}
-      <ShelfSection
-        items={shelf}
-        state={state}
-        savedIds={savedIds}
-        onToggleSaved={onToggleSaved}
-        live={schedule.ready ? schedule.status === "LIVE" : null}
-        liveEndsDay={dropDayOf(schedule.closesAt)}
-        liveEndsTime={dropTimeOf(schedule.closesAt)}
-      />
+      {/* Between Drops only. During the live Drop it isn't rendered at all,
+          and not before the schedule is known either, so a Saturday visitor
+          never sees it appear and vanish. */}
+      {isLive === false && <ShelfSection items={shelf} state={state} savedIds={savedIds} onToggleSaved={onToggleSaved} />}
     </>
   );
 }
@@ -324,10 +355,8 @@ export function HomeContent() {
           live={{ state, feedPhase }}
           onDropOpened={reload}
           neighbourCount={neighbourCount}
-          between={<>
-            <FeaturedSection items={featured} state={state} savedIds={savedIds} onToggleSaved={toggleSaved} />
-            <DropFeature />
-          </>}
+          featured={featured}
+          between={<DropFeature />}
           shelf={shelf}
           state={state}
           savedIds={savedIds}

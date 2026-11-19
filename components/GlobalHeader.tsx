@@ -9,7 +9,9 @@ import { useAuth, type AuthUser } from "@/context/AuthContext";
 import { useSocketEvent } from "@/context/SocketContext";
 import { AccountMenu } from "@/components/AccountMenu";
 import { useUnreadSummary } from "@/components/useUnreadSummary";
+import { getDropCycleInfo } from "@/lib/dropCycle";
 import { HOME_NEIGHBOURHOODS, LIVE_NEIGHBOURHOOD, neighbourhoodRequestHref } from "@/lib/homeNeighbourhoods";
+import { useHomepageDropLive } from "@/lib/homepageDropLive";
 
 // The header's links. How It Works isn't one of them any more: signed-in
 // visitors reach it from the account menu ("Help & How It Works"), signed-out
@@ -86,6 +88,27 @@ function useSectionInView(enabled: boolean): string | null {
   return enabled ? section : null;
 }
 
+// "The Shelf" points at the homepage's Shelf section, which isn't there during
+// the live Drop (its items are claimable in the Drop then: Browse and The Drop
+// cover them), so the link is left out until the Drop ends. On "/" this
+// follows the homepage's own schedule reading (lib/homepageDropLive), so it
+// switches with the sections, ?simulate= included. Elsewhere it's the local
+// Saturday-opening calculation, checked every 30 seconds. Shown until the
+// client knows, so the server's HTML and the first render agree.
+function useShelfLinkHidden(onHome: boolean, hydrated: boolean): boolean {
+  const homeLive = useHomepageDropLive();
+  const [localLive, setLocalLive] = useState(false);
+  useEffect(() => {
+    if (onHome || !hydrated) return;
+    const check = () => setLocalLive(getDropCycleInfo(new Date()).phase === "LIVE");
+    check();
+    const id = setInterval(check, 30_000);
+    return () => clearInterval(id);
+  }, [onHome, hydrated]);
+  if (!hydrated) return false;
+  return onHome ? homeLive === true : localLive;
+}
+
 const subscribeToNothing = () => () => {};
 
 export function GlobalHeader() {
@@ -123,9 +146,11 @@ export function GlobalHeader() {
     pathname === l.href ? "page" as const
     : l.section && (sectionInView === l.section || (l.section === "the-drop" && pathname === "/live-drop")) ? "location" as const
     : undefined;
+  const shelfHidden = useShelfLinkHidden(pathname === "/", hydrated);
+  const navLinks = shelfHidden ? NAV_LINKS.filter((l) => l.section !== "the-shelf") : NAV_LINKS;
   // Phones: How It Works stays in the menu for signed-out visitors. Signed-in
   // ones have it in the account menu.
-  const phoneLinks = user ? NAV_LINKS : [...NAV_LINKS, HOW_IT_WORKS];
+  const phoneLinks = user ? navLinks : [...navLinks, HOW_IT_WORKS];
 
   return (
     <nav aria-label="Main" className="fixed left-0 right-0 top-0 z-50 bg-white font-dy shadow-[0_1px_0_var(--color-dy-line)]">
@@ -135,7 +160,7 @@ export function GlobalHeader() {
         </Link>
 
         <div className="hidden items-center gap-[clamp(24px,2.6vw,52px)] lg:flex">
-          {NAV_LINKS.map((l) => (
+          {navLinks.map((l) => (
             <Link key={l.href} href={l.href} aria-current={current(l)} className={`${linkClass} dy-navlink text-[clamp(15px,1.15vw,22px)] font-medium`}>{l.label}</Link>
           ))}
         </div>

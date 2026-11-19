@@ -30,7 +30,8 @@ export function AvatarChip({
       decorative
       fontSize={size === "sm" ? 10 : size === "lg" ? 14 : 11}
       fontWeight={700}
-      style={{ boxShadow: "0 0 0 2px #fff, 0 1px 2px rgba(15, 23, 42, 0.08)" }}
+      ring={{ width: 2, color: "#fff" }}
+      style={{ boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)" }}
     />
   );
 }

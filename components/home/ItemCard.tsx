@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { Heart, MapPin, Package, Radio } from "lucide-react";
 import { UserAvatar } from "@/components/UserAvatar";
+import { useAuth } from "@/context/AuthContext";
+import { isOwnListing } from "@/lib/ownListing";
 import type { HomeItem } from "./useHomeData";
 
 // Type scale per card size. `tight` is the Featured grid, which runs two
@@ -18,6 +20,8 @@ const SIZES = {
     place:  "mt-2 text-[clamp(17px,1.5vw,29px)]",
     small:  "text-[clamp(14px,1.15vw,22px)]",
     avatar: 28,
+    live:   "",
+    liveText: "",
   },
   tight: {
     pad:    "p-3 sm:p-[clamp(14px,1.3vw,26px)]",
@@ -27,6 +31,12 @@ const SIZES = {
     place:  "mt-1.5 text-[14px] sm:mt-2 sm:text-[clamp(17px,1.5vw,29px)]",
     small:  "text-[13px] sm:text-[clamp(14px,1.15vw,22px)]",
     avatar: 24,
+    // "LIVE DROP" on a ~138px card (320px phone, two columns): a little less
+    // tail and letter-spacing below sm, so it stays on one line. Under 440px
+    // it's still longer than the room left of the heart (80px at 320), so it
+    // sits just below the heart instead (10px + 44px + 8px), clear of it.
+    live:   "max-sm:pr-[1.55em] max-[439px]:top-[62px]",
+    liveText: "max-sm:tracking-[0.04em]",
   },
   compact: {
     pad:    "p-2.5",
@@ -36,12 +46,14 @@ const SIZES = {
     place:  "mt-1 text-[clamp(13px,0.9vw,17px)]",
     small:  "text-[clamp(12px,0.8vw,15px)]",
     avatar: 22,
+    live:   "",
+    liveText: "",
   },
 } as const;
 
-// The ribbon's colours. "Live Drop" is the Shelf section's while the Drop is
-// open (Shelf items are claimable with the Drop's then): the same red and
-// white as the live Drop section's "LIVE NOW" pill (5.0:1).
+// The ribbon's colours. "Live Drop" is "Worth a closer look"'s while the Drop
+// is open (everything there is claimable then): the same red and white as the
+// live Drop section's "LIVE NOW" pill (5.0:1).
 const RIBBON_TONE = {
   New:         "bg-dy-green-strong text-white",
   Available:   "bg-dy-orange text-dy-forest",
@@ -63,6 +75,10 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
   const [photoFailed, setPhotoFailed] = useState(false);
   const showPhoto = item.photo && !photoFailed;
   const s = SIZES[compact ? "compact" : tight ? "tight" : "default"];
+  // Your own listing gets no heart: nobody saves their own item (the backend
+  // refuses it). Same check as the buyer dashboard (lib/ownListing.ts).
+  const { user } = useAuth();
+  const isOwn = isOwnListing(item, user?.id);
 
   return (
     // A card surface (white, hairline border, soft shadow) so the details sit
@@ -92,12 +108,12 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
               <Package size={56} strokeWidth={1.25} aria-hidden />
             </div>
           )}
-          <span className={`dy-ribbon absolute left-0 top-[6%] py-[0.45em] pl-[1em] pr-[2em] font-medium ${s.ribbon} ${RIBBON_TONE[ribbon]}`}>
+          <span className={`dy-ribbon absolute left-0 top-[6%] whitespace-nowrap py-[0.45em] pl-[1em] pr-[2em] font-medium ${s.ribbon} ${RIBBON_TONE[ribbon]} ${ribbon === "Live Drop" ? s.live : ""}`}>
             {ribbon === "Live Drop" ? (
               // Styled like the "LIVE NOW" pill: broadcast icon, bold capitals.
               // align-top: on the baseline, the icon row made this ribbon a
               // few pixels taller than "Available".
-              <span className="inline-flex items-center gap-[0.4em] align-top font-bold uppercase tracking-[0.08em]">
+              <span className={`inline-flex items-center gap-[0.4em] align-top font-bold uppercase tracking-[0.08em] ${s.liveText}`}>
                 <Radio className="h-[1.1em] w-[1.1em] shrink-0" strokeWidth={2.25} aria-hidden />
                 {ribbon}
               </span>
@@ -131,16 +147,18 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
       </Link>
       {action && <div className="px-2.5 pb-2.5">{action}</div>}
       {/* Outside the link: a button can't nest in an anchor, and clicking it
-          must save rather than navigate. */}
-      <button
-        type="button"
-        onClick={() => onToggleSaved(item.id)}
-        aria-label={saved ? `Remove ${item.title} from saved items` : `Save ${item.title}`}
-        aria-pressed={saved}
-        className={`dy-focus absolute flex items-center justify-center rounded-full bg-white text-dy-line shadow-[0_4px_12px_-4px_rgba(15,54,11,0.25)] transition-colors hover:text-dy-green ${compact ? "right-1.5 top-1.5 h-11 w-11" : "right-[5%] top-[clamp(10px,1vw,20px)] h-[clamp(44px,3.65vw,70px)] w-[clamp(44px,3.65vw,70px)]"}`}
-      >
-        <Heart className={`h-1/2 w-1/2 ${saved ? "text-dy-green" : ""}`} fill={saved ? "currentColor" : "none"} strokeWidth={1.75} aria-hidden />
-      </button>
+          must save rather than navigate. Not on your own listing. */}
+      {!isOwn && (
+        <button
+          type="button"
+          onClick={() => onToggleSaved(item.id)}
+          aria-label={saved ? `Remove ${item.title} from saved items` : `Save ${item.title}`}
+          aria-pressed={saved}
+          className={`dy-focus absolute flex items-center justify-center rounded-full bg-white text-dy-line shadow-[0_4px_12px_-4px_rgba(15,54,11,0.25)] transition-colors hover:text-dy-green ${compact ? "right-1.5 top-1.5 h-11 w-11" : "right-[5%] top-[clamp(10px,1vw,20px)] h-[clamp(44px,3.65vw,70px)] w-[clamp(44px,3.65vw,70px)]"}`}
+        >
+          <Heart className={`h-1/2 w-1/2 ${saved ? "text-dy-green" : ""}`} fill={saved ? "currentColor" : "none"} strokeWidth={1.75} aria-hidden />
+        </button>
+      )}
     </article>
   );
 }

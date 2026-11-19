@@ -4,6 +4,7 @@ import Link from "next/link";
 import { SELL_HREF } from "@/components/GlobalHeader";
 import { ItemCard, ItemCardSkeleton, ItemsEmptyState } from "./ItemCard";
 import type { HomeItem, LoadState } from "./useHomeData";
+import { isOwnListing } from "@/lib/ownListing";
 
 export interface LiveDropData {
   items: HomeItem[];
@@ -60,7 +61,7 @@ export function LiveDropPanel({ items, state, savedIds, claimedIds, userId, onTo
                 ribbon="Available"
                 saved={savedIds.has(item.id)}
                 onToggleSaved={onToggleSaved}
-                action={<ClaimAction item={item} claimed={claimedIds.has(item.id)} isOwn={!!userId && item.sellerId === userId} />}
+                action={<ClaimAction item={item} claimed={claimedIds.has(item.id)} isOwn={isOwnListing(item, userId)} />}
               />
             </li>
           ))}

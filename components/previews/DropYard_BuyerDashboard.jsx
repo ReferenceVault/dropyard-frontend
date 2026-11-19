@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 // uploadItemPhoto is named for its first caller but is a generic authed
@@ -38,6 +38,8 @@ import { ThreadEmptyState, matchesOpenTarget, conversationFromUrl } from "@/comp
 import { claimPill, isLiveClaim } from "@/components/messages/claimStatus";
 import { inboxTime, messageTime, previewText, withDaySeparators } from "@/components/messages/format";
 import { sellerLocationText } from "@/lib/sellerLocation";
+import { BARRHAVEN_NEIGHBOURHOODS } from "@/lib/barrhaven";
+import { isOwnListing } from "@/lib/ownListing";
 import { CategoryPicker } from "@/components/CategorySelect";
 import { CATEGORIES, QUICK_PICK_VALUES, categoryFor, categoryLabel, categoryEmoji, categoryValueFromLabel, matchesCategory } from "@/lib/categories";
 import { useAuth } from "@/context/AuthContext";
@@ -404,6 +406,10 @@ const C = {
   smoke:     "#D4DDD3",
   ash:       "#60745D",
   mink:      "#5F755C",
+  // A step darker than mink, for the Discover search bar's grey values: they
+  // sit on white and on the pale green (or amber) search pill, where mink
+  // drops to 4.2:1. This one is 6.4:1 on white and 5.3:1 on greenMist.
+  slate:     "#4F654C",
   ink:       "#0F360B",
   green:     "#33802B",
   greenDeep: "#2C6126",
@@ -566,6 +572,10 @@ function uniqueSellers(items) {
   return Array.from(byKey.values());
 }
 
+// The official Barrhaven neighbourhood names: the only values the Discover
+// Neighbourhood filter offers (see hoods in the Discover view).
+const OFFICIAL_HOOD_NAMES = new Set(BARRHAVEN_NEIGHBOURHOODS.map((n) => n.name));
+
 /* ============================================================
    NEIGHBOURS SELLING NOW — the avatar row on the Discover hero
    ============================================================ */
@@ -573,47 +583,128 @@ function uniqueSellers(items) {
 // items queued for the current Drop and, while it's live, live Drop items.
 // GET /api/drop/sellers works this out on the server (the item feed is
 // paginated, so the loaded items would miss sellers), de-duplicated by seller
-// id, without the signed-in viewer (the session cookie tells it who that is),
-// newest first. Refetched when the Drop's status changes (e.g. it opens) and
-// on a timer: every minute while live, every five minutes otherwise.
+// id, the signed-in viewer included like anyone else (so the total is the
+// homepage's "Neighbours selling" for everyone), first lister first (by each
+// seller's earliest available item). Refetched when the Drop's status changes
+// (e.g. it opens), on a timer (every minute while live, every five minutes
+// otherwise), when the tab comes back into view, and when the viewer's own
+// claims move.
 // null until the first answer, or if the server can't be reached: the row then
 // stays hidden rather than showing invented neighbours.
+// 40 is more than the widest row shows (about 20 at 1440px); the rest are
+// counted in the "+N".
+const SELLER_ROW_FETCH = 40;
 function useActiveSellers(status) {
   const [summary, setSummary] = useState(null);
+  const loadRef = useRef(null);
   useEffect(() => {
     let cancelled = false;
-    const load = () => apiRequest("/api/drop/sellers?limit=10")
+    const load = () => apiRequest("/api/drop/sellers?limit=" + SELLER_ROW_FETCH)
       .then((d) => {
         if (cancelled || !d || typeof d.total !== "number") return;
-        setSummary({ total: d.total, sellers: Array.isArray(d.sellers) ? d.sellers : [] });
+        // viewer: the signed-in seller's own entry (see SellerAvatarRow), null otherwise.
+        setSummary({ total: d.total, sellers: Array.isArray(d.sellers) ? d.sellers : [], viewer: d.viewer && d.viewer.id ? d.viewer : null });
       })
       .catch(() => { /* keep what's shown */ });
     load();
     const id = setInterval(load, status === "LIVE" ? 60_000 : 5 * 60_000);
-    return () => { cancelled = true; clearInterval(id); };
+    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    loadRef.current = load;
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", onVisible); loadRef.current = null; };
   }, [status]);
+  useSocketEvent("claim:new", () => loadRef.current?.());
+  useSocketEvent("claim:updated", () => loadRef.current?.());
   return summary;
 }
 
-// How many avatars fit nicely across the banner before the "+N" pill.
-function sellerRowMax(width) {
-  return width < 640 ? 5 : width < 1024 ? 7 : 9;
+// ── The row's geometry ──────────────────────────────────────────────────────
+// A 36px picture with a thin white edge (UserAvatar's ring, 1.5px): 39px
+// across (it was 32). Neighbours overlap by 10px, so each new circle adds 29px.
+const ROW_PIC = 36;
+const ROW_EDGE = 1.5;
+const ROW_D = ROW_PIC + 2 * ROW_EDGE;  // 39
+const ROW_OVERLAP = 10;
+const ROW_STEP = ROW_D - ROW_OVERLAP;  // 29
+// The "+N" bubble: a circle the same size as the others (36px + the white
+// edge), a pill when the number needs more room. Width as seen, edge included,
+// estimated a little generously (8px a character + 9px padding each side).
+const rowBubbleWidth = (more) => Math.max(ROW_D, 18 + 8 * ("+" + more).length + 2 * ROW_EDGE);
+
+// How many circles fit in `avail` px with the "+N" bubble (tucked 10px under
+// the last circle) when not everyone fits. Not a fixed count: it follows the
+// space measured on screen.
+function sellerRowFit(avail, total, loaded) {
+  let n = Math.min(total, loaded);
+  const width = (k) => ROW_D + (k - 1) * ROW_STEP + (total - k > 0 ? rowBubbleWidth(total - k) - ROW_OVERLAP : 0);
+  while (n > 1 && width(n) > avail) n--;
+  return Math.max(n, Math.min(1, loaded));
 }
 
 // One group, one label ("12 neighbours are selling right now"); the avatars
 // inside are decorative. Nothing at all when nobody is selling.
-function SellerAvatarRow({ summary, max, label, ring, pillBg }) {
-  if (!summary || summary.total <= 0 || summary.sellers.length === 0) return null;
-  const shown = summary.sellers.slice(0, Math.min(max, summary.total));
+//
+// Spreads across the banner: on phones (under 640px) the whole width of its
+// column; wider, its column up to the banner's halfway line, so it never
+// reaches the countdown. The first listers come first (the server's order);
+// whoever doesn't fit is counted in the "+N", which sits behind the last
+// circle. No coloured outlines: a thin white edge keeps overlapping circles
+// apart on any banner.
+function SellerAvatarRow({ summary, label, pillBg }) {
+  const ref = useRef(null);
+  const [avail, setAvail] = useState(null);
+  const hasRow = !!summary && summary.total > 0 && summary.sellers.length > 0;
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const hero = el.closest(".dy-hero-bleed") || el.closest("section");
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      let w = r.width;
+      if (hero && window.innerWidth >= PHONE_HERO_MAX) {
+        const h = hero.getBoundingClientRect();
+        w = Math.min(w, h.left + h.width / 2 - r.left);
+      }
+      setAvail(Math.max(0, Math.floor(w)));
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro) { ro.observe(el); if (hero) ro.observe(hero); }
+    window.addEventListener("resize", measure);
+    return () => { if (ro) ro.disconnect(); window.removeEventListener("resize", measure); };
+  }, [hasRow]);
+  if (!hasRow) return null;
+  const count = avail === null ? 0 : sellerRowFit(avail, summary.total, summary.sellers.length);
+  // A seller always sees themselves. If their place in the order (earliest
+  // listers first) falls in the "+N", or past the list the API sent, their
+  // avatar takes the last visible circle, just before "+N": everyone else
+  // keeps their order, and "+N" still counts exactly the people not shown
+  // (the one their avatar displaced, instead of them). Already among the
+  // visible circles, they stay where they are.
+  const viewer = summary.viewer || null;
+  let shown = summary.sellers.slice(0, count);
+  if (viewer && count > 0 && !shown.some((s) => s.id === viewer.id)) {
+    shown = [...summary.sellers.filter((s) => s.id !== viewer.id).slice(0, count - 1), viewer];
+  }
   const more = summary.total - shown.length;
   return (
-    <div role="img" aria-label={label} style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", maxWidth: "100%" }}>
+    <div ref={ref} role="img" aria-label={label} style={{ width: "100%", height: ROW_D, display: "flex", alignItems: "center", flexWrap: "nowrap", overflow: "visible" }}>
       {shown.map((n, i) => (
-        <UserAvatar key={n.id} avatar={n.avatar} name={n.name} size={32} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={10}
-          style={{ border: "2px solid " + ring, marginLeft: i === 0 ? 0 : -8, zIndex: shown.length - i, position: "relative", flexShrink: 0 }}/>
+        <UserAvatar key={n.id} avatar={n.avatar} name={n.name} size={ROW_PIC} decorative initialsBg={avatarBg(n.name)} fontFamily={F.head} fontSize={13}
+          ring={{ width: ROW_EDGE, color: "#fff" }}
+          // The ring takes no layout space, so the margins add it back: each
+          // circle is ROW_D wide in the layout and overlaps the one before.
+          style={{ margin: ROW_EDGE, marginLeft: i === 0 ? ROW_EDGE : ROW_EDGE - ROW_OVERLAP, zIndex: shown.length - i + 1, position: "relative", flexShrink: 0 }}/>
       ))}
-      {more > 0 && (
-        <div aria-hidden="true" style={{ minWidth: 32, height: 32, padding: "0 7px", borderRadius: 999, background: pillBg, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: F.head, fontSize: 10, fontWeight: 800, border: "2px solid " + ring, marginLeft: -8, position: "relative", flexShrink: 0 }}>
+      {shown.length > 0 && more > 0 && (
+        <div aria-hidden="true" style={{
+          minWidth: ROW_PIC, height: ROW_PIC, padding: "0 9px", boxSizing: "border-box", borderRadius: 999,
+          background: pillBg, color: "#fff", boxShadow: "0 0 0 " + ROW_EDGE + "px #fff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontFamily: F.head, fontSize: 12.5, fontWeight: 800, letterSpacing: "-0.01em", fontVariantNumeric: "tabular-nums",
+          // Behind the last circle, which overlaps it.
+          marginLeft: -ROW_OVERLAP + ROW_EDGE, position: "relative", zIndex: 1, flexShrink: 0,
+        }}>
           +{more}
         </div>
       )}
@@ -743,11 +834,12 @@ function UserMenu({ user, onSignout, onOpenSettings, dropState, round = false })
           background: C.paper, border: "none", boxShadow: HEADER_ROUND_SHADOW,
           cursor: "pointer", padding: 0, overflow: "hidden", flexShrink: 0,
         } : {
+          // The white band and green outline are the avatar's own ring (below),
+          // drawn round the 34px picture; this button only holds it.
           width: 38, height: 38, borderRadius: "50%",
           display: "flex", alignItems: "center", justifyContent: "center",
-          background: "transparent",
-          border: "2px solid " + C.paper, boxShadow: "0 0 0 1.5px " + C.greenMist,
-          cursor: "pointer", padding: 0, overflow: "hidden",
+          background: "transparent", border: "none",
+          cursor: "pointer", padding: 0,
         }}
       >
         {/* The buyer's own initials keep the Drop colours (Point 2): brown
@@ -762,6 +854,7 @@ function UserMenu({ user, onSignout, onOpenSettings, dropState, round = false })
           initialsBg={dropState === "live" ? C.green : C.amberDeep}
           fontFamily={F.head}
           fontSize={14}
+          ring={round ? null : { gap: 2, gapColor: C.paper, width: 1.5, color: C.greenMist }}
         />
       </button>
       {open && (
@@ -983,6 +1076,12 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
   const livePill = dropState === "live";
   const { isMobile, width } = useViewport();
   const roundButtons = width < PHONE_HERO_MAX;
+  // Tablet widths (769–1,099px): the full header needs ~1,010px (logo 153,
+  // five tabs 452, bell + Switch to Seller + avatar 294, plus gutters), so at
+  // 769 it ran 57px off the side and squeezed the logo to nothing. Here the
+  // logo keeps its size (a bit smaller), tabs and gutters tighten, and Switch
+  // to Seller becomes the icon-only button phones use (same name, tooltip).
+  const tablet = !isMobile && width < 1100;
   const navItems = [
     { id:"discover", label:"Discover" },
     { id:"saved",    label:"Saved",    badge: savedCount  > 0 ? savedCount  : null },
@@ -994,19 +1093,19 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
   ];
   return (
     <header style={{ borderBottom: "1px solid " + C.fawn, background: C.page, position: "sticky", top: 0, zIndex: Z.header }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: isMobile ? "10px 16px" : "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: isMobile ? 10 : 24 }}>
-        <Link href="/" style={{ display: "block", border: "none", background: "transparent", cursor: "pointer", padding: 0, textDecoration: "none", ...(roundButtons ? { flex: "0 1 129px", minWidth: 0 } : {}) }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: isMobile ? "10px 16px" : tablet ? "14px 20px" : "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: isMobile ? 10 : tablet ? 12 : 24 }}>
+        <Link href="/" style={{ display: "block", border: "none", background: "transparent", cursor: "pointer", padding: 0, textDecoration: "none", ...(roundButtons ? { flex: "0 1 129px", minWidth: 0 } : isMobile ? {} : { flexShrink: 0 }) }}>
           {/* Sizes are for the trimmed asset, whose artwork fills ~94% of the
               box. Logo_1.png was 54% whitespace, so its 44px box only drew a
               ~20px mark — which is why the logo looked small next to the nav. */}
           {/* With the round buttons on a 320px phone there isn't room for the
               full 129px, so the logo scales down whole rather than squashing. */}
-          <img src={LOGO_SRC} alt="DropYard" style={roundButtons ? { width: "100%", maxWidth: 129, height: "auto", display: "block" } : { height: isMobile ? 32 : 38, width: "auto", display: "block" }}/>
+          <img src={LOGO_SRC} alt="DropYard" style={roundButtons ? { width: "100%", maxWidth: 129, height: "auto", display: "block" } : { height: isMobile || tablet ? 32 : 38, width: "auto", display: "block" }}/>
         </Link>
 
         {/* Desktop primary nav — replaced by MobileBottomNav on small screens. */}
         {!isMobile && (
-          <nav style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <nav style={{ display: "flex", alignItems: "center", gap: tablet ? 0 : 4, minWidth: 0 }}>
             {navItems.map(item => {
               const active = page === item.id;
               // Same padding active or not, so the underline never shifts
@@ -1015,11 +1114,12 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
                 <button key={item.id} aria-current={active ? "page" : undefined} onClick={() => { onReset && onReset(); setPage(item.id); }} style={{
                   position: "relative",
                   display: "flex", alignItems: "center", gap: 7,
-                  padding: "9px 16px",
+                  // 8px under 880: room for two-digit Saved/Claims counts at 769.
+                  padding: tablet ? (width < 880 ? "9px 8px" : "9px 10px") : "9px 16px",
                   border: "none", borderRadius: 999,
                   background: active && livePill ? C.greenMist : "transparent",
                   color: active ? (livePill ? C.greenDeep : activeColor) : C.mink,
-                  fontSize: 15, fontWeight: active ? 800 : 600,
+                  fontSize: tablet ? 14 : 15, fontWeight: active ? 800 : 600, whiteSpace: "nowrap",
                   cursor: "pointer", fontFamily: F.head,
                   transition: "color 200ms, background-color 200ms",
                 }}>
@@ -1052,7 +1152,7 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
                     <span style={{ fontSize: 11, fontWeight: 800, padding: "1px 8px", borderRadius: 20, background: active ? activeColor : C.fawn, color: active ? "#fff" : C.mink }}>{item.badge}</span>
                   )}
                   {active && !livePill && (
-                    <span aria-hidden="true" style={{ position: "absolute", left: 12, right: 12, bottom: 0, height: 3, borderRadius: "3px 3px 0 0", background: activeColor }}/>
+                    <span aria-hidden="true" style={{ position: "absolute", left: tablet ? 8 : 12, right: tablet ? 8 : 12, bottom: 0, height: 3, borderRadius: "3px 3px 0 0", background: activeColor }}/>
                   )}
                 </button>
               );
@@ -1060,7 +1160,7 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
           </nav>
         )}
 
-        <div className={roundButtons ? "dy-buyer-actions" : undefined} style={{ display: "flex", alignItems: "center", flexShrink: 0, gap: roundButtons ? (width < 360 ? 7 : 10) : isMobile ? 6 : 12 }}>
+        <div className={roundButtons ? "dy-buyer-actions" : undefined} style={{ display: "flex", alignItems: "center", flexShrink: 0, gap: roundButtons ? (width < 360 ? 7 : 10) : isMobile ? 6 : tablet ? 8 : 12 }}>
           {/* BUG-064 — socket health pulse. Visible at a glance so we can spot
               real-time outages without DevTools. Green=connected, amber=
               reconnecting, gray=disconnected. */}
@@ -1071,7 +1171,7 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
           {/* Switch-to-Seller pill. On mobile, render an icon-only compact variant
              so it still fits at 360px alongside logo + avatar. Desktop keeps the
              full label. */}
-          <SwitchToSellerButton onClick={() => onSwitchRole && onSwitchRole()} compact={isMobile} round={roundButtons} unread={otherUnread}/>
+          <SwitchToSellerButton onClick={() => onSwitchRole && onSwitchRole()} compact={isMobile || tablet} round={roundButtons} unread={otherUnread}/>
           <UserMenu user={user} onSignout={onSignout} onOpenSettings={() => { onReset && onReset(); setPage("settings"); }} dropState={dropState} round={roundButtons}/>
         </div>
       </div>
@@ -1265,12 +1365,20 @@ function PhoneDropHero({ live = false, photo, pill, headline, body, avatars = nu
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: HERO_WASH }}/>
 
       <div style={{ position: "relative" }}>
-        {/* Status pill: brown before the Drop, green while it's live. White on
-            either is above 4.5:1. */}
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 11px", borderRadius: 999, background: accent, boxShadow: "0 2px 10px " + accent + "40" }}>
-          <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", flexShrink: 0, animation: live ? "pulseGreen 1.6s ease-in-out infinite" : "pulseAmber 2.4s ease-in-out infinite" }}/>
-          <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: "#fff", letterSpacing: "0.06em", textTransform: "uppercase" }}>{pill}</span>
-        </span>
+        {/* Status pill. Live: solid green with a pulsing dot (white, 4.9:1).
+            Between Drops: the client's pale green "NEXT LIVE DROP" pill with a
+            calendar (greenDeep on greenMist, 6.2:1), as on wider screens. */}
+        {live ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 11px", borderRadius: 999, background: accent, boxShadow: "0 2px 10px " + accent + "40" }}>
+            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", flexShrink: 0, animation: "pulseGreen 1.6s ease-in-out infinite" }}/>
+            <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: "#fff", letterSpacing: "0.06em", textTransform: "uppercase" }}>{pill}</span>
+          </span>
+        ) : (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 11px", borderRadius: 999, background: C.greenMist, boxShadow: "inset 0 0 0 1px " + C.green + "30" }}>
+            <CalendarDays size={15} strokeWidth={2.4} style={{ color: C.greenDeep, flexShrink: 0 }} aria-hidden="true"/>
+            <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.greenDeep, letterSpacing: "0.06em", textTransform: "uppercase" }}>{pill}</span>
+          </span>
+        )}
 
         <h1 style={{ fontFamily: F.head, fontSize: "clamp(25px, 7.4vw, 32px)", fontWeight: 800, color: CARD.ink, letterSpacing: "-0.025em", lineHeight: 1.14, marginTop: 14, overflowWrap: "anywhere" }}>
           {headline}
@@ -1292,8 +1400,10 @@ function PhoneDropHero({ live = false, photo, pill, headline, body, avatars = nu
           boxShadow: "0 18px 36px -20px rgba(120, 72, 0, 0.45), 0 2px 6px rgba(120, 72, 0, 0.06)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: "50%", background: accent, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Clock size={20} strokeWidth={2.4} style={{ color: "#fff" }}/>
+            {/* Live: white clock on green. Between Drops: the client's brown
+                clock on a pale cream circle (4.1:1; icons need 3:1). */}
+            <span aria-hidden="true" style={{ width: 40, height: 40, borderRadius: "50%", background: live ? accent : C.amberSoft, boxShadow: live ? "none" : "inset 0 0 0 1px " + C.amberDeep + "26", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Clock size={20} strokeWidth={2.4} style={{ color: live ? "#fff" : C.amberDeep }}/>
             </span>
             <span aria-hidden="true" style={{ fontFamily: F.head, fontSize: 16, fontWeight: 500, color: HERO_LABEL }}>{cardLabel}</span>
             <span style={visuallyHiddenStyle}>{spoken}</span>
@@ -1532,8 +1642,8 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
   // only those with items queued for the Drop. Preview gets its own wording.
   const sellerSummary = useActiveSellers(schedule.status);
   const inPreview = schedule.ready && getDropCycleInfo(schedule.now).phase === "PREVIEW";
-  const sellerRow = (ring) => (
-    <SellerAvatarRow summary={sellerSummary} max={sellerRowMax(width)} ring={ring} pillBg={C.amberDeep}
+  const sellerRow = () => (
+    <SellerAvatarRow summary={sellerSummary} pillBg={C.amberDeep}
       label={sellerSummary ? sellersLabel(sellerSummary.total, inPreview ? "preview" : "between", openDay) : ""}/>
   );
   const hasSellers = !!sellerSummary && sellerSummary.total > 0;
@@ -1543,24 +1653,26 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
   const displayCount = queuedCount == null ? 47 : queuedCount;
 
   // Body copy. The zero case keeps its own: "preview what your neighbours are
-  // selling" is an empty promise when nothing has been queued yet. It must
+  // selling" is an empty promise when nothing has been queued yet, so it points
+  // at the Shelf (the client's wording), adding "Your reminder is on." once
+  // the buyer has turned it on; the Remind me button speaks for itself. It must
   // stay accurate: Remind me emails the buyer BEFORE the Drop opens (24h, 1h,
   // 15m), and only once they've turned it on. It used to say "we'll notify
   // you the moment the Drop opens", which nothing does.
   const bodyCopy = displayCount > 0
     ? <>Preview what your neighbours are selling and save your favourites before the {openDay} Drop opens.</>
     : reminded
-    ? <>Items aren&apos;t queued yet. Your reminder is on: we&apos;ll email you before the Drop opens.</>
-    : <>Items aren&apos;t queued yet. Tap <b style={{ color: CARD.ink, fontWeight: 700 }}>Remind me</b> and we&apos;ll email you before the Drop opens.</>;
+    ? <>Explore great finds on The Shelf while we count down to the next Live Drop. Your reminder is on.</>
+    : <>Explore great finds on The Shelf while we count down to the next Live Drop.</>;
 
   if (width < PHONE_HERO_MAX) {
     return (
       <PhoneDropHero
         photo={BANNER_BETWEEN_SRC}
-        pill={"Opens " + openDay}
+        pill="Next Live Drop"
         headline="Good finds. Right around the corner."
         body={bodyCopy}
-        avatars={hasSellers ? sellerRow(HERO_CREAM) : null}
+        avatars={hasSellers ? sellerRow() : null}
         cardLabel="Drop opens in"
         totalSec={schedule.ready ? totalSec : null}
         when={openWhen}
@@ -1608,13 +1720,13 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
       <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
         {/* Left side */}
         <div style={{ flex: 1, minWidth: "min(280px, 100%)" }}>
-          {/* OPENS SATURDAY pill — amber parallel to LIVE NOW */}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px 4px 10px", borderRadius: 999, background: C.amberDeep, boxShadow: "0 2px 10px " + C.amberDeep + "55", marginBottom: 8 }}>
-            <span style={{ position: "relative", display: "inline-flex", width: 6, height: 6 }}>
-              <span style={{ position: "absolute", inset: -2, borderRadius: "50%", background: "#fff", opacity: 0.4, animation: "pulseAmber 2.4s ease-in-out infinite" }}/>
-              <span style={{ position: "relative", width: 6, height: 6, borderRadius: "50%", background: "#fff" }}/>
-            </span>
-            <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: "#fff", letterSpacing: "0.1em" }}>{"OPENS " + openDay.toUpperCase()}</span>
+          {/* NEXT LIVE DROP pill (the client's): pale green with a calendar,
+              dark green capitals (greenDeep on greenMist, 6.2:1). Same size
+              and place as the OPENS SATURDAY pill it replaces; the day and
+              hour are in the countdown bar below. */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px 4px 10px", borderRadius: 999, background: C.greenMist, boxShadow: "inset 0 0 0 1px " + C.green + "30", marginBottom: 8 }}>
+            <CalendarDays size={12} strokeWidth={2.4} style={{ color: C.greenDeep, flexShrink: 0 }} aria-hidden="true"/>
+            <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.greenDeep, letterSpacing: "0.1em" }}>NEXT LIVE DROP</span>
           </span>
 
           {/* Headline — the countdown pill below already spells out the day and
@@ -1629,7 +1741,7 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
           </p>
 
           {/* Avatar row — every neighbour selling right now (see sellerRow). */}
-          {hasSellers && sellerRow("#FFF4E0")}
+          {hasSellers && sellerRow()}
         </div>
 
       </div>
@@ -1650,10 +1762,10 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
         backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
       }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-          {/* Clock badge — the same amber as the Remind me button at the other
-              end of the pill, so the two read as one row. */}
-          <span style={{ width: 30, height: 30, borderRadius: "50%", background: C.amberDeep, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Clock size={16} strokeWidth={2.4} style={{ color: "#fff" }}/>
+          {/* Clock badge (the client's): a brown clock on a pale cream circle
+              (amberDeep on amberSoft, 4.1:1; icons need 3:1). */}
+          <span style={{ width: 30, height: 30, borderRadius: "50%", background: C.amberSoft, boxShadow: "inset 0 0 0 1px " + C.amberDeep + "26", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Clock size={16} strokeWidth={2.4} style={{ color: C.amberDeep }} aria-hidden="true"/>
           </span>
           <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 500, color: HERO_LABEL, whiteSpace: "nowrap" }}>Drop opens in</span>
         </span>
@@ -1775,7 +1887,7 @@ function DropCloseDial({ t, pad, remainingSec }) {
    Deep ink/charcoal hero. LIVE NOW pill, headline with amber
    underline on "Barrhaven", avatar stack, countdown dial.
    ============================================================ */
-function WelcomeBand({ itemsCount = null }) {
+function WelcomeBand() {
   // Countdown to Drop close (Sunday 7 PM by default), read from the shared
   // Drop clock rather than a private `new Date()` tick. Two reasons: the band
   // now draws an arc of the window remaining, which is nonsense if it
@@ -1800,16 +1912,18 @@ function WelcomeBand({ itemsCount = null }) {
   };
   const pad = (n) => n < 10 ? "0" + n : "" + n;
 
-  // Claimable items in this Drop. Null = not known (no prop passed) — the
-  // copy then drops the number entirely rather than inventing one. This used
-  // to be a hardcoded "89" that never moved no matter what was listed.
-  const displayCount = typeof itemsCount === "number" ? itemsCount : null;
+  // Items claimable now, Drop and Shelf: the server's count (liveStats from
+  // GET /api/drop/current), the same figure as "Items available" on the
+  // homepage's live card. Null until it arrives: the copy then leaves the
+  // number out rather than inventing one.
+  const displayCount = typeof schedule.liveStats?.items === "number" ? schedule.liveStats.items : null;
   // The avatar row: every neighbour selling in the live Drop (Shelf included,
-  // since it joins the Drop), from useActiveSellers.
+  // since it joins the Drop), from useActiveSellers. Its total is the
+  // homepage's "Neighbours selling" (same server rule, viewer included).
   const sellerSummary = useActiveSellers(schedule.status);
   const hasSellers = !!sellerSummary && sellerSummary.total > 0;
-  const sellerRow = (ring) => (
-    <SellerAvatarRow summary={sellerSummary} max={sellerRowMax(width)} ring={ring} pillBg={C.green}
+  const sellerRow = () => (
+    <SellerAvatarRow summary={sellerSummary} pillBg={C.green}
       label={sellerSummary ? sellersLabel(sellerSummary.total, "live") : ""}/>
   );
 
@@ -1834,7 +1948,7 @@ function WelcomeBand({ itemsCount = null }) {
         ) : (
           <>Nothing is claimable in this Drop right now — new items show up here the moment a neighbour posts one. The window closes {closeDay} at {closeTime}.</>
         )}
-        avatars={hasSellers ? sellerRow(HERO_CREAM) : null}
+        avatars={hasSellers ? sellerRow() : null}
         cardLabel="Drop closes in"
         totalSec={now ? totalSec : null}
         when={closeDay + " " + closeTime}
@@ -1888,8 +2002,14 @@ function WelcomeBand({ itemsCount = null }) {
           image shines through. Lighter than the mosaic version needed: a single
           photograph survives being seen, where tiled thumbnails needed burying. */}
       {/* Stops in px like the between band's: at 768px the % stops left
-          the end of the copy over the photo's bright patches at ~3.6:1. */}
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg, rgba(20, 16, 12, 0.90) 0px, rgba(20, 16, 12, 0.84) 600px, rgba(20, 16, 12, 0.40) 880px, rgba(20, 16, 12, 0.06) 100%)" }}/>
+          the end of the copy over the photo's bright patches at ~3.6:1.
+          Lighter than it was (0.90 → 0.58 at the edge, 0.84 → 0.50 at 600px),
+          so the photo shows on the left too, with a soft darkening only behind
+          the text block (the ellipse) to keep it readable: measured against the
+          photo behind every line at 768–1600px, the body text stays at 4.5:1
+          or more (lowest 4.56:1) and the heading far above 3:1. From 880px
+          rightwards it's unchanged, so the countdown dial reads as before. */}
+      <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 640px 230px at 290px 52%, rgba(20, 16, 12, 0.30) 0%, rgba(20, 16, 12, 0.18) 55%, rgba(20, 16, 12, 0) 100%), linear-gradient(90deg, rgba(20, 16, 12, 0.58) 0px, rgba(20, 16, 12, 0.50) 600px, rgba(20, 16, 12, 0.40) 880px, rgba(20, 16, 12, 0.06) 100%)" }}/>
 
       {/* Secondary scrim — adds warmth and depth at the bottom */}
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 0%, transparent 55%, rgba(31, 90, 24, 0.18) 100%)" }}/>
@@ -1925,7 +2045,7 @@ function WelcomeBand({ itemsCount = null }) {
             )}
           </p>
           {/* Avatar row — every neighbour selling in the live Drop. */}
-          {hasSellers && sellerRow(C.ink)}
+          {hasSellers && sellerRow()}
         </div>
         {/* Right: countdown dial */}
         <DropCloseDial t={t} pad={pad} remainingSec={totalSec}/>
@@ -2194,14 +2314,48 @@ function MobileFilterBar({ filter, setFilter, search, setSearch, cat, setCat, ho
 }
 
 function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, setHood, cond, setCond, sort, setSort, panelOpen, setPanelOpen, state, hoods = [] }) {
-  const { isMobile } = useViewport();
+  const { isMobile, width: viewportWidth } = useViewport();
   // All hooks must run unconditionally — when the viewport crosses the mobile
   // breakpoint at hydration (SSR width default → real client width), the early
   // return below would change the hook count and React errors out. Hooks first,
   // then branch.
   const [activeSegment, setActiveSegment] = useState(null); // "search" | "category" | "hood" | "cond" | "sort" | null
   const [hoveredSegment, setHoveredSegment] = useState(null);
+  // The segment with keyboard focus, raised above its neighbours so its
+  // focus ring isn't painted over by the next segment.
+  const [focusedSegment, setFocusedSegment] = useState(null);
   const [compact, setCompact] = useState(false);
+  // The capsule's own width, measured, picks how roomy the segments can be
+  // (see barFit below). null until measured: then the viewport stands in.
+  const [barWidth, setBarWidth] = useState(null);
+  const barObserver = useRef(null);
+  const capsuleRef = useCallback((node) => {
+    if (barObserver.current) { barObserver.current.disconnect(); barObserver.current = null; }
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => setBarWidth(Math.round(entry.contentRect.width)));
+    ro.observe(node);
+    barObserver.current = ro;
+  }, []);
+  // An open panel closes with Escape (focus goes back to its segment, so a
+  // keyboard user isn't left on a removed element) or with a click anywhere
+  // outside the bar and its panel. Done and the round button close it too.
+  const railRef = useRef(null);
+  const closePanel = useCallback((returnFocus) => {
+    setActiveSegment((open) => {
+      if (open && returnFocus) {
+        requestAnimationFrame(() => railRef.current?.querySelector(`[data-seg="${open}"]`)?.focus());
+      }
+      return null;
+    });
+  }, []);
+  useEffect(() => {
+    if (!activeSegment) return;
+    const onKey = (e) => { if (e.key === "Escape") closePanel(true); };
+    const onDown = (e) => { if (railRef.current && !railRef.current.contains(e.target)) closePanel(false); };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDown); };
+  }, [activeSegment, closePanel]);
   useEffect(() => {
     function onScroll() {
       const y = window.scrollY || document.documentElement.scrollTop || 0;
@@ -2270,67 +2424,105 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
   const sortLabel = sorts.find(so => so.id === sort)?.label || "Just listed";
   const sortShort = sort === "newest" ? "Just listed" : sort === "nearest" ? "Closest" : sort === "priceLow" ? "Price: low\u2192high" : "Price: high\u2192low";
 
+  // How roomy the bar can be, from its measured width (the viewport less the
+  // page gutters until the first measurement). The client's design (15px
+  // labels, 14px values, 21px icons, the full search hint) needs about
+  // 1,100px for all five segments, which the bar has from ~1,180px wide
+  // screens up (it tops out at 1,216px).
+  //   full    ≥ 1,100px: the design as drawn.
+  //   medium  ≥ 880px (around 1024): tighter padding, a shorter search hint
+  //           ("Items or categories") and "Any" for an unset filter.
+  //   narrow  < 880px (769–~950): also 14/13px text, no icons on the four
+  //           filters (Search keeps its own) and "Keywords" for the hint.
+  //           Still larger than before (11/13px).
+  // A long chosen value ("Appliances & Kitchen") ends in "…" at any size;
+  // its full text is the segment's tooltip.
+  const measuredBar = barWidth ?? Math.min(1216, viewportWidth - 64);
+  const barFit = measuredBar >= 1100 ? "full" : measuredBar >= 880 ? "medium" : "narrow";
+  const narrow = barFit === "narrow";
+  const isLiveState = state === "live";
+
   // Segment style helpers — state-aware
   const segStyleBase = {
-    flex: 1,
+    // Sized by content, then sharing what's left: "Neighbourhood" gets the
+    // room its longer words need instead of the same width as "Sort by".
+    flex: "1 1 auto",
     // Lets a segment shrink below its text, which then truncates, rather than
     // pushing the capsule past the page edge at tablet widths.
     minWidth: 0,
-    // Tighter than it was: five segments share the capsule now, and the old
-    // 28px gutters pushed the Sort value under the search button.
-    padding: "14px 18px",
+    padding: barFit === "full" ? "10px 18px" : barFit === "medium" ? "10px 14px" : "9px 11px",
     background: "transparent",
     border: "none",
     cursor: "pointer",
     textAlign: "left",
     fontFamily: F.head,
-    transition: "all 180ms",
+    transition: "background-color 180ms, box-shadow 180ms",
     position: "relative",
     borderRadius: 999,
   };
+  // Only the ACTIVE segment is highlighted: the one whose panel is open
+  // (Search's panel holds its text field). It gets the tinted pill, green
+  // during the live Drop, pale amber between Drops, with a faint edge and
+  // glow in the same hue. Every other segment, Search included, is plain;
+  // hovering one shows a fainter wash of the same tint. Nothing open,
+  // nothing highlighted. Text on both tints stays AA: values (slate) 5.3:1
+  // on greenMist and 6.0:1 on amberMist; labels (ink) far above.
   const segStyle = (seg) => {
     const isActive = activeSegment === seg;
     const isHovered = hoveredSegment === seg && !isActive;
-    const isLive = state === "live";
-    // Live mode: hover = soft green tint, active = greenMist with glow
-    // Between mode: hover = sand, active = paper neutral lift
-    const hoverFill   = isLive ? C.green + "14" : C.sand;
-    const activeFill  = isLive ? C.greenMist    : C.paper;
-    const activeBorder = isLive ? "1px solid " + C.green + "30" : "none";
-    const activeShadow = isLive ? "0 6px 20px " + C.green + "25" : "0 6px 20px rgba(31, 29, 25, 0.12)";
+    const activeFill   = isLiveState ? C.greenMist : C.amberMist;
+    const activeBorder = "1px solid " + (isLiveState ? C.green + "30" : C.amber + "40");
+    const activeShadow = "0 6px 20px " + (isLiveState ? C.green : C.amber) + "25";
+    const hoverFill    = isLiveState ? C.green + "0F" : C.amber + "12";
     return {
       ...segStyleBase,
       background: isActive ? activeFill : isHovered ? hoverFill : "transparent",
       boxShadow: isActive ? activeShadow : "none",
-      border: isActive ? activeBorder : "none",
-      zIndex: isActive ? 2 : 1,
+      // Same box either way: a transparent 1px edge when inactive, so the
+      // highlight moving never nudges the text.
+      border: isActive ? activeBorder : "1px solid transparent",
+      // Focused: above the next segment, so the whole focus ring shows.
+      zIndex: focusedSegment === seg ? 4 : isActive ? 2 : 1,
     };
   };
+  // Hover and focus handlers shared by the five segments.
+  const segEvents = (seg) => ({
+    "data-seg": seg,
+    onMouseEnter: () => setHoveredSegment(seg),
+    onMouseLeave: () => setHoveredSegment(null),
+    onFocus: () => setFocusedSegment(seg),
+    onBlur: () => setFocusedSegment(cur => cur === seg ? null : cur),
+  });
 
-  const segLabel = { fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.ink, letterSpacing: "0.02em", marginBottom: 3, lineHeight: 1.1 };
-  const segValue = (filled) => ({ fontFamily: F.body, fontSize: 13, fontWeight: filled ? 600 : 500, color: filled ? C.ink : C.mink, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" });
+  const segLabel = { fontFamily: F.head, fontSize: narrow ? 14 : 15, fontWeight: 700, color: C.ink, letterSpacing: "-0.005em", marginBottom: 2, lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+  const segValue = (filled) => ({ fontFamily: F.body, fontSize: narrow ? 13 : 14, fontWeight: filled ? 600 : 500, color: filled ? C.ink : C.slate, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" });
+  const dividerStyle = { width: 1, background: C.smoke, margin: "14px 0", flexShrink: 0 };
 
   // Every segment is laid out the same way: what it filters on the left, the
   // label and current value in the middle, and — on the four that open a
   // chooser — a chevron on the right. Search has no chevron: it opens a text
-  // field, not a list.
+  // field, not a list. Narrow bars drop the four filter icons (icon: null).
   //
   // Called as a function rather than rendered as <SegBody/>: a component
   // declared inside a render is a brand-new type on every pass, so React
   // would throw the segment away and rebuild it each keystroke.
   const segBody = ({ icon: Icon, label, value, filled, chevron = true }) => (
-    <span style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", minWidth: 0 }}>
-      <Icon size={17} strokeWidth={2.2} style={{ color: filled ? C.ink : C.mink, flexShrink: 0 }}/>
+    <span title={label + ": " + value} style={{ display: "flex", alignItems: "center", gap: narrow ? 8 : 11, width: "100%", minWidth: 0 }}>
+      {Icon && <Icon size={narrow ? 19 : 21} strokeWidth={2.1} style={{ color: filled ? C.ink : C.slate, flexShrink: 0 }} aria-hidden/>}
       <span style={{ flex: 1, minWidth: 0 }}>
         <p style={segLabel}>{label}</p>
         <p style={segValue(filled)}>{value}</p>
       </span>
-      {chevron && <ChevronDown size={15} strokeWidth={2.4} style={{ color: C.ash, flexShrink: 0 }}/>}
+      {chevron && <ChevronDown size={18} strokeWidth={2.3} style={{ color: C.slate, flexShrink: 0 }} aria-hidden/>}
     </span>
   );
+  // What an unset filter says: "Any category", or just "Any" below full width
+  // (the label above already says what it's for).
+  const anyLabel = (what) => barFit === "full" ? "Any " + what : "Any";
+  const searchHint = barFit === "full" ? "Items, categories, neighbours" : barFit === "medium" ? "Items or categories" : "Keywords";
 
   return (
-    <section style={{ padding: (state === "between" ? "28px" : "14px") + " 0 12px", position: "relative" }}>
+    <section ref={railRef} style={{ padding: (state === "between" ? "28px" : "14px") + " 0 12px", position: "relative" }}>
       {/* COMPACT PILL — when scrolled past threshold */}
       {isCompact ? (
         <button onClick={() => { window.scrollTo({ top: 0, behavior: "smooth" }); setTimeout(() => setActiveSegment("search"), 200); }} style={{
@@ -2367,122 +2559,122 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
       ) : (
       <>
       {/* FULL CAPSULE — default expanded */}
-      <div style={{
+      {/* A white rounded bar with a soft shadow. The 6px inset lets the
+          search pill and the hover/active fills sit inside the edge. */}
+      <div ref={capsuleRef} style={{
         display: "flex",
         alignItems: "stretch",
+        gap: 0,
+        padding: 6,
         background: C.paper,
         borderRadius: 999,
         border: "1px solid " + C.fawn,
-        boxShadow: activeSegment ? "0 12px 32px rgba(31, 29, 25, 0.10)" : "0 2px 8px rgba(31, 29, 25, 0.06)",
-        transition: "all 180ms",
+        boxShadow: activeSegment ? "0 12px 32px rgba(31, 29, 25, 0.10)" : "0 6px 22px rgba(31, 29, 25, 0.07), 0 1px 3px rgba(31, 29, 25, 0.05)",
+        transition: "box-shadow 180ms",
         overflow: "visible",
         position: "relative",
       }}>
-        {/* SEGMENT 1 — SEARCH */}
+        {/* SEGMENT 1 — SEARCH (tinted only while its panel is open) */}
         <button
           onClick={() => toggleSegment("search")}
-          onMouseEnter={() => setHoveredSegment("search")}
-          onMouseLeave={() => setHoveredSegment(null)}
-          style={{ ...segStyle("search"), flex: 1.3 }}
+          {...segEvents("search")}
+          style={{ ...segStyle("search"), flex: barFit === "full" ? "1.3 1 auto" : "1.05 1 auto" }}
         >
-          {segBody({ icon: Search, label: "Search", value: search || "Items, categories, neighbours", filled: !!search, chevron: false })}
+          {segBody({ icon: Search, label: "Search", value: search || searchHint, filled: !!search, chevron: false })}
         </button>
 
-        {/* Divider */}
-        {activeSegment !== "search" && activeSegment !== "category" && hoveredSegment !== "search" && hoveredSegment !== "category" && (
-          <div style={{ width: 1, background: C.fawn, margin: "12px 0" }}/>
-        )}
+        {/* Divider: a 1px line centred in the gap Search has always had, hidden
+            beside a highlighted or hovered segment like the others. */}
+        <div aria-hidden style={{
+          width: barFit === "full" ? 10 : 6, flexShrink: 0,
+          background: activeSegment !== "search" && activeSegment !== "category" && hoveredSegment !== "search" && hoveredSegment !== "category"
+            ? `linear-gradient(${C.smoke}, ${C.smoke}) center / 1px calc(100% - 28px) no-repeat` : "none",
+        }}/>
 
         {/* SEGMENT 2 — CATEGORY */}
         <button
           onClick={() => toggleSegment("category")}
-          onMouseEnter={() => setHoveredSegment("category")}
-          onMouseLeave={() => setHoveredSegment(null)}
+          {...segEvents("category")}
           style={segStyle("category")}
         >
-          {segBody({ icon: LayoutGrid, label: "Category", value: cat === "All" ? "Any category" : categoryLabel(cat), filled: cat !== "All" })}
+          {segBody({ icon: narrow ? null : LayoutGrid, label: "Category", value: cat === "All" ? anyLabel("category") : categoryLabel(cat), filled: cat !== "All" })}
         </button>
 
         {/* Divider */}
-        {activeSegment !== "category" && activeSegment !== "hood" && hoveredSegment !== "category" && hoveredSegment !== "hood" && (
-          <div style={{ width: 1, background: C.fawn, margin: "12px 0" }}/>
-        )}
+        {activeSegment !== "category" && activeSegment !== "hood" && hoveredSegment !== "category" && hoveredSegment !== "hood" ? (
+          <div aria-hidden style={dividerStyle}/>
+        ) : <div aria-hidden style={{ ...dividerStyle, background: "transparent" }}/>}
 
         {/* SEGMENT 3 — NEIGHBOURHOOD */}
         <button
           onClick={() => toggleSegment("hood")}
-          onMouseEnter={() => setHoveredSegment("hood")}
-          onMouseLeave={() => setHoveredSegment(null)}
+          {...segEvents("hood")}
           style={segStyle("hood")}
         >
-          {segBody({ icon: MapPin, label: "Neighbourhood", value: hood === "All" ? "Any neighbourhood" : hood, filled: hood !== "All" })}
+          {segBody({ icon: narrow ? null : MapPin, label: "Neighbourhood", value: hood === "All" ? anyLabel("neighbourhood") : hood, filled: hood !== "All" })}
         </button>
 
         {/* Divider */}
-        {activeSegment !== "hood" && activeSegment !== "cond" && hoveredSegment !== "hood" && hoveredSegment !== "cond" && (
-          <div style={{ width: 1, background: C.fawn, margin: "12px 0" }}/>
-        )}
+        {activeSegment !== "hood" && activeSegment !== "cond" && hoveredSegment !== "hood" && hoveredSegment !== "cond" ? (
+          <div aria-hidden style={dividerStyle}/>
+        ) : <div aria-hidden style={{ ...dividerStyle, background: "transparent" }}/>}
 
         {/* SEGMENT 4 — CONDITION */}
         <button
           onClick={() => toggleSegment("cond")}
-          onMouseEnter={() => setHoveredSegment("cond")}
-          onMouseLeave={() => setHoveredSegment(null)}
+          {...segEvents("cond")}
           style={segStyle("cond")}
         >
-          {segBody({ icon: Tag, label: "Condition", value: cond === "All" ? "Any condition" : cond, filled: cond !== "All" })}
+          {segBody({ icon: narrow ? null : Tag, label: "Condition", value: cond === "All" ? anyLabel("condition") : cond, filled: cond !== "All" })}
         </button>
 
         {/* Divider */}
-        {activeSegment !== "cond" && activeSegment !== "sort" && hoveredSegment !== "cond" && hoveredSegment !== "sort" && (
-          <div style={{ width: 1, background: C.fawn, margin: "12px 0" }}/>
-        )}
+        {activeSegment !== "cond" && activeSegment !== "sort" && hoveredSegment !== "cond" && hoveredSegment !== "sort" ? (
+          <div aria-hidden style={dividerStyle}/>
+        ) : <div aria-hidden style={{ ...dividerStyle, background: "transparent" }}/>}
 
         {/* SEGMENT 5 — SORT */}
         <button
           onClick={() => toggleSegment("sort")}
-          onMouseEnter={() => setHoveredSegment("sort")}
-          onMouseLeave={() => setHoveredSegment(null)}
-          style={{ ...segStyle("sort"), paddingRight: 80 }}
+          {...segEvents("sort")}
+          style={segStyle("sort")}
         >
-          {segBody({ icon: ArrowUpDown, label: "Sort by", value: sortShort, filled: sort !== "newest" })}
+          {segBody({ icon: narrow ? null : ArrowUpDown, label: "Sort by", value: sortShort, filled: sort !== "newest" })}
         </button>
 
-        {/* Green/Amber circle search button — state-aware.
-            BUG-065 — segments use zIndex 1 (and 2 when active) for the
-            hover/active background fill. The circle button had no zIndex
-            (defaults to auto = 0), so hovering the Sort segment painted
-            its hover background ON TOP of the circle, making it look like
-            it disappeared. zIndex: 3 puts the circle reliably above any
-            segment state. */}
+        {/* The round search button: a 48px circle with just the magnifying
+            glass, at the far right, state-aware (green live, amber between).
+            In the flex row now, not laid over the Sort segment, so nothing
+            hides under it and Sort no longer needs 80px of padding for it.
+            Its accessible name stays "Search"; it closes any open panel, as
+            before. zIndex 3 keeps it above the segments' fills (BUG-065). */}
         <button
           aria-label="Search"
           onClick={() => setActiveSegment(null)}
           style={{
-            position: "absolute",
-            right: 8,
-            top: "50%",
-            transform: "translateY(-50%)",
+            alignSelf: "center",
+            flexShrink: 0,
+            marginLeft: barFit === "full" ? 10 : 6,
+            position: "relative",
             zIndex: 3,
+            width: 48,
             height: 48,
-            padding: activeSegment ? "0 22px 0 16px" : "0 16px",
-            borderRadius: 999,
+            padding: 0,
+            borderRadius: "50%",
             border: "none",
             background: state === "between" ? C.amberDeep : C.green,
             color: "#fff",
             cursor: "pointer",
             display: "flex",
             alignItems: "center",
-            gap: 8,
-            fontFamily: F.head,
-            fontSize: 14,
-            fontWeight: 800,
+            justifyContent: "center",
             boxShadow: "0 4px 12px " + (state === "between" ? C.amberDeep : C.green) + "40",
-            transition: "all 220ms cubic-bezier(0.4, 0, 0.2, 1)",
+            transition: "box-shadow 180ms, filter 180ms",
           }}
+          onMouseEnter={e => { e.currentTarget.style.filter = "brightness(0.92)"; }}
+          onMouseLeave={e => { e.currentTarget.style.filter = ""; }}
         >
-          <Search size={18} strokeWidth={2.6}/>
-          {activeSegment && <span>Search</span>}
+          <Search size={21} strokeWidth={2.5} aria-hidden/>
         </button>
       </div>
 
@@ -2537,7 +2729,7 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
               {/* 24 categories: a searchable list instead of a wall of pills. */}
               <div style={{ maxWidth: 560 }}>
                 <CategoryPicker value={cat} allowAll quickPicks accent={chipFill} autoFocus listMaxHeight={320}
-                  onSelect={(v) => { setCat(v); setActiveSegment(null); }} onEscape={() => setActiveSegment(null)}/>
+                  onSelect={(v) => { setCat(v); setActiveSegment(null); }} onEscape={() => closePanel(true)}/>
               </div>
             </div>
           )}
@@ -2588,10 +2780,15 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
           {/* Footer */}
           {activeSegment !== "search" && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 22, paddingTop: 18, borderTop: "1px solid " + C.fawn }}>
-              <button onClick={() => { clearAll(); setActiveSegment(null); }} style={{ padding: "9px 16px", borderRadius: 999, border: "none", background: "transparent", fontSize: 13, color: C.mink, fontWeight: 700, cursor: "pointer", fontFamily: F.head, textDecoration: "underline", textUnderlineOffset: 3 }}>
+              <button onClick={() => { clearAll(); setActiveSegment(null); }} style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: "transparent", fontSize: 13, color: C.mink, fontWeight: 700, cursor: "pointer", fontFamily: F.head, textDecoration: "underline", textUnderlineOffset: 3 }}>
                 Clear all
               </button>
-              <button onClick={() => setActiveSegment(null)} style={{ padding: "10px 22px", borderRadius: 999, border: "none", background: C.ink, color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer", fontFamily: F.head }}>
+              {/* The Drop's own colour, like the round search button: brand
+                  green during the live Drop, golden brown (amberDeep, with the
+                  Remind me button's #7A4500 base) between Drops. cta-primary
+                  lift on hover and press, the site-wide focus ring. White on
+                  either passes AA. It was near-black (ink). */}
+              <button onClick={() => setActiveSegment(null)} className="cta-primary" style={{ minHeight: 44, padding: "10px 24px", borderRadius: 999, border: "none", background: isLiveState ? C.green : C.amberDeep, color: "#fff", fontSize: 14, fontWeight: 800, cursor: "pointer", fontFamily: F.head, boxShadow: "0 2px 0 " + (isLiveState ? C.greenDeep : "#7A4500") }}>
                 Done
               </button>
             </div>
@@ -2860,19 +3057,21 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
           >
             <Share2 size={20} strokeWidth={2} style={{ color: CARD.green }}/>
           </button>
-          {/* Save stays available on an own listing too. Watching your own
-              item is pointless, but it's allowed by the backend, so a seller
-              who saved one before now needs this heart to unsave it — and
-              the Saved page renders the same card. */}
-          <button
-            onClick={e => { e.stopPropagation(); onToggleSave(item.id); }}
-            aria-label={saved ? "Remove from saved" : "Save this listing"}
-            aria-pressed={saved}
-            title={saved ? "Saved" : "Save"}
-            style={{ width: 42, height: 42, borderRadius: "50%", border: "none", background: CARD.iconBg, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-          >
-            <Heart size={20} strokeWidth={2} style={{ color: CARD.red, fill: saved ? CARD.red : "none" }}/>
-          </button>
+          {/* No heart on your own listing (isOwn, from isOwnListing): nobody
+              saves their own item, and the backend refuses it. Old self-saves
+              were removed and never come back in Saved, so there's nothing to
+              unsave. The "Your listing" badge and Manage button stay. */}
+          {!isOwn && (
+            <button
+              onClick={e => { e.stopPropagation(); onToggleSave(item.id); }}
+              aria-label={saved ? "Remove from saved" : "Save this listing"}
+              aria-pressed={saved}
+              title={saved ? "Saved" : "Save"}
+              style={{ width: 42, height: 42, borderRadius: "50%", border: "none", background: CARD.iconBg, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+            >
+              <Heart size={20} strokeWidth={2} style={{ color: CARD.red, fill: saved ? CARD.red : "none" }}/>
+            </button>
+          )}
         </div>
         {badgeLabel && (
           <span style={{ position: "absolute", top: 14, left: 14, fontFamily: CARD.font, fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", padding: "5px 11px", borderRadius: 999, background: badgeBg, color: badgeColor, border: "1px solid " + badgeColor + "33" }}>
@@ -3055,9 +3254,10 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
    Shown when user taps a card under "Dropping this Saturday".
    No Claim, no Ask. Save button is the only action.
    ============================================================ */
-function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
+function PreviewItemDetail({ item, onBack, savedPreview, togglePreview, currentUserId = null }) {
   const { isMobile } = useViewport();
   const isSaved = savedPreview.has(item.id);
+  const isOwn = isOwnListing(item, currentUserId);
 
   // Multi-photo gallery, same mechanics as ItemDetail (BUG-066/068): hero +
   // arrows + thumbnail strip, wrapping at both ends, arrow keys bound while
@@ -3225,8 +3425,16 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
               </div>
             </div>
 
+            {/* Your own queued listing: no Save, the note the item view shows. */}
+            {isOwn && (
+              <div style={{ padding: 14, borderRadius: 14, border: "1px solid " + C.amber + "55", background: C.amberMist }}>
+                <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.amberDeep, marginBottom: 4 }}>This is your listing</p>
+                <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, lineHeight: 1.5 }}>It&apos;s queued for the Drop. Manage it in the Seller view.</p>
+              </div>
+            )}
+
             {/* Primary CTA — Save / Saved */}
-            <button onClick={() => togglePreview(item.id)} className="cta-primary" style={{
+            {!isOwn && <button onClick={() => togglePreview(item.id)} className="cta-primary" style={{
               width: "100%", padding: "16px 0", borderRadius: 14, border: "none",
               background: isSaved ? C.amberMist : C.amber,
               color: isSaved ? C.amberDeep : "#fff",
@@ -3239,10 +3447,10 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview }) {
               {isSaved
                 ? <><Check size={18}/> Saved for Saturday</>
                 : <><Heart size={18}/> Save for Saturday</>}
-            </button>
+            </button>}
 
             {/* Saved state — what happens next */}
-            {isSaved && (
+            {isSaved && !isOwn && (
               <div className="fade-in" style={{ padding: "14px 16px", borderRadius: 14, background: C.amberMist + "80", border: "1px solid " + C.amber + "30" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
                   <div style={{ width: 28, height: 28, borderRadius: "50%", background: C.amber, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -3295,7 +3503,7 @@ function sneakCardType(isMobile) {
 // Share + save, top right of the photo. Share is ItemCard's (BUG-051): native
 // share sheet where available, clipboard otherwise. Both stop propagation so
 // neither opens the preview.
-function SneakPeekCardActions({ item, isSaved, onToggleSave }) {
+function SneakPeekCardActions({ item, isSaved, onToggleSave, isOwn = false }) {
   const round = { width: 32, height: 32, borderRadius: "50%", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 6px rgba(31,29,25,0.15)", transition: "all 150ms" };
   return (
     <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 8 }}>
@@ -3308,16 +3516,19 @@ function SneakPeekCardActions({ item, isSaved, onToggleSave }) {
       >
         <Share2 size={15} strokeWidth={2.4}/>
       </button>
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); onToggleSave(item.id); }}
-        aria-label={isSaved ? "Remove from Saturday saves" : "Save for Saturday"}
-        aria-pressed={isSaved}
-        title={isSaved ? "Saved for Saturday" : "Save for Saturday"}
-        style={{ ...round, background: isSaved ? C.amber : "rgba(255,255,255,0.92)", color: isSaved ? "#fff" : C.ink }}
-      >
-        <Heart size={15} strokeWidth={2.4} fill={isSaved ? "#fff" : "none"}/>
-      </button>
+      {/* Not on your own listing (isOwnListing). */}
+      {!isOwn && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggleSave(item.id); }}
+          aria-label={isSaved ? "Remove from Saturday saves" : "Save for Saturday"}
+          aria-pressed={isSaved}
+          title={isSaved ? "Saved for Saturday" : "Save for Saturday"}
+          style={{ ...round, background: isSaved ? C.amber : "rgba(255,255,255,0.92)", color: isSaved ? "#fff" : C.ink }}
+        >
+          <Heart size={15} strokeWidth={2.4} fill={isSaved ? "#fff" : "none"}/>
+        </button>
+      )}
     </div>
   );
 }
@@ -3325,7 +3536,7 @@ function SneakPeekCardActions({ item, isSaved, onToggleSave }) {
 /* ============================================================
    SNEAK PEEK LIST PAGE — full grid of items dropping Saturday
    ============================================================ */
-function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack, sneakPeekSource = null }) {
+function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack, sneakPeekSource = null, currentUserId = null }) {
   const { isMobile } = useViewport();
   const type = sneakCardType(isMobile);
   const [filter, setFilter] = useState("all"); // "all" | "saved"
@@ -3437,7 +3648,7 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
                   <div style={{ position: "absolute", top: 10, left: 10, padding: "4px 9px", borderRadius: 999, background: C.amber, color: "#fff", fontFamily: F.head, fontSize: 10, fontWeight: 900, letterSpacing: "0.08em", display: "flex", alignItems: "center", gap: 4, boxShadow: "0 2px 6px " + C.amber + "50" }}>
                     <Clock size={10} strokeWidth={2.6}/> {dropOpenDay(true).toUpperCase()} {dropOpenHourBadge()}
                   </div>
-                  <SneakPeekCardActions item={item} isSaved={isSaved} onToggleSave={togglePreview}/>
+                  <SneakPeekCardActions item={item} isSaved={isSaved} onToggleSave={togglePreview} isOwn={isOwnListing(item, currentUserId)}/>
                 </div>
                 <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", flex: 1 }}>
                   <span style={{ ...type.category, alignSelf: "flex-start", marginBottom: 8 }}>{item.cat}</span>
@@ -3461,7 +3672,7 @@ function SneakPeekListPage({ savedPreview, togglePreview, onPreviewItem, onBack,
   );
 }
 
-function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPreviews, sneakPeekSource = null }) {
+function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPreviews, sneakPeekSource = null, currentUserId = null }) {
   // "Sneak Peek from Saturday's Drop" — item-centric preview that turns
   // mid-week browsing into a real Saturday-morning hit list.
   //
@@ -3564,7 +3775,7 @@ function PreviewStrip({ savedPreview, togglePreview, onPreviewItem, onSeeAllPrev
                 </div>
 
                 {/* Share + save — top right */}
-                <SneakPeekCardActions item={item} isSaved={isSaved} onToggleSave={togglePreview}/>
+                <SneakPeekCardActions item={item} isSaved={isSaved} onToggleSave={togglePreview} isOwn={isOwnListing(item, currentUserId)}/>
               </div>
 
               {/* Card body — ItemCard's type scale (see sneakCardType) */}
@@ -4510,7 +4721,7 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
   // own item detail is now the ordinary path, not just the deep-link /
   // watchlist edge case it was when the feed filtered them out. Either way:
   // swap the Claim / Ask buttons for a "switch to Seller view" affordance.
-  const isMyOwnItem = !!currentUserId && item?.seller?.id === currentUserId;
+  const isMyOwnItem = isOwnListing(item, currentUserId);
   const { isMobile } = useViewport();
   const [showClaim, setShowClaim] = useState(false);
   const [showAsk, setShowAsk] = useState(false);
@@ -5211,8 +5422,11 @@ function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedI
       <div style={{ padding: "32px 34px", borderRadius: 24, background: "linear-gradient(135deg, " + C.greenMist + " 0%, " + C.sand + " 100%)", border: "1.5px solid " + C.fawn, marginBottom: 28 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 24 }}>
           {/* The profile is opened by name; the avatar comes from their listings. */}
-          <UserAvatar avatar={items.find(i => i.sellerAvatar)?.sellerAvatar} name={sellerName} size={90} decorative initialsBg={avatarBg(sellerName)} fontFamily={F.head} fontWeight={900} fontSize={32}
-            style={{ border: "3px solid " + C.paper, boxShadow: "0 0 0 1.5px " + C.fawn }}/>
+          {/* 84px picture, then a 3px white band and a 1.5px outline of its
+              own: 90px across as before; the margin keeps the layout. */}
+          <UserAvatar avatar={items.find(i => i.sellerAvatar)?.sellerAvatar} name={sellerName} size={84} decorative initialsBg={avatarBg(sellerName)} fontFamily={F.head} fontWeight={900} fontSize={32}
+            ring={{ gap: 3, gapColor: C.paper, width: 1.5, color: C.fawn }}
+            style={{ margin: 3 }}/>
           <div style={{ flex: 1 }}>
             <h1 style={{ fontFamily: F.head, fontSize: 32, fontWeight: 900, color: C.ink, letterSpacing: "-0.025em", lineHeight: 1.1, marginBottom: 4 }}>{sellerName}</h1>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -5249,7 +5463,7 @@ function RegularSellerProfile({ sellerName, onBack, onSelect, onClaimNow, savedI
         <EmptyState illustration={<EmptySellerIllustration/>} title={"No active listings from " + firstName} message="Their stand is empty right now. Check back soon — neighbours list new items every week." accent={C.amber}/>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={savedIds.has(i.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
+          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={savedIds.has(i.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} isOwn={isOwnListing(i, currentUserId)} onSwitchRole={onSwitchRole}/>)}
         </div>
       )}
 
@@ -5281,7 +5495,7 @@ function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggle
         <EmptyState illustration={<EmptySavedIllustration/>} title="Nothing saved yet" message="Tap the heart on items you’re interested in — they’ll gather here so you can claim them when the Drop opens." cta="Browse Discover" onCtaClick={onBrowse} accent={C.amber}/>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} myClaim={claimsByItem.get(i.id) || null} onOpenClaimThread={onOpenClaimThread} answerReady={answeredIds.has(i.id)} isOwn={!!currentUserId && i.sellerId === currentUserId} onSwitchRole={onSwitchRole}/>)}
+          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} myClaim={claimsByItem.get(i.id) || null} onOpenClaimThread={onOpenClaimThread} answerReady={answeredIds.has(i.id)} isOwn={isOwnListing(i, currentUserId)} onSwitchRole={onSwitchRole}/>)}
         </div>
       )}
     </>
@@ -7755,7 +7969,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   // BuyerDashboard). This is what marks them so the card can drop its
   // buyer-side actions — null for the unauthed preview routes, where every
   // demo item carries sellerId: null and nothing matches.
-  const isOwnItem = (i) => !!currentUserId && i?.sellerId === currentUserId;
+  const isOwnItem = (i) => isOwnListing(i, currentUserId);
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [cat, setCat] = useState("All");
@@ -7764,12 +7978,19 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   const [sort, setSort] = useState("newest");
   const [panelOpen, setPanelOpen] = useState(false);
 
-  // Neighbourhood options come from whoever is actually selling, off the
-  // UNFILTERED pool — deriving them from the filtered list would delete every
-  // other option the moment one was picked. Sellers who haven't set a
-  // neighbourhood simply don't add one.
+  // Neighbourhood options: only official Barrhaven names (lib/barrhaven.ts),
+  // and only those with an item available right now (live, or queued for the
+  // Drop; not claimed). Read off the UNFILTERED pool — deriving them from the
+  // filtered list would delete every other option the moment one was picked.
+  // A seller with no neighbourhood, or a legacy/unknown one ("Gloucester",
+  // "Barrhaven" from before the picker), never adds an option; their items
+  // still show under "Any". The chosen one stays listed while it's chosen,
+  // even if its last item goes, so it can be seen and changed.
   const hoodPool = Array.isArray(itemsSource) ? itemsSource : allItems;
-  const hoods = Array.from(new Set(hoodPool.map(i => i.sellerHood).filter(Boolean))).sort();
+  const hoods = Array.from(new Set([
+    ...hoodPool.filter(i => i.status !== "claimed").map(i => i.sellerHood),
+    hood,
+  ].filter(h => OFFICIAL_HOOD_NAMES.has(h)))).sort((a, b) => a.localeCompare(b, "en-CA"));
 
   // Unique-seller count for the AnticipationBand "X neighbours have items
   // lined up" line. Null when no source was passed (i.e. preview routes) so
@@ -7781,13 +8002,9 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   const queuedSellerCount = queuedSellers ? queuedSellers.length : null;
   const dropOpenCountdown = useDropOpenCountdownString();
 
-  // WelcomeBand's "N items" headline. Counted off the WHOLE pool, not the
-  // filtered grid — the band describes the Drop, not the current search or
-  // category. Only `live` items count: `claimed` ones are already gone and
-  // `preview` ones are Sneak Peek drafts that can't be claimed yet. Null when
-  // no source was passed (preview routes) so the band keeps its demo numbers.
-  const liveClaimable = Array.isArray(itemsSource) ? itemsSource.filter(i => i.status === "live") : null;
-  const liveItemsCount = liveClaimable ? liveClaimable.length : null;
+  // (WelcomeBand's "N items" headline used to be counted here off the loaded
+  // feed, which is paginated. It now reads the server's figure, the same one
+  // as the homepage's live card: see WelcomeBand.)
 
   // (The hero's backdrop used to be built here — a flattened list of the
   // feed's own listing photos, tiled across the band by HeroPhotoMosaic.
@@ -7800,7 +8017,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
     return (
       <>
         {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount}/>}
-        {state === "live" && <WelcomeBand itemsCount={liveItemsCount}/>}
+        {state === "live" && <WelcomeBand/>}
         <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} hood={hood} setHood={setHood} cond={cond} setCond={setCond} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state} hoods={hoods}/>
         <DiscoverSkeleton/>
       </>
@@ -7846,13 +8063,13 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
   return (
     <>
       {state === "between" && <AnticipationBand onRemindMe={onRemindMe} reminded={reminded} queuedCount={queuedSellerCount}/>}
-      {state === "live" && <WelcomeBand itemsCount={liveItemsCount}/>}
+      {state === "live" && <WelcomeBand/>}
 
       <FilterRail filter={filter} setFilter={setFilter} search={search} setSearch={setSearch} cat={cat} setCat={setCat} hood={hood} setHood={setHood} cond={cond} setCond={setCond} sort={sort} setSort={setSort} panelOpen={panelOpen} setPanelOpen={setPanelOpen} state={state} hoods={hoods}/>
 
       {/* Preview strip — only when Between Drops */}
       {state === "between" && filter === "all" && (
-        <PreviewStrip savedPreview={savedPreview} togglePreview={togglePreview} onPreviewItem={onPreviewItem} onSeeAllPreviews={onSeeAllPreviews} sneakPeekSource={sneakPeekSource}/>
+        <PreviewStrip savedPreview={savedPreview} togglePreview={togglePreview} onPreviewItem={onPreviewItem} onSeeAllPreviews={onSeeAllPreviews} sneakPeekSource={sneakPeekSource} currentUserId={currentUserId}/>
       )}
 
 {/* LIVE DROP unified pool: drop + shelf items mixed together.
@@ -8863,10 +9080,10 @@ export default function DropYardBuyerDashboard({
           {!viewingItem && !viewingSellerName && (
             <>
               {page === "discover" && viewingPreview && (
-                <PreviewItemDetail item={viewingPreview} onBack={() => setViewingPreview(null)} savedPreview={peekSaved} togglePreview={peekToggle}/>
+                <PreviewItemDetail item={viewingPreview} onBack={() => setViewingPreview(null)} savedPreview={peekSaved} togglePreview={peekToggle} currentUserId={user?.id || null}/>
               )}
               {page === "discover" && !viewingPreview && showSneakList && (
-                <SneakPeekListPage savedPreview={peekSaved} togglePreview={peekToggle} onPreviewItem={setViewingPreview} onBack={() => setShowSneakList(false)} sneakPeekSource={sneakPeekForUI}/>
+                <SneakPeekListPage savedPreview={peekSaved} togglePreview={peekToggle} onPreviewItem={setViewingPreview} onBack={() => setShowSneakList(false)} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null}/>
               )}
               {page === "discover" && !viewingPreview && !showSneakList && <DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} onSelect={setViewingItem} onClaimNow={setClaimItem} state={dropState} reminded={reminded} onRemindMe={handleRemindMe} savedPreview={peekSaved} togglePreview={peekToggle} onSwitchRole={onSwitchRole} onPreviewItem={setViewingPreview} onSeeAllPreviews={() => setShowSneakList(true)} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} claimsByItem={myClaimByItem} onOpenClaimThread={openClaimThread} itemsSource={itemsForUI} itemsLoading={itemsLoading} sneakPeekSource={sneakPeekForUI} currentUserId={user?.id || null} answeredIds={answeredIds}/>}
               {page === "saved"    && <SavedPage savedIds={savedIds} savedItems={accessToken ? savedItems : null} onSelect={setViewingItem} onClaimNow={setClaimItem} onToggleSave={toggleSave} onBrowse={() => setPage("discover")} onBack={() => setPage("discover")} claimedIds={claimedIds} purchasedIds={purchasedIds} offeredIds={offeredIds} claimsByItem={myClaimByItem} onOpenClaimThread={openClaimThread} itemsSource={itemsForUI} state={dropState} currentUserId={user?.id || null} onSwitchRole={onSwitchRole} answeredIds={answeredIds}/>}

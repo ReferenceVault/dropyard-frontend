@@ -25,7 +25,31 @@ import { avatarAlt, initialsOf, normaliseAvatar, type ResolvedAvatar } from "@/l
  * Anthony", "Anthony's avatar: A green leaf", or just the name for initials).
  * Pass `decorative` when the name is printed right next to it, so screen
  * readers don't hear the name twice.
+ *
+ * Outline: pass `ring` rather than wrapping the avatar in a bordered element.
+ * It's drawn here, round the outside of the circle (box-shadows on this same
+ * element), so it always traces the picture exactly: no gap, no overlap, the
+ * same at any screen density or zoom, and it takes no layout space. A wrapper
+ * with its own border or ring used to come out a different size or shape
+ * from the picture (the public header's ring was an oval, 6px taller than
+ * the photo, because its button picked up line-height under the avatar).
  */
+export interface AvatarRing {
+  /** Outline colour (any CSS colour, including a var()). */
+  color: string;
+  /** Outline thickness: px, or any CSS length. Default 1. */
+  width?: number | string;
+  /** A band between the picture and the outline, e.g. white. */
+  gap?: number;
+  gapColor?: string;
+}
+
+function ringShadow(ring: AvatarRing): string {
+  const w = typeof ring.width === "string" ? ring.width : `${ring.width ?? 1}px`;
+  if (!ring.gap) return `0 0 0 ${w} ${ring.color}`;
+  return `0 0 0 ${ring.gap}px ${ring.gapColor ?? "#FFFFFF"}, 0 0 0 calc(${ring.gap}px + ${w}) ${ring.color}`;
+}
+
 export interface UserAvatarProps {
   avatar?: ResolvedAvatar | null | unknown;
   name?: string | null;
@@ -40,6 +64,8 @@ export interface UserAvatarProps {
   fontSize?: number;
   /** Header avatars are above the fold; everything else loads lazily. */
   eager?: boolean;
+  /** An outline round the outside of the circle (see the note above). */
+  ring?: AvatarRing | null;
   title?: string;
   className?: string;
   style?: React.CSSProperties;
@@ -58,6 +84,7 @@ export function UserAvatar({
   fontWeight = 800,
   fontSize,
   eager = false,
+  ring = null,
   title,
   className,
   style,
@@ -70,21 +97,29 @@ export function UserAvatar({
   const showImage = url !== null && failedUrl !== url;
   const label = avatarAlt(showImage ? resolved : { type: "INITIALS" }, name);
 
+  // The ring goes first, so it sits above any shadow the caller adds.
+  const shadow = [ring ? ringShadow(ring) : null, style?.boxShadow].filter(Boolean).join(", ");
   const box: React.CSSProperties = {
     width: size,
     height: size,
     minWidth: size,
+    boxSizing: "border-box",
     borderRadius: "50%",
     overflow: "hidden",
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
+    // No line-height gap under it inside an inline or block wrapper.
+    verticalAlign: "middle",
     flexShrink: 0,
-    background: showImage ? "#F3F8F3" : initialsBg,
+    backgroundColor: showImage ? "#F3F8F3" : initialsBg,
+    // Never let the fill show under a border at the antialiased edge.
+    backgroundClip: "padding-box",
     color: initialsColor,
     lineHeight: 1,
     userSelect: "none",
     ...style,
+    boxShadow: shadow || undefined,
   };
 
   if (showImage) {

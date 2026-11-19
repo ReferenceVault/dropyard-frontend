@@ -5580,7 +5580,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
                     background: C.greenDeep,
                     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                   }}>
-                    <Zap size={18} style={{ color: "#fff" }} strokeWidth={2.4}/>
+                    <Package size={18} style={{ color: "#fff" }} strokeWidth={2.4}/>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
@@ -10159,7 +10159,7 @@ function AIPhotoFlow({ onDone, onBack, aiSettings = {} }) {
                           </button>
                           <button onClick={() => setPublishWhen(it.id, "shelf")} title="List now on the Shelf"
                             style={{ flex: 1, height: 30, borderRadius: 8, border: "1.5px solid " + (pw === "shelf" ? C.amber : C.fawn), background: pw === "shelf" ? C.amberMist : C.paper, color: pw === "shelf" ? C.amberDeep : C.mink, fontFamily: F.head, fontSize: 10, fontWeight: pw === "shelf" ? 800 : 700, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 4, transition: "all 150ms" }}>
-                            <Zap size={10} strokeWidth={2.4}/> Shelf now
+                            <Package size={10} strokeWidth={2.4}/> Shelf now
                           </button>
                         </div>
                       </div>
@@ -10189,7 +10189,7 @@ function AIPhotoFlow({ onDone, onBack, aiSettings = {} }) {
                   )}
                   {shelfCount > 0 && (
                     <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: C.amberMist, color: C.amberDeep, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      <Zap size={10}/> {shelfCount} to Shelf
+                      <Package size={10}/> {shelfCount} to Shelf
                     </span>
                   )}
                 </div>

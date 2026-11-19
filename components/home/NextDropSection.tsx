@@ -58,7 +58,7 @@ function DropTitle() {
 
 /** The red "LIVE NOW" pill (white on dy-red, 5.0:1). The broadcast icon is
  *  static; the only motion in the live card is the progress bar's width, off
- *  under reduced motion. The Shelf section reuses it as "LIVE DROP · NOW OPEN". */
+ *  under reduced motion. "Worth a closer look" reuses it as "LIVE DROP · NOW OPEN". */
 export function LivePill({ label = "Live now" }: { label?: string }) {
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-dy-red px-3 py-1 text-[clamp(12px,0.95vw,17px)] font-bold uppercase tracking-[0.08em] text-white">
@@ -151,7 +151,8 @@ export function NextDropSection(props: NextDropSectionProps) {
 }
 
 /** The same section, given a schedule reading the caller shares with other
- *  sections (the homepage's Shelf), so they all switch at the same instant. */
+ *  sections (the homepage's "Worth a closer look" and Shelf), so they all
+ *  switch at the same instant. */
 export function NextDropSectionView({ schedule, upcomingOnly = false, asPageHeading = false, live, onDropOpened, neighbourCount = null }: NextDropSectionProps & {
   schedule: DropSchedule;
 }) {
