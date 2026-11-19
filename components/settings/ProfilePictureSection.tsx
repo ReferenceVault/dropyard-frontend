@@ -147,8 +147,11 @@ export function ProfilePictureSection({ initialsBg, onSuccess }: {
   return (
     <section aria-labelledby="profile-picture-heading" style={{ ...T.card, position: "relative" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 20 }}>
-        <UserAvatar avatar={avatar} name={name} size={88} initialsBg={initialsBg} eager
-          style={{ border: "3px solid #fff", boxShadow: "0 0 0 1.5px " + T.c.greenMist }} />
+        {/* 82px picture with a 3px white band and 1.5px outline of its own:
+            88px across as before; the margin keeps the layout. */}
+        <UserAvatar avatar={avatar} name={name} size={82} initialsBg={initialsBg} eager
+          ring={{ gap: 3, gapColor: "#fff", width: 1.5, color: T.c.greenMist }}
+          style={{ margin: 3 }} />
         <div style={{ flex: "1 1 240px", minWidth: 0 }}>
           <h2 id="profile-picture-heading" style={T.h2}>Profile picture</h2>
           <p style={{ ...T.muted, marginTop: 4 }}>Optional — a photo, an avatar or your initials all work just as well.</p>

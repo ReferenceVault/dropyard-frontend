@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiRequest } from "@/lib/api";
 import { useDropCycle } from "@/context/DropCycleContext";
+import { useSocketEvent } from "@/context/SocketContext";
 import { dropCloseMoment, getDropCycleInfo, nextDropMoment } from "@/lib/dropCycle";
 
 export type DropStatus = "UPCOMING" | "LIVE" | "ENDED";
@@ -16,13 +17,18 @@ interface CurrentDrop {
   claimedItemCount?: number;
 }
 
-/** What buyers can see in the current Drop, as counted by the backend. */
+/**
+ * The live Drop's numbers, counted by the backend (lib/dropStats.ts there) and
+ * shown as they come on the homepage's live card and the buyer's Discover
+ * hero, so the two can't disagree. Never counted from the item feed: it's
+ * paginated. Everyone sees the same figures, a seller's own items included.
+ */
 export interface LiveDropStats {
-  /** Drop items still available to claim (Shelf items not included). */
+  /** Items claimable now: live Drop items and live Shelf items. */
   items: number;
-  /** Distinct Drop items with an accepted or completed claim. */
+  /** Distinct items (Drop or Shelf) with a claim accepted or picked up since the Drop opened. */
   claimed: number;
-  /** Neighbours with items available in this Drop. */
+  /** Neighbours with at least one available item (the total of GET /api/drop/sellers). */
   sellers: number;
 }
 
@@ -95,14 +101,22 @@ export function useDropSchedule() {
     status = phase === "LIVE" ? "LIVE" : phase === "CLOSED" ? "ENDED" : "UPCOMING";
   }
 
-  // Fresh figures the moment the Drop opens, then on a timer while it runs.
+  // Fresh figures the moment the Drop opens, then on a timer while it runs,
+  // whenever the tab comes back into view, and right after the viewer's own
+  // claims move. The figures are the server's whatever the clock, so a
+  // `?simulate=`d live Drop refreshes too.
   const isLive = status === "LIVE";
   useEffect(() => {
-    if (!isLive || simulatedDate) return;
+    if (!isLive) return;
     load();
     const id = setInterval(load, LIVE_STATS_REFRESH_MS);
-    return () => clearInterval(id);
-  }, [isLive, simulatedDate, load]);
+    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
+  }, [isLive, load]);
+  const reloadIfLive = useCallback(() => { if (isLive) load(); }, [isLive, load]);
+  useSocketEvent("claim:new", reloadIfLive);
+  useSocketEvent("claim:updated", reloadIfLive);
 
   return {
     // The provider's clock starts at the epoch until it mounts on the client.

@@ -9,8 +9,8 @@ import {
   Eye,
   EyeOff,
   User,
-  Zap,
   Shield,
+  ShieldCheck,
   Users,
   Heart,
   Check,
@@ -167,7 +167,7 @@ function JoinPageContent() {
           <div className="space-y-6">
             <div className="flex gap-4">
               <div className="w-12 h-12 rounded-xl bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                <Zap size={24} className="text-emerald-600" />
+                <ShieldCheck size={24} className="text-emerald-600" />
               </div>
               <div>
                 <h3 className="font-semibold text-gray-900 mb-1">Your privacy comes first</h3>

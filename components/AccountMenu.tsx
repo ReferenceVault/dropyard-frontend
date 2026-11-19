@@ -72,6 +72,8 @@ export function accountMenuItems(user: AuthUser, signout: () => void, unread: Un
 
 export function AccountMenu({ user, signout, size = 40, unread = null }: { user: AuthUser; signout: () => void; size?: number; unread?: UnreadSummary | null }) {
   const [open, setOpen] = useState(false);
+  // Hover strengthens the avatar's ring (drawn by UserAvatar, see below).
+  const [hovered, setHovered] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const focusOnOpen = useRef<"first" | "last">("first");
@@ -139,9 +141,18 @@ export function AccountMenu({ user, signout, size = 40, unread = null }: { user:
         aria-controls={open ? menuId : undefined}
         onClick={() => (open ? close(false) : openWith("first"))}
         onKeyDown={onButtonKey}
-        className="dy-focus relative block rounded-full ring-1 ring-dy-line transition-shadow hover:ring-2 hover:ring-dy-green aria-expanded:ring-2 aria-expanded:ring-dy-green"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        // Exactly the avatar's size (flex, so no line-height space under it),
+        // and the ring is the avatar's own: it used to be this button's, an
+        // oval 6px taller than the picture.
+        className="dy-focus relative flex rounded-full"
       >
-        <UserAvatar avatar={user.avatar} name={user.name} size={size} decorative eager initialsBg="#E2EFE0" initialsColor="#2C6126" />
+        <UserAvatar
+          avatar={user.avatar} name={user.name} size={size} decorative eager initialsBg="#E2EFE0" initialsColor="#2C6126"
+          ring={open || hovered ? { width: 2, color: "var(--color-dy-green)" } : { width: 1, color: "var(--color-dy-line)" }}
+          style={{ transition: "box-shadow 150ms ease" }}
+        />
         {/* Decorative: the button's name says it. */}
         {hasUnread && <span aria-hidden data-unread-dot className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full bg-dy-red ring-2 ring-white" />}
       </button>

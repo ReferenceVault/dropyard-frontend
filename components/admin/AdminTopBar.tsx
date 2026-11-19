@@ -98,7 +98,7 @@ export function AdminTopBar({
           aria-expanded={menuOpen}
         >
           <UserAvatar avatar={user.avatar} name={user.name || user.email} size={36} decorative eager fontSize={12} fontWeight={700}
-            style={{ boxShadow: "0 0 0 2px #fff, 0 1px 2px rgba(15, 23, 42, 0.08)" }} />
+            ring={{ width: 2, color: "#fff" }} style={{ boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)" }} />
           <div className="hidden sm:flex flex-col leading-tight text-left">
             <span className="text-[13px] font-semibold text-slate-900 truncate max-w-[160px]">
               {user.name}
