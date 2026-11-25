@@ -61,12 +61,17 @@ function lastFocusOutside(dialog) {
  * Leave it out when dismissing would do something, like a rating prompt whose
  * only way out is a Skip that writes to the API.
  *
- * @param {{ label: string, onClose?: (() => void) | null }} props
+ * `returnFocus` (optional) names where focus goes on close, for when the
+ * opener won't be usable then (it's replaced, or disabled, by what the dialog
+ * did). Called at close; return an element, or null for the default.
+ *
+ * @param {{ label: string, onClose?: (() => void) | null, returnFocus?: (() => HTMLElement | null) | null }} props
  */
-export function ModalA11y({ label, onClose = null }) {
+export function ModalA11y({ label, onClose = null, returnFocus = null }) {
   const anchor = useRef(null);
   const closeRef = useRef(onClose);
-  useEffect(() => { closeRef.current = onClose; });
+  const returnFocusRef = useRef(returnFocus);
+  useEffect(() => { closeRef.current = onClose; returnFocusRef.current = returnFocus; });
 
   // Before paint, or the entrance animation would start a frame late.
   useLayoutEffect(() => { anchor.current?.parentElement?.classList.add("dy-modal"); }, []);
@@ -124,6 +129,10 @@ export function ModalA11y({ label, onClose = null }) {
       document.body.style.overflow = previousOverflow;
       // The opener may have gone with a menu that closed; fall back to the
       // last thing focused outside this dialog that's still on the page.
+      // A target the dialog names wins; it's where the person already is, so
+      // focusing it mustn't scroll the page.
+      const named = typeof returnFocusRef.current === "function" ? returnFocusRef.current() : null;
+      if (named instanceof HTMLElement && named.isConnected) { named.focus({ preventScroll: true }); return; }
       const target = opener instanceof HTMLElement && opener.isConnected ? opener : lastFocusOutside(dialog);
       if (target) target.focus();
     };

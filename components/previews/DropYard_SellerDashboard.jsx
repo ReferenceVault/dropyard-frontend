@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback, useId } from "react";
 import Link from "next/link";
 import { apiRequest, uploadItemPhoto } from "@/lib/api";
+import { wholeAmountText, decimalAmountText, offerAmountProblem } from "@/lib/amountInput";
 import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { useNotifications, useRoleConversations } from "@/context/NotificationsContext";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
-import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { ModalA11y } from "@/components/ModalA11y";
 import { ModalPortal } from "@/components/ModalPortal";
@@ -39,12 +39,10 @@ import {
   dropCloseMoment,
   nextDropMoment,
   toSellerOverviewPhase,
-  hoursSinceLastDropClose,
   formatCompactCountdown,
   dropOpenDay,
   dropOpenHour,
   dropOpenHourCompact,
-  OPERATING_TIMEZONE,
 } from "@/lib/dropCycle";
 import { submitSubmission, isValidEmail } from "@/lib/submissions";
 import {
@@ -61,19 +59,33 @@ import {
   MessageCircle, Package, Eye, ArrowRight, User, Clock, Calendar,
   CheckCircle, MapPin, LayoutGrid, Box, DollarSign, ClipboardList,
   MessageSquare, Plus, Truck, History, ArrowLeft, Shield, Tag, TrendingDown,
-  Home, Heart, Users, Mail, Info, Lock, CreditCard, Banknote, Upload, RefreshCw,
-  Star, Settings, BarChart3, Bell, Award, Leaf, Send, Share2, AlertCircle,
-  Search, CreditCard as CardIcon, LogOut, Loader2, Menu, ShoppingBag, Archive,
+  Home, Heart, Mail, Info, Lock, CreditCard, Banknote, Upload, RefreshCw,
+  Star, Settings, Bell, Award, Leaf, Send, Share2, AlertCircle,
+  Search, CreditCard as CardIcon, LogOut, Loader2, ShoppingBag, Archive,
   Paperclip, Smile, Flag, ExternalLink
 } from "lucide-react";
-import { Pencil, Trash2, CalendarClock, UserX, Undo2, FileDown } from "lucide-react";
+import { Pencil, Trash2, CalendarClock, UserX, Undo2, FileDown, HelpCircle, ShoppingCart, PanelLeft } from "lucide-react";
 import { ItemActionsMenu } from "@/components/inventory/ItemActionsMenu";
+import { ReviewForm } from "@/components/reviews/ReviewForm";
+import { copyText, openShareWindow, shareLinks } from "@/lib/share";
+import { SellerOverview } from "@/components/seller-overview/SellerOverview";
+import Image from "next/image";
 
 /* ============================================================
    DESIGN SYSTEM — brand palette, site font
    Matched to buyer dashboard. Brand: green #308424, amber #F09000.
    ============================================================ */
 const C = {
+  // The seller's colour (client redesign): orange in every Drop state for the
+  // shell's buttons, active nav, Seller toggle and badges. White text on it is
+  // 5.2:1; it's 4.8:1 on soPeach and 4.55:1 on soMist. Green stays for live
+  // status only.
+  so:      "#C2410C",
+  soDeep:  "#9A3412",
+  soMist:  "#FFEDE0",
+  soPeach: "#FFF4EC",
+  soLine:  "#ECE6E0",
+  soInk:   "#1C1917",
   paper:     "#FFFFFF",
   page:      "#FFFFFF",
   sand:      "#FBFDFB",
@@ -118,6 +130,9 @@ const C = {
   aiLight:   "#F5F3FF",
   aiBorder:  "#DDD6FE",
 };
+// Hover / pressed wash for the white banner pills (.dy-banner-pill): light
+// enough that the label (amberDeep / greenDeep / claret) keeps 4.5:1.
+const PILL_TINT = { amber: "#FFF2DF", green: "#EEF6EC", claret: "#FEF4F3" };
 const F = {
   head: 'var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, sans-serif',
   body: 'var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, sans-serif',
@@ -175,6 +190,8 @@ function useViewport() {
 // all six dashboard files; public/Logo_1.png is the same artwork, cached
 // by the browser and shared across every surface.
 const LOGO_SRC = "/logo-wordmark.png";
+// The house mark on its own (the site icon), for the collapsed sidebar's header.
+const LOGO_MARK_SRC = "/icon-192.png";
 
 /* ============================================================
    BACKEND ENUM MAPS
@@ -410,8 +427,8 @@ function RoleToggle({ onSwitchToBuyer, buyerUnread = 0 }) {
     }, 220);
   }
 
-  // Slider sits over the "active" half. Seller is the current dashboard,
-  // so it lives on the left until the user clicks Buyer.
+  // Slider sits over the "active" half: Seller (orange, the seller's colour
+  // in every Drop state) until the user picks Buyer (the buyer's green).
   const sliderOnRight = switching;
 
   return (
@@ -420,24 +437,21 @@ function RoleToggle({ onSwitchToBuyer, buyerUnread = 0 }) {
       display: "flex",
       padding: 4,
       borderRadius: 14,
-      background: C.sand,
-      border: "1px solid " + C.fawn,
-      boxShadow: "inset 0 1px 2px rgba(31,29,25,0.06)",
+      background: C.paper,
+      border: "1px solid " + C.soLine,
+      boxShadow: "inset 0 1px 2px rgba(31,29,25,0.05)",
       overflow: "hidden",
     }}>
-      {/* Animated slider pill */}
       <div style={{
         position: "absolute",
         top: 4, bottom: 4,
         left: 4,
         width: "calc(50% - 4px)",
-        background: sliderOnRight
-          ? "linear-gradient(135deg, " + C.amber + " 0%, " + C.amberDeep + " 100%)"
-          : "linear-gradient(135deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
+        background: sliderOnRight ? C.green : C.so,
         borderRadius: 10,
         boxShadow: sliderOnRight
-          ? "0 4px 12px " + C.amber + "55, 0 1px 2px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.18)"
-          : "0 4px 12px " + C.green + "55, 0 1px 2px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.18)",
+          ? "0 4px 12px " + C.green + "55"
+          : "0 4px 12px rgba(194,65,12,0.35)",
         transform: sliderOnRight ? "translateX(100%)" : "translateX(0)",
         transition: "transform 220ms cubic-bezier(0.4, 0, 0.2, 1), background 220ms ease, box-shadow 220ms ease",
       }}/>
@@ -445,24 +459,25 @@ function RoleToggle({ onSwitchToBuyer, buyerUnread = 0 }) {
       {/* SELLER (always the active side while on seller dashboard) */}
       <button
         disabled
+        aria-current="true"
         style={{
           flex: 1,
-          padding: "9px 0",
+          minHeight: 40,
+          padding: "8px 0",
           borderRadius: 10,
           border: "none",
           background: "transparent",
           cursor: "default",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-          fontSize: 12.5,
-          fontWeight: 800,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+          fontSize: 14,
+          fontWeight: 700,
           fontFamily: F.head,
-          letterSpacing: "0.02em",
-          color: sliderOnRight ? C.ash : "#fff",
+          color: sliderOnRight ? C.mink : "#fff",
           position: "relative", zIndex: 1,
           transition: "color 200ms ease",
         }}
       >
-        <Truck size={13} strokeWidth={2.6}/>
+        <Tag size={15} strokeWidth={2.4} aria-hidden="true"/>
         Seller
       </button>
 
@@ -472,26 +487,25 @@ function RoleToggle({ onSwitchToBuyer, buyerUnread = 0 }) {
         onMouseEnter={() => setHoverBuyer(true)}
         onMouseLeave={() => setHoverBuyer(false)}
         disabled={switching}
-        aria-label={buyerUnread > 0 ? "Switch to Buyer" + buyerUnreadLabel(buyerUnread) : undefined}
+        aria-label={"Switch to Buyer" + buyerUnreadLabel(buyerUnread)}
         style={{
           flex: 1,
-          padding: "9px 0",
+          minHeight: 40,
+          padding: "8px 0",
           borderRadius: 10,
           border: "none",
-          background: "transparent",
+          background: hoverBuyer && !sliderOnRight ? C.soPeach : "transparent",
           cursor: switching ? "default" : "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-          fontSize: 12.5,
-          fontWeight: 800,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+          fontSize: 14,
+          fontWeight: 700,
           fontFamily: F.head,
-          letterSpacing: "0.02em",
-          color: sliderOnRight ? "#fff" : (hoverBuyer ? C.ink : C.mink),
+          color: sliderOnRight ? "#fff" : C.soInk,
           position: "relative", zIndex: 1,
-          transition: "color 200ms ease, transform 180ms ease",
-          transform: hoverBuyer && !sliderOnRight ? "scale(1.03)" : "scale(1)",
+          transition: "color 200ms ease, background 150ms ease",
         }}
       >
-        <ShoppingBag size={13} strokeWidth={2.6}/>
+        <ShoppingCart size={15} strokeWidth={2.4} aria-hidden="true"/>
         Buyer
         <SwitchUnreadTag unread={buyerUnread} top={-2} right={4}/>
       </button>
@@ -506,20 +520,37 @@ function RoleToggle({ onSwitchToBuyer, buyerUnread = 0 }) {
 // in shape, swapped to the buyer-side green tint.
 // `unread` = buyer-side conversations with unread messages, so a message to
 // the side you aren't looking at still shows.
+// Why an amount field's action is disabled ("Enter an amount"). A polite live
+// region, so it's announced when it appears; the field and the disabled
+// button point at it with aria-describedby. Always rendered: while empty it
+// takes no space but stays in the accessibility tree, so the region exists
+// before its text does. (Same as the buyer dashboard's.)
+function AmountHint({ id, problem, style = null }) {
+  return (
+    <span id={id} role="status" aria-live="polite" style={problem
+      ? { fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, ...style }
+      : { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>
+      {problem || ""}
+    </span>
+  );
+}
+
 function buyerUnreadLabel(unread) {
   return unread > 0 ? `, ${unread} unread buyer conversation${unread === 1 ? "" : "s"}` : "";
 }
 // Envelope count pinned to a switch control's corner; the same tag as the
 // Messages tab's. Decorative: the control's own label carries the count.
-function SwitchUnreadTag({ unread, top = -7, right = -7 }) {
+// `onFill`: the tag sits on a solid coloured button, so it turns white with
+// that colour's text (and a ring in `ring`) instead of solid green.
+function SwitchUnreadTag({ unread, top = -7, right = -7, onFill = null, ring = null }) {
   if (!(unread > 0)) return null;
   return (
     <span aria-hidden="true" style={{
       position: "absolute", top, right,
       display: "inline-flex", alignItems: "center", gap: 3,
       padding: "2px 6px", borderRadius: 999,
-      background: C.green, color: "#fff",
-      boxShadow: "0 0 0 2px " + C.paper,
+      background: onFill ? C.paper : C.green, color: onFill || "#fff",
+      boxShadow: onFill ? "0 0 0 1.5px " + ring + ", 0 0 0 3.5px " + C.paper : "0 0 0 2px " + C.paper,
       fontFamily: F.head, fontSize: 10, fontWeight: 800, lineHeight: 1.2,
       pointerEvents: "none", zIndex: 2,
     }}>
@@ -528,10 +559,17 @@ function SwitchUnreadTag({ unread, top = -7, right = -7 }) {
     </span>
   );
 }
+// The phone header's Switch to Buyer: icon-only (desktop has the sidebar's
+// RoleToggle instead), styled like the buyer header's Switch to Seller — a
+// solid circle in the Drop's colour (green live, brown between Drops) with a
+// white icon. The envelope tag is white here so it reads on the solid fill.
 function SwitchToBuyerButton({ onClick, unread = 0 }) {
   const [hover, setHover] = useState(false);
+  // The seller's orange in every Drop state (white icon 5.2:1).
+  const fill = C.so;
   return (
     <button
+      type="button"
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -542,34 +580,22 @@ function SwitchToBuyerButton({ onClick, unread = 0 }) {
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: "8px",
+        flexShrink: 0,
+        // 36px: the same size as the bell beside it in the phone header.
+        width: 36,
+        height: 36,
+        padding: 0,
         borderRadius: 999,
-        border: "1.5px solid " + (hover ? C.green : C.fawn),
-        background: hover
-          ? "linear-gradient(135deg, " + C.greenMist + " 0%, " + C.paper + " 100%)"
-          : C.paper,
+        border: "none",
+        background: hover ? C.soDeep : fill,
         cursor: "pointer",
-        fontFamily: F.head,
-        fontSize: 12,
-        fontWeight: 800,
-        color: hover ? C.greenDeep : C.mink,
-        boxShadow: hover
-          ? "0 6px 18px " + C.green + "33, 0 1px 2px rgba(31,29,25,0.04)"
-          : "0 1px 2px rgba(31,29,25,0.04)",
-        transform: hover ? "translateY(-1px)" : "translateY(0)",
-        transition: "all 200ms cubic-bezier(0.4, 0, 0.2, 1)",
+        color: "#fff",
+        boxShadow: "0 4px 12px rgba(194,65,12,0.25)",
+        transition: "background-color 180ms ease",
       }}
     >
-      <span style={{
-        width: 24, height: 24, borderRadius: 7,
-        background: hover ? C.green : C.greenMist,
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        boxShadow: hover ? "0 2px 6px " + C.green + "55" : "none",
-        transition: "all 200ms ease",
-      }}>
-        <ShoppingBag size={13} style={{ color: hover ? "#fff" : C.greenDeep }} strokeWidth={2.6}/>
-      </span>
-      <SwitchUnreadTag unread={unread}/>
+      <ShoppingBag size={17} strokeWidth={2.3} aria-hidden="true"/>
+      <SwitchUnreadTag unread={unread} onFill={C.soDeep} ring={fill}/>
     </button>
   );
 }
@@ -586,219 +612,89 @@ function SwitchToBuyerButton({ onClick, unread = 0 }) {
 // later, this comes back reading a real number.
 // envelopeCount: unread conversations, shown on the expanded Messages item as
 // a green envelope tag (Feedback 14 · 4). Same source as the bell.
-function SidebarNavItem({ item, active, accent, accentMist, Icon, onClick, countBadge = 0, envelopeCount = 0, collapsed = false }) {
-  const [hover, setHover] = useState(false);
-  const bg = active
-    ? accentMist
-    : (hover ? C.sand : "transparent");
-
-  if (collapsed) {
-    return (
-      <button
-        onClick={onClick}
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-        title={item.label}
-        aria-label={item.label}
-        style={{
-          position: "relative",
-          width: "100%",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          padding: "8px 0",
-          borderRadius: 10,
-          border: "none",
-          cursor: "pointer",
-          marginBottom: 4,
-          background: bg,
-          transition: "background 180ms ease",
-        }}
-      >
-        {active && (
-          <span style={{
-            position: "absolute",
-            left: -2, top: 7, bottom: 7,
-            width: 3,
-            borderRadius: "0 3px 3px 0",
-            background: accent,
-            boxShadow: "0 0 8px " + accent + "80, 0 0 2px " + accent,
-          }}/>
-        )}
-        <span style={{
-          width: 34, height: 34, borderRadius: 9,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          background: active ? accent : (hover ? C.paper : "transparent"),
-          boxShadow: active
-            ? "0 3px 8px " + accent + "44"
-            : (hover ? "0 1px 2px rgba(31,29,25,0.08)" : "none"),
-          transition: "background 180ms ease, box-shadow 180ms ease",
-        }}>
-          <Icon size={16} style={{ color: active ? "#fff" : C.mink }} strokeWidth={2.2}/>
-        </span>
-        {countBadge > 0 && (
-          <span style={{
-            position: "absolute",
-            top: 2, right: 4,
-            minWidth: 14, height: 14, padding: "0 4px",
-            borderRadius: 999,
-            background: C.claret, color: "#fff",
-            fontFamily: F.head, fontSize: 9, fontWeight: 800,
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 0 0 2px " + C.paper,
-          }}>{countBadge > 99 ? "99+" : countBadge}</span>
-        )}
-      </button>
-    );
-  }
-
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        position: "relative",
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "9px 12px 9px 14px",
-        borderRadius: 10,
-        border: "none",
-        cursor: "pointer",
-        marginBottom: 3,
-        textAlign: "left",
-        background: bg,
-        transition: "background 180ms ease, transform 160ms ease",
-        transform: hover && !active ? "translateX(2px)" : "translateX(0)",
-        overflow: "visible",
-      }}
-    >
-      {/* Active left accent bar with soft glow */}
-      {active && (
-        <span style={{
-          position: "absolute",
-          left: -2,
-          top: 7,
-          bottom: 7,
-          width: 3,
-          borderRadius: "0 3px 3px 0",
-          background: accent,
-          boxShadow: "0 0 8px " + accent + "80, 0 0 2px " + accent,
-        }}/>
+function SidebarNavItem({ item, active, Icon, onClick, count = 0, countLabel = "", collapsed = false }) {
+  const label = item.label + (count > 0 ? ", " + countLabel : "");
+  const common = {
+    onClick: item.href ? undefined : onClick,
+    "aria-current": active ? "page" : undefined,
+    className: "dy-seller-nav-item" + (active ? " is-active" : "") + (collapsed ? " is-collapsed" : ""),
+    title: collapsed ? item.label : undefined,
+    "aria-label": collapsed || count > 0 ? label : undefined,
+  };
+  const inner = (
+    <>
+      {/* The active item's mark on the sidebar's left edge. */}
+      {active && <span aria-hidden="true" className="dy-seller-nav-item__bar"/>}
+      <Icon size={collapsed ? 21 : 20} strokeWidth={2} aria-hidden="true" className="dy-seller-nav-item__icon"/>
+      {!collapsed && <span className="dy-seller-nav-item__label">{item.label}</span>}
+      {count > 0 && (
+        <span aria-hidden="true" className={"dy-seller-nav-item__count" + (collapsed ? " is-dot" : "")}>{count > 99 ? "99+" : count}</span>
       )}
-
-      {/* Icon tile — premium feel when active or hover */}
-      <span style={{
-        width: 28,
-        height: 28,
-        borderRadius: 8,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: active ? accent : (hover ? C.paper : "transparent"),
-        boxShadow: active
-          ? "0 3px 8px " + accent + "44"
-          : (hover ? "0 1px 2px rgba(31,29,25,0.08)" : "none"),
-        transition: "background 180ms ease, box-shadow 180ms ease",
-        flexShrink: 0,
-      }}>
-        <Icon size={15} style={{ color: active ? "#fff" : C.mink }} strokeWidth={2.2}/>
-      </span>
-
-      {/* Label */}
-      <span style={{
-        fontSize: 13,
-        fontWeight: active ? 800 : 600,
-        color: active ? accent : C.mink,
-        fontFamily: F.head,
-        flex: 1,
-        letterSpacing: active ? "-0.005em" : 0,
-        transition: "color 180ms ease",
-      }}>
-        {item.label}
-      </span>
-
-      {/* Count badge — unread messages on Messages, unanswered questions on
-          Inventory. */}
-      {countBadge > 0 && (
-        <span style={{
-          fontSize: 10,
-          fontWeight: 800,
-          padding: "2px 8px",
-          borderRadius: 999,
-          background: C.claret,
-          color: "#fff",
-          fontFamily: F.head,
-          lineHeight: 1.2,
-        }}>
-          {countBadge > 99 ? "99+" : countBadge}
-        </span>
-      )}
-
-      {/* Envelope tag — unread conversations on Messages. */}
-      {envelopeCount > 0 && (
-        <span
-          role="img"
-          aria-label={envelopeCount + " unread conversation" + (envelopeCount === 1 ? "" : "s")}
-          title={envelopeCount + " unread conversation" + (envelopeCount === 1 ? "" : "s")}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            padding: "2px 7px",
-            borderRadius: 999,
-            background: C.green,
-            color: "#fff",
-            fontFamily: F.head,
-            fontSize: 10,
-            fontWeight: 800,
-            lineHeight: 1.2,
-            flexShrink: 0,
-          }}
-        >
-          <Mail size={11} strokeWidth={2.4} aria-hidden="true"/>
-          {envelopeCount > 99 ? "99+" : envelopeCount}
-        </span>
-      )}
-
-      {/* Sliding chevron on active OR hover (not when a count badge is showing) */}
-      {countBadge === 0 && envelopeCount === 0 && (active || hover) && (
-        <ChevronRight
-          size={13}
-          style={{
-            color: active ? accent : C.ash,
-            opacity: active ? 0.9 : 0.6,
-            transform: hover && !active ? "translateX(2px)" : "translateX(0)",
-            transition: "transform 160ms ease, opacity 160ms ease",
-          }}
-          strokeWidth={2.5}
-        />
-      )}
-    </button>
+    </>
   );
+  return item.href
+    ? <a href={item.href} {...common}>{inner}</a>
+    : <button type="button" {...common}>{inner}</button>;
 }
 
 // Mobile primary nav — fixed to the bottom of the viewport, replaces the
 // sidebar on small screens. 5 tabs with the Sell action elevated to a green
 // pill so creating listings is one thumb-tap away. Respects iOS safe-area.
 function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPending = 0 }) {
+  // "You" opens a small menu: History, Settings and Help & Support.
+  const [youOpen, setYouOpen] = useState(false);
+  const youRef = useRef(null);
+  useEffect(() => {
+    if (!youOpen) return;
+    const onKey = (e) => { if (e.key === "Escape") { setYouOpen(false); youRef.current?.focus(); } };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [youOpen]);
   const navItems = [
     { id: "overview",   label: "Home",     icon: LayoutGrid,    matches: ["overview"] },
     // Same badge as the desktop sidebar — Questions lives under Items.
-    { id: "items",      label: "Items",    icon: Box,           matches: ["items","orders","claims","pickups","edit-item","item-detail"], badge: questionsPending > 0 ? questionsPending : null },
+    { id: "items",      label: "Items",    icon: Box,           matches: ["items","orders","claims","pickups","edit-item","item-detail","questions"], badge: questionsPending > 0 ? questionsPending : null },
     { id: "add-manual", label: "Sell",     icon: Plus,          matches: ["add-manual","add-chooser","add-ai","ai-setup","ai-photos"], primary: true },
     { id: "messages",   label: "Messages", icon: MessageSquare, matches: ["messages"], badge: messagesUnread > 0 ? messagesUnread : null },
-    { id: "history",    label: "You",      icon: User,          matches: ["history","settings","ai-plan"] },
+    { id: "you",        label: "You",      icon: User,          matches: ["history","settings","ai-plan"], menu: true },
+  ];
+  const youItems = [
+    { id: "history",  label: "History",        icon: History },
+    { id: "settings", label: "Settings",       icon: Settings },
+    { id: "help",     label: "Help & Support", icon: HelpCircle, href: "/help-center" },
   ];
   return (
     <nav role="navigation" aria-label="Primary" className="dy-mobile-bottom-nav" style={{
       position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 60,
-      background: "rgba(255, 252, 247, 0.92)",
+      background: "rgba(255, 252, 250, 0.94)",
       backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)",
-      borderTop: "1px solid " + C.fawn,
+      borderTop: "1px solid " + C.soLine,
       boxShadow: "0 -4px 20px rgba(31, 29, 25, 0.06)",
       paddingBottom: "env(safe-area-inset-bottom, 0)",
     }}>
+      {youOpen && (
+        <>
+          <div onClick={() => setYouOpen(false)} style={{ position: "fixed", inset: 0, zIndex: -1 }}/>
+          <ul id="dy-seller-you-menu" role="menu" aria-label="You" className="dy-rise" style={{
+            position: "absolute", right: 10, bottom: "calc(100% + 8px)", minWidth: 220, listStyle: "none",
+            background: C.paper, borderRadius: 16, border: "1px solid " + C.soLine,
+            boxShadow: "0 14px 36px rgba(31, 29, 25, 0.16)", padding: 6,
+          }}>
+            {youItems.map((it) => {
+              const Ic = it.icon;
+              const active = activeView === it.id;
+              const style = { display: "flex", alignItems: "center", gap: 12, width: "100%", minHeight: 48, padding: "0 14px", borderRadius: 12, border: "none", background: active ? C.soMist : "transparent", color: active ? C.so : C.soInk, fontFamily: F.head, fontSize: 15, fontWeight: active ? 800 : 600, cursor: "pointer", textDecoration: "none", textAlign: "left" };
+              return (
+                <li key={it.id} role="none">
+                  {it.href
+                    ? <a role="menuitem" href={it.href} style={style}><Ic size={19} aria-hidden="true"/>{it.label}</a>
+                    : <button role="menuitem" type="button" aria-current={active ? "page" : undefined} onClick={() => { setYouOpen(false); onNav(it.id); }} style={style}><Ic size={19} aria-hidden="true"/>{it.label}</button>}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
       <div style={{ display: "flex", alignItems: "stretch", justifyContent: "space-around", maxWidth: 600, margin: "0 auto" }}>
         {navItems.map(item => {
           const active = item.matches.includes(activeView);
@@ -815,19 +711,19 @@ function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPendi
                   display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
                   padding: "8px 4px 6px",
                   border: "none", background: "transparent", cursor: "pointer",
-                  color: C.greenDeep,
+                  color: C.so,
                 }}
               >
                 <span style={{
                   width: 48, height: 34, borderRadius: 999,
-                  background: "linear-gradient(180deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
+                  background: C.so,
                   display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  boxShadow: "0 3px 10px " + C.greenDeep + "55",
+                  boxShadow: "0 3px 10px rgba(194,65,12,0.35)",
                   marginBottom: 2,
                 }}>
                   <Ic size={20} strokeWidth={2.8} style={{ color: "#fff" }}/>
                 </span>
-                <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, letterSpacing: "0.02em", whiteSpace: "nowrap", color: C.greenDeep }}>{item.label}</span>
+                <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, letterSpacing: "0.02em", whiteSpace: "nowrap", color: C.so }}>{item.label}</span>
               </button>
             );
           }
@@ -839,16 +735,20 @@ function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPendi
           return (
             <button
               key={item.id}
-              onClick={() => onNav(item.id)}
+              ref={item.menu ? youRef : undefined}
+              onClick={() => (item.menu ? setYouOpen((o) => !o) : onNav(item.id))}
               aria-label={item.label + countLabel}
               aria-current={active ? "page" : undefined}
+              aria-haspopup={item.menu ? "menu" : undefined}
+              aria-expanded={item.menu ? youOpen : undefined}
+              aria-controls={item.menu && youOpen ? "dy-seller-you-menu" : undefined}
               style={{
                 position: "relative",
                 flex: 1, minWidth: 0,
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
                 padding: "10px 4px 8px",
                 border: "none", background: "transparent", cursor: "pointer",
-                color: active ? C.greenDeep : C.ash,
+                color: active ? C.so : C.mink,
                 transition: "color 150ms",
               }}
             >
@@ -856,8 +756,7 @@ function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPendi
                 <span aria-hidden="true" style={{
                   position: "absolute", top: 6, left: "50%", transform: "translateX(-50%)",
                   width: 48, height: 32, borderRadius: 999,
-                  background: C.greenMist,
-                  border: "1px solid " + C.green + "20",
+                  background: C.soMist,
                 }}/>
               )}
               <span style={{ position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", transition: "transform 150ms", transform: active ? "scale(1.05)" : "scale(1)" }}>
@@ -866,7 +765,7 @@ function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPendi
                   <span style={{
                     position: "absolute", top: -4, right: -10,
                     minWidth: 16, height: 16, padding: "0 4px",
-                    borderRadius: 999, background: C.claret, color: "#fff",
+                    borderRadius: 999, background: C.so, color: "#fff",
                     fontFamily: F.head, fontSize: 9, fontWeight: 800,
                     display: "inline-flex", alignItems: "center", justifyContent: "center",
                     border: "1.5px solid " + C.paper,
@@ -886,210 +785,120 @@ function MobileBottomNav({ activeView, onNav, messagesUnread = 0, questionsPendi
 // leaves with it. AIPlanView still takes it — that view is where a real plan
 // state would belong.
 function Sidebar({ activeView, onNav, onSwitchRole, collapsed = false, messagesUnread = 0, questionsPending = 0, otherUnread = 0 }) {
-  const sections = [
-    { header: "ACTIVITY", items: [
-      { id: "overview",  label: "Overview",  icon: LayoutGrid },
-      { id: "inventory", label: "Inventory", icon: Box, group: "inv" },
-      { id: "messages",  label: "Messages",  icon: MessageSquare },
-    ]},
-    { header: "MANAGE", items: [
-{ id: "history",  label: "History",  icon: History },
-      { id: "settings", label: "Settings", icon: Settings, group: "settings" },
-    ]},
+  // The client's sidebar: one list, a divider before Settings.
+  const items = [
+    { id: "overview",  label: "Overview",       icon: LayoutGrid },
+    { id: "inventory", label: "My Items",       icon: Box, group: "inv" },
+    { id: "messages",  label: "Messages",       icon: MessageSquare },
+    { id: "history",   label: "History",        icon: History },
+    { divider: true },
+    { id: "settings",  label: "Settings",       icon: Settings },
+    { id: "help",      label: "Help & Support", icon: HelpCircle, href: "/help-center" },
   ];
-
-  // Collapsible section state — default open. Keyed by section header.
-  const [collapsedSections, setCollapsedSections] = useState({});
-  const isCollapsed = (header) => !!collapsedSections[header];
-  const toggleSection = (header) => setCollapsedSections(c => ({ ...c, [header]: !c[header] }));
-
   function handleClick(item) {
     if (item.id === "inventory") return onNav("items");
     onNav(item.id);
   }
-
   function isActive(item) {
-    if (item.group === "inv")      return ["items","orders","claims","pickups","edit-item","add-chooser","add-manual","add-ai","ai-setup","ai-photos"].includes(activeView);
-    if (item.group === "ded")      return activeView.startsWith("ded");
+    if (item.group === "inv") return ["items","orders","claims","pickups","questions","item-detail","edit-item","add-chooser","add-manual","add-ai","ai-setup","ai-photos"].includes(activeView);
+    if (item.id === "settings") return activeView === "settings" || activeView === "ai-plan";
     return activeView === item.id;
   }
-
-  function accentColor(item) {
-    if (item.group === "ded") return C.teal;
-    return C.green;
-  }
-  function accentMist(item) {
-    if (item.group === "ded") return C.tealMist;
-    return C.greenMist;
-  }
+  // Unread conversations on Messages; unanswered questions on My Items
+  // (the Questions tab lives there).
+  const countFor = (item) => item.id === "messages" ? messagesUnread : item.id === "inventory" ? questionsPending : 0;
+  const countLabelFor = (item, n) => item.id === "messages"
+    ? n + " unread conversation" + (n === 1 ? "" : "s")
+    : n + " unanswered question" + (n === 1 ? "" : "s");
 
   return (
     <aside className="dy-desktop-sidebar" style={{
-      width: collapsed ? 72 : 240,
-      borderRight: "1px solid " + C.fawn,
-      background: C.paper,
+      width: collapsed ? 76 : 240,
+      borderRight: "1px solid " + C.soLine,
+      background: "#FFFCFA",
       display: "flex", flexDirection: "column",
       height: "100%", flexShrink: 0,
       transition: "width 240ms cubic-bezier(0.4, 0, 0.2, 1)",
       overflow: "hidden",
     }}>
-      {/* Role switcher — hidden in collapsed mode (no meaningful icon-only form) */}
       {!collapsed && (
-        <div style={{ padding: "14px 14px 0 14px" }}>
+        <div style={{ padding: "16px 14px 0" }}>
           <RoleToggle onSwitchToBuyer={onSwitchRole} buyerUnread={otherUnread}/>
         </div>
       )}
 
-      {/* List new item CTA — full label when expanded, icon-only when collapsed */}
-      <div style={{ padding: collapsed ? "14px 12px 4px 12px" : "12px 14px 4px 14px" }}>
+      {/* + List an Item: full label when expanded, icon-only in the rail. */}
+      <div style={{ padding: collapsed ? "16px 14px 6px" : "16px 14px 6px" }}>
         <button
           onClick={() => onNav("add-manual")}
-          className="cta-primary"
-          title={collapsed ? "List New Item" : undefined}
+          className="cta-primary dy-so-btn dy-so-btn--filled"
+          title={collapsed ? "List an Item" : undefined}
+          aria-label={collapsed ? "List an Item" : undefined}
           style={{
-            width: "100%",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-            padding: collapsed ? "11px 0" : "12px 0",
-            borderRadius: 12, border: "none", cursor: "pointer",
-            background: C.green, color: "#fff",
-            fontSize: 13, fontWeight: 800, fontFamily: F.head,
-            boxShadow: "0 2px 0 " + C.greenDeep,
+            width: "100%", minHeight: 48,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            padding: 0,
+            borderRadius: 999, border: "none", cursor: "pointer",
+            background: C.so, color: "#fff",
+            fontSize: 16, fontWeight: 700, fontFamily: F.head,
+            boxShadow: "0 8px 18px -8px rgba(194,65,12,0.75)",
           }}
         >
-          <Plus size={15} strokeWidth={2.5}/>
-          {!collapsed && "List New Item"}
+          <Plus size={collapsed ? 20 : 19} strokeWidth={2.4} aria-hidden="true"/>
+          {!collapsed && "List an Item"}
         </button>
       </div>
 
-      {/* Nav sections — collapsible per-section header (when not in rail mode) */}
-      <div style={{ padding: collapsed ? "12px 8px 10px" : "16px 10px 10px 10px", flex: 1, overflowY: "auto" }}>
-        {sections.map((sec, si) => {
-          const col = isCollapsed(sec.header);
-          // Rail mode: replace section header with a thin divider line; always
-          // show all icons (section collapse only matters in full mode).
-          if (collapsed) {
-            return (
-              <div key={si} style={{ marginBottom: 10 }}>
-                {si > 0 && (
-                  <div style={{ height: 1, background: C.fawn, margin: "10px 8px 12px" }}/>
-                )}
-                {sec.items.map(item => {
-                  const act = isActive(item);
-                  const ac = accentColor(item);
-                  const ab = accentMist(item);
-                  const Ic = item.icon;
-                  return (
-                    <SidebarNavItem
-                      key={item.id}
-                      item={item}
-                      active={act}
-                      accent={ac}
-                      accentMist={ab}
-                      Icon={Ic}
-                      onClick={() => handleClick(item)}
-                      // Unanswered questions ride on Inventory, which is where
-                      // the Questions tab lives. Before this the count existed
-                      // only on that tab's own header — a seller anywhere else
-                      // in the dashboard had no way to know one had arrived.
-                      countBadge={item.id === "messages" ? messagesUnread : item.id === "inventory" ? questionsPending : 0}
-                      collapsed
-                    />
-                  );
-                })}
-              </div>
-            );
-          }
-          return (
-            <div key={si} style={{ marginBottom: 14 }}>
-              {/* Section header — click to collapse/expand */}
-              <button
-                onClick={() => toggleSection(sec.header)}
-                aria-expanded={!col}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "transparent",
-                  cursor: "pointer",
-                  marginBottom: 6,
-                  textAlign: "left",
-                  transition: "background 150ms ease",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.background = C.sand; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-              >
-                <ChevronDown
-                  size={14}
-                  strokeWidth={2.6}
-                  style={{
-                    color: C.mink,
-                    flexShrink: 0,
-                    transform: col ? "rotate(-90deg)" : "rotate(0deg)",
-                    transition: "transform 200ms ease",
-                  }}
+      <nav aria-label="Seller" style={{ padding: collapsed ? "12px 10px" : "14px 12px", overflowY: "auto", flex: "0 1 auto", minHeight: 0 }}>
+        <ul style={{ listStyle: "none" }}>
+          {items.map((item, i) => item.divider
+            ? <li key={"d" + i} aria-hidden="true" style={{ height: 1, background: C.soLine, margin: collapsed ? "10px 6px" : "12px 10px" }}/>
+            : (
+              <li key={item.id} style={{ marginBottom: 4 }}>
+                <SidebarNavItem
+                  item={item}
+                  active={isActive(item)}
+                  Icon={item.icon}
+                  onClick={() => handleClick(item)}
+                  count={countFor(item)}
+                  countLabel={countLabelFor(item, countFor(item))}
+                  collapsed={collapsed}
                 />
-                <p style={{
-                  fontSize: 11,
-                  fontWeight: 900,
-                  color: C.mink,
-                  letterSpacing: "0.16em",
-                  fontFamily: F.head,
-                  textTransform: "uppercase",
-                  flex: 1,
-                }}>
-                  {sec.header}
-                </p>
-                {col && (
-                  <span style={{
-                    fontSize: 9,
-                    fontWeight: 800,
-                    color: C.ash,
-                    fontFamily: F.head,
-                  }}>
-                    {sec.items.length}
-                  </span>
-                )}
-              </button>
+              </li>
+            ))}
+        </ul>
+      </nav>
 
-              {/* Items (hidden when collapsed) */}
-              {!col && sec.items.map(item => {
-                const act = isActive(item);
-                const ac = accentColor(item);
-                const ab = accentMist(item);
-                const Ic = item.icon;
-                return (
-                  <SidebarNavItem
-                    key={item.id}
-                    item={item}
-                    active={act}
-                    accent={ac}
-                    accentMist={ab}
-                    Icon={Ic}
-                    onClick={() => handleClick(item)}
-                    envelopeCount={item.id === "messages" ? messagesUnread : 0}
-                  />
-                );
-              })}
-            </div>
-          );
-        })}
-      </div>
+      {/* The warm illustration at the bottom: decorative; not in the rail,
+          and dropped on short windows (globals.css). */}
+      {!collapsed && (
+        <div aria-hidden="true" className="dy-seller-sidebar-art" style={{ marginTop: "auto", padding: "10px 8px 0" }}>
+          <Image src="/images/seller-overview/sidebar-illustration-placeholder.png" alt="" width={224} height={181} style={{ width: "100%", height: "auto", display: "block" }}/>
+        </div>
+      )}
     </aside>
   );
 }
 
 // Avatar with dropdown menu - real user initials and sign-out.
-function SellerUserMenu({ user, onSignout, onOpenSettings }) {
+// `live`: the initials fallback follows the Drop like the buyer header's
+// avatar — green while a Drop is live, brown between Drops.
+function SellerUserMenu({ user, onSignout }) {
   const [open, setOpen] = useState(false);
   // The sign-out dialog hands focus back to whatever had it when it opened.
   // The menu item that opens it disappears with the menu, so focus moves to
   // the account button first and Esc / "Stay" land back there.
   const buttonRef = useRef(null);
   const displayName = user?.name || "Guest";
+  const firstName = user?.firstName || (user?.name ? user.name.split(/\s+/)[0] : "");
+  // Esc closes it and hands focus back to the account button; a click
+  // outside lands on the backdrop below, which closes it too.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === "Escape") { setOpen(false); buttonRef.current?.focus(); } };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   return (
     <div style={{ position: "relative" }}>
       <button
@@ -1098,11 +907,12 @@ function SellerUserMenu({ user, onSignout, onOpenSettings }) {
         title={displayName}
         aria-label={"Account menu" + (user?.name ? " for " + user.name : "")}
         aria-expanded={open}
+        className="dy-seller-account"
         style={{
-          width: 36, height: 36, borderRadius: "50%",
-          background: "transparent",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          border: "none", cursor: "pointer", padding: 0, overflow: "hidden",
+          minHeight: 44, borderRadius: 999,
+          display: "flex", alignItems: "center", gap: 10,
+          border: "none", cursor: "pointer", padding: "4px 8px 4px 4px",
+          fontFamily: F.head, fontSize: 16, fontWeight: 600, color: C.soInk,
         }}
       >
         {/* Photo, DropYard avatar or initials — updates the moment Settings
@@ -1113,11 +923,13 @@ function SellerUserMenu({ user, onSignout, onOpenSettings }) {
           size={36}
           decorative
           eager
-          initialsBg={avatarBg(displayName)}
+          initialsBg={C.so}
           fontFamily={F.head}
           fontWeight={900}
           fontSize={12}
         />
+        {firstName && <span className="dy-desktop-only" style={{ maxWidth: 140, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{firstName}</span>}
+        <ChevronDown className="dy-desktop-only" size={18} strokeWidth={2.2} aria-hidden="true" style={{ color: C.soInk, transform: open ? "rotate(180deg)" : "none", transition: "transform 150ms" }}/>
       </button>
       {open && (
         <>
@@ -1125,11 +937,11 @@ function SellerUserMenu({ user, onSignout, onOpenSettings }) {
           <div className="dy-rise" style={{
             position: "absolute", right: 0, top: "calc(100% + 10px)", zIndex: 50,
             minWidth: 240, borderRadius: 14, background: C.paper,
-            border: "1px solid " + C.fawn, boxShadow: "0 12px 32px rgba(31, 29, 25, 0.12)",
+            border: "1px solid " + C.soLine, boxShadow: "0 12px 32px rgba(31, 29, 25, 0.12)",
             overflow: "hidden",
           }}>
-            <div style={{ padding: "14px 16px", borderBottom: "1px solid " + C.fawn }}>
-              <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, marginBottom: 2 }}>
+            <div style={{ padding: "14px 16px", borderBottom: "1px solid " + C.soLine }}>
+              <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.soInk, marginBottom: 2 }}>
                 {displayName}
               </p>
               <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, wordBreak: "break-all" }}>
@@ -1165,93 +977,76 @@ function labelForView(view) {
   if (view === "settings")     return "Settings";
   if (view === "ai-plan")      return "AI plan";
   if ([
-    "items","orders","claims","pickups",
+    "items","orders","claims","pickups","questions","item-detail",
     "edit-item","add-chooser","add-manual","add-ai","ai-setup","ai-photos",
-  ].includes(view)) return "Inventory";
+  ].includes(view)) return "My Items";
   // Fallback — humanize the view id.
   return (view || "").charAt(0).toUpperCase() + (view || "").slice(1).replace(/-/g, " ");
 }
 
-function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, onSwitchRole, otherUnread = 0 }) {
+function TopNav({ user, onSignout, activeView, onToggleSidebar, onSwitchRole, otherUnread = 0, sidebarCollapsed = false, onSearch = null }) {
   // No `useViewport()` here on purpose — layout flips between mobile/desktop
   // happen entirely via CSS media queries on the `.dy-seller-topnav*` classes
-  // defined in globals.css. Gating layout on a JS hook produced a first-paint
-  // flicker on mobile (SSR `useViewport` defaults to width=1280 → desktop
-  // layout rendered first, then re-rendered after hydration). See BUG-030.
+  // defined in globals.css (BUG-030: no first-paint flicker on phones).
   const viewLabel = labelForView(activeView);
+  const [query, setQuery] = useState("");
   return (
-    <header className="dy-seller-topnav">
-      {/* LOGO ZONE — 240px wide on desktop to match the sidebar so the next
-          column aligns with where the sidebar ends. Compresses to auto on mobile. */}
+    <header className={"dy-seller-topnav" + (sidebarCollapsed ? " is-collapsed" : "")}>
+      {/* LOGO ZONE: the sidebar's width on desktop, with the tagline. With
+          the sidebar collapsed it narrows to match and shows the house mark
+          alone (the CSS picks which image shows; phones keep the wordmark). */}
       <div className="dy-seller-topnav__logo-zone">
-        <Link href="/" title="DropYard home" style={{ display: "flex", alignItems: "center", flexShrink: 0, textDecoration: "none" }}>
+        <Link href="/" title="DropYard home" className="dy-seller-topnav__brand">
           <img src={LOGO_SRC} alt="DropYard" className="dy-seller-topnav__logo"/>
+          <Image src={LOGO_MARK_SRC} alt="DropYard" width={40} height={40} className="dy-seller-topnav__mark"/>
+          <span className="dy-seller-topnav__tagline">From one home to another</span>
         </Link>
       </div>
 
-      {/* BREADCRUMB — sidebar toggle and "Seller /" prefix are desktop-only. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+      {/* Page title, with the small sidebar toggle on desktop. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <button
           onClick={onToggleSidebar}
-          title="Toggle sidebar"
-          aria-label="Toggle sidebar"
-          className="dy-desktop-only"
-          style={{
-            width: 38, height: 38, borderRadius: 10,
-            border: "1px solid " + C.fawn, background: C.paper,
-            cursor: "pointer", display: "flex", alignItems: "center",
-            justifyContent: "center", flexShrink: 0,
-            transition: "background 150ms ease, border-color 150ms ease",
-          }}
-          onMouseEnter={e => { e.currentTarget.style.background = C.sand; }}
-          onMouseLeave={e => { e.currentTarget.style.background = C.paper; }}
+          title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!sidebarCollapsed}
+          className="dy-desktop-only dy-seller-topnav__toggle"
         >
-          <Menu size={16} style={{ color: C.mink }} strokeWidth={2.2}/>
+          <PanelLeft size={18} strokeWidth={2} aria-hidden="true"/>
         </button>
-        <nav aria-label="Breadcrumb" className="dy-seller-topnav__breadcrumb" style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: F.head, minWidth: 0 }}>
-          <span className="dy-desktop-only" style={{ color: C.mink, fontWeight: 600 }}>Seller</span>
-          <span className="dy-desktop-only" style={{ color: C.smoke, fontWeight: 700 }}>/</span>
-          <span style={{ color: C.ink, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{viewLabel}</span>
-        </nav>
+        <p className="dy-seller-topnav__title">{viewLabel}</p>
       </div>
 
-      {/* CENTER — search bar (desktop only) */}
-      <div className="dy-desktop-only" style={{ display: "flex", justifyContent: "center" }}>
-        <div style={{ position: "relative", maxWidth: 640, width: "100%" }}>
-          <Search size={15} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: C.ash, pointerEvents: "none" }} strokeWidth={2.4}/>
-          <input
-            type="text"
-            placeholder="Search items, orders, claims…"
-            style={{
-              width: "100%",
-              padding: "11px 16px 11px 40px",
-              borderRadius: 999,
-              border: "1px solid " + C.fawn,
-              background: C.sand,
-              fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.ink,
-              outline: "none", boxSizing: "border-box",
-              transition: "background 150ms ease, border-color 150ms ease, box-shadow 150ms ease",
-            }}
-            onFocus={e => { e.currentTarget.style.background = C.paper; e.currentTarget.style.borderColor = C.greenMist; e.currentTarget.style.boxShadow = "0 0 0 3px " + C.greenMist; }}
-            onBlur={e => { e.currentTarget.style.background = C.sand; e.currentTarget.style.borderColor = C.fawn; e.currentTarget.style.boxShadow = "none"; }}
-          />
-        </div>
-      </div>
+      {/* Search my items: Enter opens My items filtered by title. */}
+      <form
+        role="search"
+        className="dy-desktop-only dy-seller-topnav__search"
+        onSubmit={(e) => { e.preventDefault(); if (onSearch) onSearch(query.trim()); setQuery(""); }}
+      >
+        <Search size={18} aria-hidden="true" strokeWidth={2.2} style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: C.mink, pointerEvents: "none" }}/>
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search my items…"
+          aria-label="Search my items"
+          enterKeyHint="search"
+          className="dy-seller-topnav__search-input"
+        />
+      </form>
 
-      {/* RIGHT — notifications bell + (mobile-only) switch to buyer + user menu */}
+      {/* RIGHT — bell, (phones) Switch to Buyer, account. */}
       <div className="dy-seller-topnav__right">
-        {/* Switch to Buyer: shown only on mobile; desktop has the RoleToggle in the sidebar. */}
+        {/* Everything waiting on BOTH sides: unread conversations and claim,
+            offer, pickup and question events. See NotificationBell. */}
+        <NotificationBell tone="seller"/>
         {onSwitchRole && (
           <span className="dy-mobile-only" style={{ display: "inline-flex" }}>
             <SwitchToBuyerButton onClick={() => onSwitchRole()} unread={otherUnread}/>
           </span>
         )}
-        {/* Everything waiting on BOTH sides: unread conversations and claim,
-            offer, pickup and question events. See NotificationBell. */}
-        <NotificationBell/>
-        {/* BUG-064 — socket health pulse for at-a-glance real-time status. */}
-        <SocketHealthDot />
-        <SellerUserMenu user={user} onSignout={onSignout} onOpenSettings={onOpenSettings}/>
+        <span aria-hidden="true" className="dy-desktop-only" style={{ width: 1, height: 30, background: C.soLine }}/>
+        <SellerUserMenu user={user} onSignout={onSignout}/>
       </div>
     </header>
   );
@@ -1271,657 +1066,6 @@ function TopNav({ user, onSignout, onOpenSettings, activeView, onToggleSidebar, 
 const _SH_XS = "0 1px 2px rgba(31, 29, 25, 0.04), 0 1px 1px rgba(31, 29, 25, 0.03)";
 const _SH_SM = "0 1px 3px rgba(31, 29, 25, 0.06), 0 1px 2px rgba(31, 29, 25, 0.04)";
 const _SH_MD = "0 4px 12px rgba(31, 29, 25, 0.08), 0 2px 4px rgba(31, 29, 25, 0.05)";
-
-// Shared building block used to wrap every Overview block in a consistent
-// titled section. Title on the left, optional `action` slot on the right
-// (typically a "See all"-style ghost button). Falls back gracefully when both
-// are omitted — useful for full-bleed sections that don't need a header.
-function OverviewSection({ title, action, children }) {
-  const { isMobile } = useViewport();
-  return (
-    <section style={{ marginBottom: isMobile ? 18 : 24 }}>
-      {(title || action) && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 12 }}>
-          {title && <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 16, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em" }}>{title}</h2>}
-          {action}
-        </div>
-      )}
-      {children}
-    </section>
-  );
-}
-
-// Bundle-contents reveal — shown next to bundle items in compact contexts
-// (Going-Live preview, ShareSheet) where the full ItemDetailView list would
-// be too much. Shows the first 3 items inline, lets the seller expand to see
-// the rest. Teal theme matches the Bundle-of-N pill elsewhere.
-function BundleInside({ contents }) {
-  const { isMobile } = useViewport();
-  const [open, setOpen] = useState(false);
-  if (!contents || contents.length === 0) return null;
-  const visible = open ? contents : contents.slice(0, 3);
-  const remainder = contents.length - visible.length;
-  return (
-    <div style={{ marginTop: 6, padding: "8px 12px", borderRadius: 10, background: C.tealMist, border: "1px solid " + C.teal + "25" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-        <Package size={11} style={{ color: C.teal }} strokeWidth={2.3}/>
-        <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, color: C.teal, letterSpacing: "0.06em", textTransform: "uppercase" }}>What&rsquo;s inside</span>
-      </div>
-      <p style={{ fontFamily: F.body, fontSize: isMobile ? 11 : 12, fontWeight: 600, color: C.ink, lineHeight: 1.45 }}>
-        {visible.join(" · ")}
-        {remainder > 0 && (
-          <>
-            {" "}
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => { e.stopPropagation(); setOpen(true); }}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setOpen(true); } }}
-              style={{ cursor: "pointer", fontFamily: F.head, fontSize: isMobile ? 11 : 12, fontWeight: 800, color: C.teal, textDecoration: "underline" }}
-            >+{remainder} more</span>
-          </>
-        )}
-        {open && contents.length > 3 && (
-          <>
-            {" "}
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => { e.stopPropagation(); setOpen(false); }}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setOpen(false); } }}
-              style={{ cursor: "pointer", fontFamily: F.head, fontSize: isMobile ? 11 : 12, fontWeight: 700, color: C.mink, textDecoration: "underline" }}
-            >show less</span>
-          </>
-        )}
-      </p>
-    </div>
-  );
-}
-
-// Discrete action-items strip — 4 buckets (pickups today / messages awaiting /
-// pickups this week / drafts unfinished). Replaces production's generic
-// attentionItems list with v2's metric-first framing: the seller sees one tile
-// per category at a glance, each tile jumps to the relevant view.
-function ActionItems({ pickupsToday, pickupsWeek, messages, drafts, onNav }) {
-  const { isMobile } = useViewport();
-  const items = [];
-  if (pickupsToday > 0) items.push({
-    icon: MapPin, color: C.claret, mist: C.claretMist,
-    title: pickupsToday === 1 ? "1 pickup today" : pickupsToday + " pickups today",
-    sub: "Don’t keep buyers waiting", go: () => onNav("pickups"),
-  });
-  if (messages > 0) items.push({
-    icon: MessageSquare, color: C.amberDeep, mist: C.amberMist,
-    title: messages + " message" + (messages === 1 ? "" : "s") + " awaiting reply",
-    sub: "Buyers move fast — reply soon", go: () => onNav("messages"),
-  });
-  if (pickupsWeek > pickupsToday) items.push({
-    icon: Calendar, color: C.greenDeep, mist: C.greenMist,
-    title: (pickupsWeek - pickupsToday) + " more pickup" + (pickupsWeek - pickupsToday === 1 ? "" : "s") + " this week",
-    sub: "Plan your week", go: () => onNav("pickups"),
-  });
-  if (drafts > 0) items.push({
-    icon: ClipboardList, color: C.mink, mist: C.sand,
-    title: drafts + " draft" + (drafts === 1 ? "" : "s") + " unfinished",
-    sub: "Finish before Friday to make this Drop", go: () => onNav("items"),
-  });
-  if (items.length === 0) return null;
-  return (
-    <OverviewSection title="Needs your attention">
-      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? 8 : 10 }}>
-        {items.map((it, i) => {
-          const Ic = it.icon;
-          return (
-            <button
-              key={i}
-              onClick={it.go}
-              style={{
-                display: "flex", alignItems: "center", gap: 12,
-                padding: "15px 18px", borderRadius: 14,
-                background: C.paper,
-                border: "1px solid " + C.fawn,
-                cursor: "pointer", textAlign: "left",
-                transition: "border-color 150ms",
-              }}
-              onMouseEnter={e => e.currentTarget.style.borderColor = it.color + "60"}
-              onMouseLeave={e => e.currentTarget.style.borderColor = C.fawn}
-            >
-              <div style={{
-                width: 40, height: 40, borderRadius: 12,
-                background: "linear-gradient(135deg, " + it.mist + " 0%, " + it.mist + "80 100%)",
-                border: "1px solid " + it.color + "20",
-                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              }}>
-                <Ic size={17} style={{ color: it.color }} strokeWidth={2.3}/>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, lineHeight: 1.25, letterSpacing: "-0.01em" }}>{it.title}</p>
-                <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.mink, marginTop: 2 }}>{it.sub}</p>
-              </div>
-              <ChevronRight size={16} style={{ color: C.smoke }}/>
-            </button>
-          );
-        })}
-      </div>
-    </OverviewSection>
-  );
-}
-
-function BetweenHero({ now, countdown, nextDropAt, queuedCount, shelfCount, draftsCount, recap, upcomingPickups = 0, onNav, onShare }) {
-  const { isMobile, width: viewportWidth } = useViewport();
-  // Both must format on the Drop's clock, not the viewer's. Without timeZone
-  // the 8 a.m. Toronto opening renders as the local equivalent — "5:30 p.m."
-  // in IST, "5 a.m." in Vancouver — and the weekday can slip a day as well.
-  const dayLabel = nextDropAt.toLocaleDateString("en-CA", { timeZone: OPERATING_TIMEZONE, weekday: "long" });
-  const timeLabel = nextDropAt.toLocaleTimeString("en-CA", { timeZone: OPERATING_TIMEZONE, hour: "numeric", minute: "2-digit", hour12: true }).replace(":00 ", " ");
-  const hrsSinceClose = hoursSinceLastDropClose(now);
-  // A seller with nothing in the last Drop (0 of 0) gets the Next Drop
-  // banner, not a "Drop wrapped · 0 of 0 sold" card.
-  const isFresh = recap && recap.total > 0 && hrsSinceClose < 30;
-  const showRecapLine = recap && !isFresh && hrsSinceClose < 120; // ~5 days
-  // Phones: one column (the same 640px line as the Next Drop banner below).
-  // Side by side, the text column got whatever the 220px button column left
-  // over, ~40px on a 360px phone, and the headline broke over five lines.
-  const stacked = viewportWidth < 640;
-  const hasTop = !!recap?.top && recap.top !== "—";
-
-  // ── Fresh recap face: green hero, sold/earned headline, countdown secondary
-  if (isFresh) {
-    return (
-      <section style={{
-        marginBottom: isMobile ? 16 : 24,
-        position: "relative", overflow: "hidden",
-        borderRadius: isMobile ? 18 : 24,
-        padding: stacked ? "20px 18px" : isMobile ? "22px 22px" : "32px 36px",
-        background: "linear-gradient(135deg, " + C.greenMist + " 0%, " + C.paper + " 75%)",
-        border: "1px solid " + C.green + "30",
-        boxShadow: _SH_MD + ", inset 0 1px 0 rgba(255,255,255,0.7)",
-      }}>
-        <div style={{ position: "absolute", top: -60, right: -30, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, " + C.green + "20 0%, transparent 70%)", pointerEvents: "none" }}/>
-        <div style={{ position: "absolute", bottom: -50, left: 30, width: 110, height: 110, borderRadius: "50%", background: "radial-gradient(circle, " + C.green + "10 0%, transparent 70%)", pointerEvents: "none" }}/>
-        <div style={{ position: "relative", display: "flex", flexDirection: stacked ? "column" : "row", flexWrap: stacked ? "nowrap" : "wrap", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: isMobile ? 16 : 28 }}>
-          <div style={stacked ? { minWidth: 0 } : { flex: 1, minWidth: isMobile ? 0 : 280 }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", borderRadius: 999, background: C.green, marginBottom: 12, boxShadow: _SH_XS }}>
-              <Award size={11} style={{ color: "#fff" }} strokeWidth={2.5}/>
-              <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 900, color: "#fff", letterSpacing: "0.1em", textTransform: "uppercase" }}>Drop wrapped</span>
-            </div>
-            {stacked ? (
-              // Two short lines that fit a phone, and size with the screen.
-              <h2 style={{ fontFamily: F.head, fontSize: "clamp(22px, 6.8vw, 26px)", fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.12, marginBottom: 10 }}>
-                <span style={{ display: "block" }}>{recap.sold} of {recap.total} sold</span>
-                <span style={{ display: "block" }}>${recap.earned} earned</span>
-              </h2>
-            ) : (
-              <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 26 : 40, fontWeight: 900, color: C.ink, letterSpacing: "-0.035em", lineHeight: 1.02, marginBottom: 10 }}>
-                {recap.sold} of {recap.total} sold · ${recap.earned} earned
-              </h2>
-            )}
-            {hasTop && (
-              <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.mink, lineHeight: 1.5, marginBottom: 4, overflowWrap: "anywhere" }}>
-                Top item: <span style={{ color: C.ink, fontWeight: 700 }}>{recap.top}</span>.
-              </p>
-            )}
-            <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.greenDeep, display: stacked ? "flex" : "inline-flex", alignItems: stacked ? "flex-start" : "center", gap: 5, lineHeight: 1.4 }}>
-              <Calendar size={11} strokeWidth={2.3} aria-hidden="true" style={stacked ? { flexShrink: 0, marginTop: "0.3em" } : undefined}/>
-              <span>Next Drop · {dayLabel} {timeLabel} ({countdown})</span>
-            </p>
-          </div>
-          {/* "See pickups" used to show unconditionally, but the Orders page
-              it opens lists PROPOSED and ACCEPTED claims only. Once a Drop has
-              wrapped, a sold item is PICKED_UP — in neither bucket — so the
-              seller landed on a page with two empty sections and no way to
-              reach what they just sold. Completed pickups live in History.
-              The button only appears when a pickup is actually still due. */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, flexShrink: stacked ? 1 : 0, minWidth: stacked ? 0 : 220 }}>
-            {upcomingPickups > 0 && (
-              <button onClick={() => onNav("pickups")} className="cta-primary" style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                padding: "13px 22px", borderRadius: 999, border: "none", cursor: "pointer",
-                fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
-                background: "linear-gradient(180deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
-                color: "#fff",
-                boxShadow: "0 2px 0 " + C.greenDeep + ", " + _SH_SM,
-              }}>
-                <Truck size={14} strokeWidth={2.4}/> See pickups ({upcomingPickups})
-              </button>
-            )}
-            <button onClick={() => onNav("history")} className={upcomingPickups > 0 ? undefined : "cta-primary"} style={
-              upcomingPickups > 0
-                ? {
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    padding: "12px 22px", borderRadius: 999, border: "1.5px solid " + C.green + "40",
-                    cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800,
-                    background: C.paper, color: C.greenDeep,
-                  }
-                : {
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    padding: "13px 22px", borderRadius: 999, border: "none", cursor: "pointer",
-                    fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
-                    background: "linear-gradient(180deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
-                    color: "#fff",
-                    boxShadow: "0 2px 0 " + C.greenDeep + ", " + _SH_SM,
-                  }
-            }>
-              <Award size={13} strokeWidth={2.4}/> Open history
-            </button>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  // ── Mid + late week: the compact Next Drop banner. Used to be a tall amber
-  // hero (36px day line over a 58px countdown); now one row on desktop —
-  // calendar tile, NEXT DROP, the day, and a days/hours/minutes countdown on
-  // the left; Share + List more and the listing summary on the right — and a
-  // short stack on phones. Same data and actions as before.
-  // Stack below 640px only (`stacked`, above): a tablet (768px) has room for
-  // the one-row layout.
-  const msLeft = Math.max(0, nextDropAt.getTime() - now.getTime());
-  const parts = [
-    { value: Math.floor(msLeft / 86400000) + "d", label: "Days" },
-    { value: Math.floor((msLeft % 86400000) / 3600000) + "h", label: "Hrs" },
-    { value: Math.floor((msLeft % 3600000) / 60000) + "m", label: "Min" },
-  ];
-  const summary = (shelfCount > 0 && queuedCount > 0
-    ? shelfCount + " selling on the Shelf now · " + queuedCount + " queued for Saturday"
-    : shelfCount > 0
-    ? shelfCount + " selling on the Shelf now · joining the Drop on Saturday"
-    : queuedCount > 0
-    ? queuedCount + " queued for Saturday — list more on the Shelf to sell this week"
-    : "Nothing listed yet — list an item to get on the Shelf today")
-    + (draftsCount > 0 ? " · " + draftsCount + " draft" + (draftsCount === 1 ? "" : "s") + " to finish" : "");
-  const pill = { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, height: 44, padding: "0 22px", borderRadius: 999, cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em", whiteSpace: "nowrap" };
-  return (
-    <section aria-label={"Next Drop " + dayLabel + " " + timeLabel + ", in " + countdown} style={{
-      marginBottom: isMobile ? 16 : 24,
-      borderRadius: isMobile ? 16 : 18,
-      padding: stacked ? "14px 16px" : "18px 24px",
-      background: "linear-gradient(135deg, " + C.amberMist + "80 0%, " + C.paper + " 60%)",
-      border: "1px solid " + C.amber + "26",
-      boxShadow: _SH_SM,
-      display: "flex",
-      flexDirection: stacked ? "column" : "row",
-      alignItems: stacked ? "stretch" : "center",
-      gap: stacked ? 12 : 28,
-    }}>
-      {/* Left: when */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, flex: "1 1 auto", minWidth: 0 }}>
-        <div aria-hidden="true" style={{ width: 44, height: 44, borderRadius: 12, background: C.amberMist, border: "1px solid " + C.amber + "30", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <Calendar size={20} style={{ color: C.amberDeep }} strokeWidth={2.2}/>
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.amberDeep, letterSpacing: "0.1em", textTransform: "uppercase", lineHeight: 1.2 }}>Next Drop</p>
-          <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 21 : 24, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.15, marginTop: 2 }}>
-            {dayLabel} {timeLabel}
-          </h2>
-          <div role="timer" aria-label={"Opens in " + parts.map((x) => x.value).join(" ")} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
-            {parts.map((x, i) => (
-              <span key={x.label} style={{ display: "contents" }}>
-                {i > 0 && <span aria-hidden="true" style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.mink }}>:</span>}
-                <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", minWidth: 44, padding: "4px 8px", borderRadius: 8, background: C.greenMist, border: "1px solid " + C.green + "26" }}>
-                  <span style={{ fontFamily: F.head, fontSize: 15, fontWeight: 800, color: C.greenDeep, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>{x.value}</span>
-                  <span style={{ fontFamily: F.head, fontSize: 8.5, fontWeight: 700, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase", lineHeight: 1.2 }}>{x.label}</span>
-                </span>
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Divider: vertical beside, horizontal under on phones */}
-      <div aria-hidden="true" style={stacked
-        ? { height: 1, background: C.fawn }
-        : { width: 1, alignSelf: "stretch", background: C.fawn, margin: "4px 0", flexShrink: 0 }}/>
-
-      {/* Right: actions + what's listed */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, flex: stacked ? "1 1 auto" : "0 1 auto", minWidth: 0 }}>
-        <div style={{ display: "flex", gap: stacked ? 8 : 10 }}>
-          <button
-            onClick={onShare}
-            className="cta-primary"
-            style={{
-              ...pill,
-              flex: stacked ? 1 : "0 0 auto",
-              height: stacked ? 42 : pill.height,
-              padding: stacked ? "0 12px" : pill.padding,
-              fontSize: stacked ? 12.5 : 13,
-              border: "none",
-              background: "linear-gradient(180deg, " + C.amber + " 0%, " + C.amberDeep + " 100%)",
-              color: "#fff",
-              boxShadow: _SH_SM,
-            }}
-          >
-            <Share2 size={14} strokeWidth={2.4}/>
-            {stacked ? "Share" : "Share what I’m bringing"}
-          </button>
-          <button
-            onClick={() => onNav("add-manual")}
-            style={{
-              ...pill,
-              flex: stacked ? 1 : "0 0 auto",
-              height: stacked ? 42 : pill.height,
-              padding: stacked ? "0 12px" : "0 26px",
-              fontSize: stacked ? 12.5 : 13,
-              border: "1.5px solid " + C.amber + "55",
-              background: C.paper,
-              color: C.amberDeep,
-            }}
-          >
-            <Plus size={13} strokeWidth={2.4}/> List more
-          </button>
-        </div>
-        <p style={{ display: "flex", alignItems: "flex-start", gap: 6, fontFamily: F.body, fontSize: 12.5, fontWeight: 600, color: C.mink, lineHeight: 1.45 }}>
-          <Tag size={13} strokeWidth={2.2} style={{ flexShrink: 0, marginTop: 2, color: C.amberDeep }} aria-hidden="true"/>
-          <span>{summary}</span>
-        </p>
-        {showRecapLine && (
-          <p style={{ fontFamily: F.body, fontSize: 11.5, fontWeight: 600, color: C.ash, lineHeight: 1.4 }}>
-            Last Drop · {recap.sold} sold · ${recap.earned}
-            {recap.returnedCount > 0 && " · " + recap.returnedCount + " back on Shelf"}
-          </p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-// `count` is the recap's returnedCount. The recap doesn't say which items
-// those are, so the strip doesn't name any: it used to list the Drop's top
-// item (a SOLD one, or "—" when nothing sold) and then "Item 2", "Item 3".
-function BackOnShelfCard({ count, onNav }) {
-  return (
-    <button
-      onClick={() => onNav("items")}
-      style={{
-        width: "100%", textAlign: "left",
-        padding: "18px 22px",
-        borderRadius: 16,
-        background: C.paper,
-        border: "1.5px dashed " + C.amber + "60",
-        cursor: "pointer",
-        display: "flex", alignItems: "center", gap: 14,
-        marginBottom: 24,
-        boxShadow: _SH_XS,
-      }}
-    >
-      <div style={{
-        width: 46, height: 46, borderRadius: 13,
-        background: "linear-gradient(135deg, " + C.amberMist + " 0%, " + C.amberMist + "80 100%)",
-        border: "1px solid " + C.amber + "30",
-        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-      }}>
-        <Package size={20} style={{ color: C.amberDeep }} strokeWidth={2.3}/>
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 900, color: C.ink, marginBottom: 3, letterSpacing: "-0.01em", lineHeight: 1.3 }}>
-          {count} item{count === 1 ? "" : "s"} back on the Shelf
-        </p>
-        <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, lineHeight: 1.45 }}>
-          Still claimable. Consider a price drop to help {count === 1 ? "it" : "them"} sell.
-        </p>
-      </div>
-      <ChevronRight size={16} style={{ color: C.smoke, flexShrink: 0 }}/>
-    </button>
-  );
-}
-
-function LiveHero({ countdown, liveCount, saves, claims, onNav, onShare = null }) {
-  const { isMobile } = useViewport();
-  return (
-    <section style={{
-      marginBottom: isMobile ? 16 : 24,
-      position: "relative", overflow: "hidden",
-      borderRadius: isMobile ? 18 : 24,
-      padding: isMobile ? "22px 22px" : "32px 36px",
-      background: "linear-gradient(135deg, " + C.greenMist + " 0%, " + C.paper + " 75%)",
-      border: "1px solid " + C.green + "40",
-      boxShadow: _SH_MD + ", inset 0 1px 0 rgba(255,255,255,0.7)",
-    }}>
-      <div style={{ position: "absolute", top: -60, right: -30, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, " + C.green + "20 0%, transparent 70%)", pointerEvents: "none" }}/>
-      <div style={{ position: "absolute", bottom: -50, left: 40, width: 110, height: 110, borderRadius: "50%", background: "radial-gradient(circle, " + C.green + "10 0%, transparent 70%)", pointerEvents: "none" }}/>
-      <div style={{ position: "relative", display: "flex", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: isMobile ? 16 : 28 }}>
-        <div style={{ flex: 1, minWidth: 0, width: isMobile ? "100%" : "auto" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "5px 12px", borderRadius: 999, background: C.green, marginBottom: 12, boxShadow: _SH_XS }}>
-            <span style={{ position: "relative", display: "inline-flex", width: 9, height: 9 }}>
-              <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "#fff", opacity: 0.6, animation: "pulseLive 1.6s ease-in-out infinite" }}/>
-              <span style={{ position: "relative", width: 9, height: 9, borderRadius: "50%", background: "#fff" }}/>
-            </span>
-            <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 900, color: "#fff", letterSpacing: "0.12em", textTransform: "uppercase" }}>Drop is live</span>
-          </div>
-          <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 26 : 34, fontWeight: 900, color: C.ink, letterSpacing: "-0.035em", lineHeight: 1.05, marginBottom: 6 }}>
-            Closes in {countdown}
-          </h2>
-          <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 600, color: C.mink, lineHeight: 1.5, marginBottom: 4 }}>
-            <span style={{ color: C.ink, fontWeight: 700 }}>{liveCount}</span> of your items are in the live Drop right now
-          </p>
-          <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.greenDeep, display: "inline-flex", alignItems: "center", gap: 5 }}>
-            <Heart size={11} strokeWidth={2.3}/> {saves} {saves === 1 ? "buyer" : "buyers"} watching · {claims} {claims === 1 ? "claim" : "claims"} pending
-          </p>
-        </div>
-        {/* Mobile: the CTAs side by side (more compact than full-width
-            buttons), wrapping onto a second row when they don't fit. They
-            used to stay on one row, which pushed Share out of the card (and
-            the card clips) on a 360px phone. */}
-        <div style={{ display: "flex", flexDirection: isMobile ? "row" : "column", flexWrap: isMobile ? "wrap" : "nowrap", gap: 10, flexShrink: 0, minWidth: isMobile ? 0 : 220, width: isMobile ? "100%" : "auto" }}>
-          <button
-            onClick={() => onNav("messages")}
-            className="cta-primary"
-            style={{
-              flex: isMobile ? 1 : "0 0 auto",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: isMobile ? "11px 14px" : "13px 22px", borderRadius: 999, border: "none", cursor: "pointer",
-              fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
-              background: "linear-gradient(180deg, " + C.green + " 0%, " + C.greenDeep + " 100%)",
-              color: "#fff",
-              boxShadow: "0 2px 0 " + C.greenDeep + ", " + _SH_SM,
-              whiteSpace: "nowrap",
-            }}
-          >
-            <MessageSquare size={14} strokeWidth={2.4}/> Open messages
-          </button>
-          <button
-            onClick={() => onNav("items")}
-            style={{
-              flex: isMobile ? 1 : "0 0 auto",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: isMobile ? "10px 14px" : "12px 22px", borderRadius: 999, border: "1.5px solid " + C.green + "40",
-              cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800,
-              background: C.paper, color: C.greenDeep,
-              whiteSpace: "nowrap",
-            }}
-          >
-            <Eye size={13} strokeWidth={2.4}/> See what&apos;s live
-          </button>
-          {onShare && (
-            <button
-              onClick={onShare}
-              aria-label="Share your live items"
-              title="Share"
-              style={{
-                flex: isMobile ? "0 0 auto" : "0 0 auto",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                padding: isMobile ? "10px 14px" : "12px 22px", borderRadius: 999,
-                border: "1.5px solid " + C.green + "40", cursor: "pointer",
-                fontFamily: F.head, fontSize: 13, fontWeight: 800,
-                background: C.paper, color: C.greenDeep, whiteSpace: "nowrap",
-              }}
-            >
-              <Share2 size={13} strokeWidth={2.4}/> Share
-            </button>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ClosingHero({ countdown, unsoldCount, onNav }) {
-  const { isMobile } = useViewport();
-  return (
-    <section style={{
-      marginBottom: isMobile ? 16 : 24,
-      position: "relative", overflow: "hidden",
-      borderRadius: isMobile ? 18 : 24,
-      padding: isMobile ? "22px 22px" : "30px 36px",
-      background: "linear-gradient(135deg, " + C.claretMist + " 0%, " + C.paper + " 75%)",
-      border: "1px solid " + C.claret + "40",
-      boxShadow: _SH_MD + ", inset 0 1px 0 rgba(255,255,255,0.7)",
-    }}>
-      <div style={{ position: "absolute", top: -60, right: -30, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle, " + C.claret + "18 0%, transparent 70%)", pointerEvents: "none" }}/>
-      <div style={{ position: "relative" }}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 11px", borderRadius: 999, background: C.claret, marginBottom: 12, boxShadow: _SH_XS }}>
-          <Clock size={11} style={{ color: "#fff" }} strokeWidth={2.5}/>
-          <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 900, color: "#fff", letterSpacing: "0.1em", textTransform: "uppercase" }}>Closing time</span>
-        </div>
-        <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 24 : 36, fontWeight: 900, color: C.ink, letterSpacing: "-0.035em", lineHeight: 1.02, marginBottom: 6 }}>
-          Drop closes in {countdown}
-        </h2>
-        <p style={{ fontFamily: F.body, fontSize: isMobile ? 13 : 14, fontWeight: 600, color: C.mink, lineHeight: 1.5, marginBottom: 18 }}>
-          <span style={{ color: C.ink, fontWeight: 700 }}>{unsoldCount} items</span> haven&apos;t sold yet. Last call — drop prices or move them to the free pile before items roll back to the Shelf.
-        </p>
-        <button
-          onClick={() => onNav("items")}
-          className="cta-primary"
-          style={{
-            display: "inline-flex", alignItems: "center", gap: 8,
-            padding: "12px 20px", borderRadius: 999, border: "none", cursor: "pointer",
-            fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em",
-            background: "linear-gradient(180deg, " + C.claret + " 0%, #A8281C 100%)",
-            color: "#fff",
-            boxShadow: "0 2px 0 #8B2010, " + _SH_SM,
-          }}
-        >
-          Open closing-time tools <ArrowRight size={13} strokeWidth={2.4}/>
-        </button>
-      </div>
-    </section>
-  );
-}
-
-// Horizontal scroll strip of items going live this Drop (queued for DROP OR
-// already on SHELF). Rendered in the `between` phase — gives the seller a
-// glanceable confirmation of what they've contributed.
-function GoingLivePreview({ items, onNav }) {
-  if (!items || items.length === 0) return null;
-  return (
-    <OverviewSection
-      title="Going live this Drop"
-      action={
-        <button onClick={() => onNav("items")} style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 700, background: "none", color: C.mink }}>
-          See all <ChevronRight size={12}/>
-        </button>
-      }
-    >
-      <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 6, paddingTop: 2, scrollSnapType: "x mandatory" }}>
-        {items.map((it) => (
-          <button
-            key={it.id}
-            onClick={() => onNav("items")}
-            style={{
-              flexShrink: 0, width: 158, padding: 14, borderRadius: 14,
-              background: C.paper, border: "1px solid " + C.fawn,
-              cursor: "pointer", textAlign: "left", scrollSnapAlign: "start",
-              boxShadow: _SH_XS,
-            }}
-          >
-            <div style={{
-              width: "100%", height: 80, borderRadius: 12,
-              background: "linear-gradient(135deg, " + C.sand + " 0%, " + C.fawn + "80 100%)",
-              border: "1px solid " + C.fawn,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              marginBottom: 10, overflow: "hidden",
-            }}>
-              {it.photos && it.photos.length > 0 ? (
-                <img src={it.photos[0]} alt={it.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
-              ) : (
-                <span style={{ fontSize: 36 }}>{it.e || "\u{1F4E6}"}</span>
-              )}
-            </div>
-            <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.ink, lineHeight: 1.3, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.005em" }}>{it.title}</p>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
-              <span style={{ fontFamily: F.head, fontSize: 14, fontWeight: 900, color: priceColor(it.price, C.greenDeep), letterSpacing: "-0.01em" }}>{priceText(it.price)}</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 9, fontWeight: 800, padding: "3px 8px", borderRadius: 6, background: it.layer === "drop" ? C.amberMist : C.greenMist, color: it.layer === "drop" ? C.amberDeep : C.greenDeep, letterSpacing: "0.04em", textTransform: "uppercase", border: "1px solid " + (it.layer === "drop" ? C.amber + "30" : C.green + "30") }}>
-                <span style={{ position: "relative", display: "inline-flex", width: 5, height: 5 }}>
-                  <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: it.layer === "drop" ? C.amberDeep : C.greenDeep, opacity: 0.4, animation: "pulseLive 1.8s ease-in-out infinite" }}/>
-                  <span style={{ position: "relative", width: 5, height: 5, borderRadius: "50%", background: it.layer === "drop" ? C.amberDeep : C.greenDeep }}/>
-                </span>
-                {it.layer === "drop" ? "Queued" : "Shelf"}
-              </span>
-            </div>
-            {/* Bundle contents reveal — only when the item is a bundle. Tap "+N more"
-                to expand without leaving the strip. */}
-            {Array.isArray(it.bundleContents) && it.bundleContents.length > 0 && (
-              <BundleInside contents={it.bundleContents}/>
-            )}
-          </button>
-        ))}
-      </div>
-    </OverviewSection>
-  );
-}
-
-// Feed of recent claim events. Rendered during `live` and `closing` phases.
-// `events` shape: [{ who, what, when, tone }] where tone ∈ "view" | "save" |
-// "msg" | "claim" | "confirmed" | "soldout".
-function LiveActivity({ events, onNav }) {
-  if (!events || events.length === 0) return null;
-  const toneColor = {
-    view:      C.sky || C.mink,
-    save:      C.claret,
-    msg:       C.amberDeep,
-    claim:     C.amberDeep,
-    confirmed: C.greenDeep,
-    soldout:   C.greenDeep,
-  };
-  return (
-    <OverviewSection
-      title="Activity right now"
-      action={
-        <button onClick={() => onNav && onNav("claims")} style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 11px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: F.head, fontSize: 11, fontWeight: 700, background: "none", color: C.mink }}>
-          View claims <ChevronRight size={12}/>
-        </button>
-      }
-    >
-      <div style={{
-        borderRadius: 14, background: C.paper,
-        border: "1px solid " + C.fawn,
-        boxShadow: _SH_XS,
-        overflow: "hidden",
-      }}>
-        {events.map((e, i) => (
-          <div key={i} style={{
-            display: "flex", alignItems: "center", gap: 12,
-            padding: "13px 16px",
-            borderBottom: i < events.length - 1 ? "1px solid " + C.fawn : "none",
-          }}>
-            <UserAvatar avatar={e.avatar} name={e.who} size={34} decorative initialsBg={avatarBg(e.who)} fontFamily={F.head} fontWeight={900} fontSize={11}
-              style={{ boxShadow: _SH_XS }}/>
-            <p style={{ flex: 1, minWidth: 0, fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              <span style={{ fontWeight: 800 }}>{e.who}</span>{" "}
-              <span style={{ color: toneColor[e.tone] || C.mink }}>{e.what}</span>
-            </p>
-            <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.ash, flexShrink: 0 }}>{e.when}</span>
-          </div>
-        ))}
-      </div>
-    </OverviewSection>
-  );
-}
-
-// Compact relative-time helper for the LiveActivity feed.
-// "just now" → seconds <60; "Xm ago" → minutes <60; "Xh ago" → hours <24;
-// otherwise weekday abbreviation.
-function relativeWhen(dateLike) {
-  if (!dateLike) return "just now";
-  const t = new Date(dateLike).getTime();
-  if (Number.isNaN(t)) return "just now";
-  const diffSec = Math.max(0, (Date.now() - t) / 1000);
-  if (diffSec < 60)      return "just now";
-  if (diffSec < 3600)    return Math.floor(diffSec / 60) + "m ago";
-  if (diffSec < 86400)   return Math.floor(diffSec / 3600) + "h ago";
-  return new Date(t).toLocaleDateString("en-CA", { weekday: "short" });
-}
 
 // Sell-with-AI teaser. Compact opt-in card with rotating capability ticker.
 // The notify CTA posts a SELLER_AI_WAITLIST submission so admins see it in
@@ -2062,57 +1206,6 @@ function SellWithAITeaser({ notified, onNotify }) {
   );
 }
 
-// Lifetime impact card — items rehomed, $ earned, lbs diverted. Stats are
-// derived from PICKED_UP claims in Overview and threaded in via props.
-function ImpactCard({ rehomed, earned, weight, onNav }) {
-  const { isMobile } = useViewport();
-  return (
-    <button
-      onClick={() => onNav && onNav("history")}
-      style={{
-        width: "100%", padding: isMobile ? "18px 18px" : "22px 26px",
-        borderRadius: 16, background: C.paper,
-        border: "1px solid " + C.fawn,
-        cursor: "pointer", textAlign: "left",
-        marginBottom: 16,
-        boxShadow: _SH_XS,
-        transition: "border-color 150ms ease",
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.borderColor = C.green + "60"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = C.fawn; }}
-    >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 8,
-            background: "linear-gradient(135deg, " + C.greenMist + " 0%, " + C.greenMist + "80 100%)",
-            border: "1px solid " + C.green + "20",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <Leaf size={15} style={{ color: C.greenDeep }} strokeWidth={2.3}/>
-          </div>
-          <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 900, color: C.ink, letterSpacing: "-0.01em" }}>Your impact</p>
-        </div>
-        <ChevronRight size={16} style={{ color: C.smoke }}/>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: isMobile ? 10 : 14 }}>
-        <div>
-          <p style={{ fontFamily: F.head, fontSize: isMobile ? 22 : 26, fontWeight: 900, color: C.greenDeep, letterSpacing: "-0.02em", lineHeight: 1 }}>{rehomed}</p>
-          <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginTop: 5 }}>Items rehomed</p>
-        </div>
-        <div>
-          <p style={{ fontFamily: F.head, fontSize: isMobile ? 22 : 26, fontWeight: 900, color: C.greenDeep, letterSpacing: "-0.02em", lineHeight: 1 }}>${(earned || 0).toLocaleString()}</p>
-          <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginTop: 5 }}>Earned</p>
-        </div>
-        <div>
-          <p style={{ fontFamily: F.head, fontSize: isMobile ? 22 : 26, fontWeight: 900, color: C.greenDeep, letterSpacing: "-0.02em", lineHeight: 1 }}>~{weight} lb</p>
-          <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginTop: 5 }}>Kept out of landfill</p>
-        </div>
-      </div>
-    </button>
-  );
-}
-
 // Share modal — triggered from BetweenHero's "Share what I'm bringing" CTA.
 // Generates branded text + 6 share targets (copy, WhatsApp, SMS, email, etc).
 /**
@@ -2182,7 +1275,7 @@ function ShareSheet({ items, onClose }) {
   let headline, ctaLine;
   if (onlyShelf) {
     headline = "I'm selling " + itemCount + " items on DropYard 🛍️";
-    ctaLine  = "Claim now — first to tap gets it.";
+    ctaLine  = "Claim now. I'll choose from the claims I get.";
   } else if (onlyDrop) {
     headline = "I'm bringing " + itemCount + " items to this Saturday's Drop 🛍️";
     ctaLine  = `Browse + save them now. Claims open ${dropOpenDay()} ${dropOpenHourCompact()} — set a reminder.`;
@@ -2213,21 +1306,14 @@ function ShareSheet({ items, onClose }) {
     ? "I'm bringing " + itemCount + " items to Saturday's DropYard"
     : "Stuff I'm selling on DropYard this week";
 
-  function openWindow(url) { window.open(url, "_blank", "noopener,noreferrer,width=600,height=700"); }
-  function shareWhatsApp() { openWindow("https://wa.me/?text=" + encodeURIComponent(shareText)); }
-  function shareX()        { openWindow("https://twitter.com/intent/tweet?text=" + encodeURIComponent(shareTextShort)); }
-  function shareFacebook() { openWindow("https://www.facebook.com/sharer/sharer.php?u=" + encodeURIComponent(SHARE_URL) + "&quote=" + encodeURIComponent(shareText)); }
-  function shareEmail()    { window.location.href = "mailto:?subject=" + encodeURIComponent(emailSubject) + "&body=" + encodeURIComponent(shareText); }
-  function shareSMS()      { window.location.href = "sms:?&body=" + encodeURIComponent(shareText); }
+  // The link formats are shared with the item share menu on cards (lib/share).
+  function shareWhatsApp() { openShareWindow(shareLinks.whatsapp(shareText)); }
+  function shareX()        { openShareWindow(shareLinks.x(shareTextShort)); }
+  function shareFacebook() { openShareWindow(shareLinks.facebook(SHARE_URL, shareText)); }
+  function shareEmail()    { window.location.href = shareLinks.email(emailSubject, shareText); }
+  function shareSMS()      { window.location.href = shareLinks.sms(shareText); }
   async function copyLink() {
-    try {
-      await navigator.clipboard.writeText(shareText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = shareText; document.body.appendChild(ta);
-      ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+    if (await copyText(shareText)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -2349,485 +1435,81 @@ function ShareSheet({ items, onClose }) {
   );
 }
 
-function Overview({ onNav, user, sellerItems = null, accessToken = null }) {
-  const { isMobile } = useViewport();
-  // Drop-cycle wiring. `effectiveNow` honours the simulated date when the dev
-  // clock is overridden, so the phase-aware UI reacts to scenario testing.
-  const cycle = useDropCycle();
-  const now = cycle.effectiveNow || new Date();
-  const dropPhase = toSellerOverviewPhase(cycle, now);                 // "between" | "live" | "closing"
-  const nextDropAt = nextDropMoment(now);                              // Saturday 8 am
-  const dropCloseAt = dropCloseMoment(now);                            // Sunday 7 pm
-  const countdownToOpen  = formatCompactCountdown(nextDropAt, now);    // e.g. "2d 14h"
-  const countdownToClose = formatCompactCountdown(dropCloseAt, now);   // e.g. "4h 23m"
-  const inFreshRecapWindow = dropPhase === "between" && hoursSinceLastDropClose(now) < 30;
-
-  const h = now.getHours();
-  const greet = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-  const firstName = user?.name ? user.name.split(/\s+/)[0] : "there";
-
-  // Hero counts come from the real seller inventory; demo fallbacks keep
-  // the standalone /preview/seller-dashboard route presentable. Active = LIVE
-  // (claimable). Excludes DRAFT/ARCHIVED (not listed), CLAIMED/SOLD (the buyer
-  // already has them or picked up).
-  const usingBackend = Array.isArray(sellerItems);
-  const isActiveItem = (i) => i && i.status === "LIVE";
-  // BUG-096 — an item queued for the next Drop is stored as DRAFT with
-  // `queuedAt` set (see BUG-093); it only flips to LIVE when the Drop opens.
-  // These two counts both got that wrong: `queuedCount` required LIVE, so it
-  // never saw a queued item at all, and `draftsCount` counted every DRAFT, so
-  // the same item was reported on Overview as "1 draft unfinished". `queuedAt`
-  // is what separates a real unfinished draft from a committed listing.
-  const isQueuedForDrop = (i) => i && i.status === "DRAFT" && !!i.queuedAt;
-  const queuedCount = usingBackend
-    ? sellerItems.filter(i => (isActiveItem(i) || isQueuedForDrop(i)) && i.placement === "DROP").length
-    : 1;
-  const shelfCount = usingBackend
-    ? sellerItems.filter(i => isActiveItem(i) && i.placement === "SHELF").length
-    : 2;
-  const draftsCount = usingBackend
-    ? sellerItems.filter(i => i && i.status === "DRAFT" && !i.queuedAt).length
-    : 1;
-
-  // Bump to force every data-loading useEffect below to re-run. Used by the
-  // socket listeners (declared further down beside the main fetch) so a new
-  // claim or incoming message refreshes Overview's data in real time. Declared
-  // up here so the recap useEffect can reference it as a dependency.
-  const [refreshTick, setRefreshTick] = useState(0);
-
-  // Last-Drop recap fetch — powers the "fresh recap" hero face (<30h after
-  // close) and the SOLD/EARNED/RETURNED ContextualStats variant.
-  const [recapState, setRecapState] = useState(null);
-  useEffect(() => {
-    if (!accessToken) {
-      // Preview / unauthenticated route — keep demo values stable.
-      setRecapState({ sold: 5, total: 7, earned: 870, top: "Full Bedroom Set", returnedCount: 0 });
-      return;
-    }
-    let cancelled = false;
-    apiRequest("/api/items/recap", { token: accessToken })
-      .then((data) => {
-        if (cancelled || !data) return;
-        setRecapState({
-          sold:          data.sold ?? 0,
-          total:         data.total ?? 0,
-          earned:        data.earned ?? 0,
-          top:           data.top || "—",
-          returnedCount: data.returnedCount ?? 0,
-        });
-      })
-      .catch(() => {
-        // Quietly degrade — the Overview should still render if recap fails.
-        if (!cancelled) setRecapState({ sold: 0, total: 0, earned: 0, top: "—", returnedCount: 0 });
-      });
-    return () => { cancelled = true; };
-    // refreshTick is bumped by claim:updated so a fresh pickup refetches the
-    // recap immediately — the "Drop wrapped" face stays current.
-  }, [accessToken, refreshTick]);
-  const lastDropRecap = recapState ?? { sold: 0, total: 0, earned: 0, top: "—", returnedCount: 0 };
-  // "Drop wrapped" only for a seller who had something in it (same rule as
-  // BetweenHero): otherwise the greeting, hero and tiles say 0 of 0 sold.
-  const isFreshRecap = inFreshRecapWindow && lastDropRecap.total > 0;
-
-  // Live-phase activity metrics. `liveSaves` = sum of watcher counts across
-  // the seller's currently-live items (uses the existing `saves` field from
-  // the sellerItems adapter, which reads `_count.watchlist` from /api/items).
-  // `liveClaims` is populated from the same PROPOSED-claims fetch that powers
-  // the Needs Attention strip — see the useEffect below. Real view-event
-  // tracking is a separate feature (no `viewCount` column today), so the
-  // metric is labelled "saves today" instead of "views today".
-  const liveCount = queuedCount + shelfCount;
-  const liveSaves = usingBackend
-    ? sellerItems
-        .filter(i => isActiveItem(i))
-        .reduce((sum, i) => sum + (typeof i?.saves === "number" ? i.saves : 0), 0)
-    : 0;
-  const [livePendingClaims, setLivePendingClaims] = useState(0);
-
-  // ShareSheet open state. (Sell-with-AI opt-in state moved to SettingsView
-  // after the teaser was relocated from Overview — BUG-046.)
+// The seller Overview: components/seller-overview/SellerOverview (the client's
+// redesign, in BEFORE / DURING / AFTER versions). This wrapper supplies what
+// its buttons do and keeps the dashboard's own pieces: the share sheet
+// ("Share my listings"), the "Confirm item pickup?" dialog and the toast.
+function Overview({ onNav, user, sellerItems = null, accessToken = null, goToItems, onOpenThread, onEdit }) {
+  const { width } = useViewport();
   const [showShare, setShowShare] = useState(false);
-  function handleShare() { setShowShare(true); }
+  const [pendingPickup, setPendingPickup] = useState(null); // { claimId, itemId, title, photo }
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [toast, setToast] = useState(null);
+  const flash = (msg) => { setToast(msg); setTimeout(() => setToast(null), 4500); };
+  const firstName = user?.firstName || (user?.name ? user.name.split(/\s+/)[0] : "there");
 
-  // Lifetime impact stats (items rehomed, $ earned, lbs diverted). Derived
-  // from PICKED_UP claims inside the activity-stream fetch below; no extra
-  // request needed.
-  const [lifetimeStats, setLifetimeStats] = useState({ rehomed: 0, earned: 0, weight: 0 });
+  // What the share sheet lists: live items on the Shelf or in the Drop.
+  const shareItems = (Array.isArray(sellerItems) ? sellerItems : [])
+    .filter((i) => i && i.status === "LIVE" && (i.placement === "DROP" || i.placement === "SHELF"))
+    .map((i) => ({ id: i.id, t: i.title, price: i.price, layer: i.placement === "DROP" ? "drop" : "shelf", isBundle: !!i.isBundle, bundleContents: Array.isArray(i.bundleContents) ? i.bundleContents : [] }));
 
-  // One fetch powers all three downstream surfaces:
-  //   • PROPOSED claims        → Needs Attention rows + activity feed
-  //   • ACCEPTED + PICKED_UP   → activity events
-  //   • PICKED_UP             → lifetime impact stats
-  //   • Conversations         → message count on the Needs-Attention strip
-  const [activityEvents, setActivityEvents] = useState([]);
-  // Discrete buckets surfaced by <ActionItems/>: pickups due today, the rest of
-  // the week, unread messages from buyers, drafts still to finish.
-  const [actionBuckets, setActionBuckets] = useState({ pickupsToday: 0, pickupsWeek: 0, messages: 0 });
-  // Socket bumps: a new claim or incoming message bumps refreshTick (declared
-  // above the recap useEffect), which re-runs both the recap fetch and the
-  // bulk fetch below.
-  useSocketEvent("claim:new",     () => setRefreshTick(t => t + 1));
-  useSocketEvent("claim:updated", () => setRefreshTick(t => t + 1));
-  useSocketEvent("message:new",   () => setRefreshTick(t => t + 1));
-  useEffect(() => {
-    if (!accessToken) {
-      setActionBuckets({ pickupsToday: 1, pickupsWeek: 3, messages: 2 });
-      setLivePendingClaims(2);
-      setActivityEvents([
-        { who: "James K.", what: "is viewing your LG TV",  when: "just now",   tone: "view"  },
-        { who: "Sarah M.", what: "saved your Sofa Set",    when: "2m ago",     tone: "save"  },
-        { who: "Priya R.", what: "asked about pickup",     when: "8m ago",     tone: "msg"   },
-        { who: "Tom W.",   what: "claimed your Bookshelf", when: "14m ago",    tone: "claim" },
-      ]);
-      setLifetimeStats({ rehomed: 47, earned: 1240, weight: 340 });
-      return;
+  async function confirmPickup() {
+    const p = pendingPickup;
+    setPendingPickup(null);
+    if (!p || !accessToken) return;
+    try {
+      await markClaimPickedUp(p.claimId, accessToken);
+      flash("Pickup complete! “" + p.title + "” is marked as picked up. You can rate the buyer in History.");
+    } catch (err) {
+      flash(pickupErrorText(err));
     }
-    let cancelled = false;
-    Promise.all([
-      apiRequest("/api/claims/incoming?status=PROPOSED",   { token: accessToken }).catch(() => ({ claims: [] })),
-      apiRequest("/api/claims/incoming?status=ACCEPTED", { token: accessToken }).catch(() => ({ claims: [] })),
-      apiRequest("/api/claims/incoming?status=PICKED_UP", { token: accessToken }).catch(() => ({ claims: [] })),
-      apiRequest("/api/conversations",                    { token: accessToken }).catch(() => ({ conversations: [] })),
-    ]).then(([pendingRes, confirmedRes, pickedRes, convRes]) => {
-      if (cancelled) return;
-
-      const pending = Array.isArray(pendingRes?.claims) ? pendingRes.claims : [];
-      // LiveHero's "claims pending" badge reads from this — replaces the
-      // hardcoded `liveClaims = 2`.
-      setLivePendingClaims(pending.length);
-
-      const convs = Array.isArray(convRes?.conversations) ? convRes.conversations : [];
-      const mineId = user?.id;
-      const buyerWaiting = convs.filter(
-        (c) =>
-          (c.unread ?? 0) > 0 &&
-          c.lastMessage &&
-          c.lastMessage.senderId &&
-          c.lastMessage.senderId !== mineId,
-      );
-
-      // ── Activity feed: merge all claim statuses + unread message events,
-      //    sort by most recent event time, take the top 6.
-      const events = [];
-
-      pending.forEach((c) => {
-        events.push({
-          when:  c.requestedAt || c.createdAt,
-          who:   c.buyer?.name || "Buyer",
-          avatar: c.buyer?.avatar || null,
-          what:  `claimed your ${c.item?.title || "item"}`,
-          tone:  "claim",
-        });
-      });
-      const confirmed = Array.isArray(confirmedRes?.claims) ? confirmedRes.claims : [];
-      confirmed.forEach((c) => {
-        events.push({
-          when:  c.confirmedAt || c.updatedAt || c.createdAt,
-          who:   c.buyer?.name || "Buyer",
-          avatar: c.buyer?.avatar || null,
-          what:  `is picking up your ${c.item?.title || "item"}`,
-          tone:  "confirmed",
-        });
-      });
-
-      // ActionItems buckets — pickups today/this-week + messages awaiting.
-      // pickupSlot is freeform ("Sat 2pm-4pm" / "Sun 10am-12pm" / a date), so
-      // we detect "today" by checking the first whitespace-delimited token
-      // against the current day's short name. "This week" = total confirmed.
-      // Same rule as Orders → Scheduled pickups and Messages (pickupWhen).
-      const pickupsToday = confirmed.filter((c) => pickupWhen(c.pickupSlot, { since: c.createdAt }).kind === "today").length;
-      const pickupsWeek = confirmed.length;
-      setActionBuckets({
-        pickupsToday,
-        pickupsWeek,
-        messages: buyerWaiting.length,
-      });
-      const pickedUp = Array.isArray(pickedRes?.claims) ? pickedRes.claims : [];
-      pickedUp.forEach((c) => {
-        events.push({
-          when:  c.completedAt || c.updatedAt || c.createdAt,
-          who:   c.buyer?.name || "Buyer",
-          avatar: c.buyer?.avatar || null,
-          what:  `picked up your ${c.item?.title || "item"} for $${c.item?.price ?? 0}`,
-          tone:  "soldout",
-        });
-      });
-      // Lifetime impact stats derived from the same picked-up set. Weight
-      // estimate is intentionally rough (~5 lb/item averaged across household
-      // goods); replace with per-category weights when the catalog ships them.
-      const lifetimeRehomed = pickedUp.length;
-      const lifetimeEarned = pickedUp.reduce((acc, c) => acc + (c.item?.price ?? 0), 0);
-      setLifetimeStats({
-        rehomed: lifetimeRehomed,
-        earned:  Math.round(lifetimeEarned),
-        weight:  Math.round(lifetimeRehomed * 5),
-      });
-      buyerWaiting.forEach((c) => {
-        events.push({
-          when:  c.lastMessage?.createdAt || c.lastMessageAt,
-          who:   c.otherUser?.name || "Buyer", // conversations carry the other party as otherUser, not buyer
-          avatar: c.otherUser?.avatar || null,
-          what:  `asked about ${c.item?.title || "an item"}`,
-          tone:  "msg",
-        });
-      });
-
-      events.sort((a, b) => new Date(b.when).getTime() - new Date(a.when).getTime());
-      setActivityEvents(
-        events.slice(0, 6).map((e) => ({
-          who:  e.who,
-          avatar: e.avatar || null,
-          what: e.what,
-          tone: e.tone,
-          when: relativeWhen(e.when),
-        })),
-      );
-    });
-    return () => { cancelled = true; };
-    // refreshTick is a deliberate dep — socket events bump it so we refetch.
-  }, [accessToken, user?.id, refreshTick]);
+    setRefreshKey((k) => k + 1);
+  }
 
   return (
-    <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1080, margin: "0 auto" }}>
-      {/* Greeting */}
-      <div style={{ paddingTop: isMobile ? 14 : 22, paddingBottom: isMobile ? 10 : 14 }}>
-        <h1 style={{ fontFamily: F.head, fontSize: isMobile ? 22 : 30, fontWeight: 900, color: C.ink, letterSpacing: "-0.025em", lineHeight: 1.1, marginBottom: 6 }}>
-          {greet}, {firstName} <span style={{ display: "inline-block", transform: "translateY(-1px)" }}>{"\u{1F44B}"}</span>
-        </h1>
-        <p style={{ fontFamily: F.body, fontSize: isMobile ? 13 : 15, fontWeight: 500, color: C.mink, lineHeight: 1.55 }}>
-          {dropPhase === "live"    ? "The Drop is live right now — keep an eye on claims and messages." :
-           dropPhase === "closing" ? `Last call. The Drop closes in ${countdownToClose}.` :
-           isFreshRecap            ? "Drop wrapped. Unsold items are back on the Shelf and still selling." :
-                                     `Your next Drop is ${countdownToOpen} away.`}
-        </p>
-      </div>
-
-      {/* Phase-aware hero. upcomingPickups is pickupsWeek alone — that is every
-          ACCEPTED claim, and pickupsToday is a subset of it, so the two must
-          not be added together. */}
-      {dropPhase === "between" && (
-        <BetweenHero
-          now={now}
-          countdown={countdownToOpen}
-          nextDropAt={nextDropAt}
-          queuedCount={queuedCount}
-          shelfCount={shelfCount}
-          draftsCount={draftsCount}
-          recap={lastDropRecap}
-          upcomingPickups={actionBuckets.pickupsWeek}
-          onNav={onNav}
-          onShare={handleShare}
-        />
-      )}
-      {dropPhase === "live" && (
-        <LiveHero
-          countdown={countdownToClose}
-          liveCount={liveCount}
-          saves={liveSaves}
-          claims={livePendingClaims}
-          onNav={onNav}
-          onShare={handleShare}
-        />
-      )}
-      {dropPhase === "closing" && (
-        <ClosingHero
-          countdown={countdownToClose}
-          unsoldCount={Math.max(0, liveCount - 1)}
-          onNav={onNav}
-        />
-      )}
-
-      {/* Fresh-recap nudge — unsold items rolled back to the Shelf may need a price drop. */}
-      {isFreshRecap && lastDropRecap.returnedCount > 0 && (
-        <BackOnShelfCard count={lastDropRecap.returnedCount} onNav={onNav}/>
-      )}
-
-      {/* 3-up stat strip — content swaps per drop phase. */}
-      <ContextualStats
-        dropPhase={dropPhase}
-        isFreshRecap={isFreshRecap}
-        data={{
-          queued:      queuedCount,
-          drafts:      draftsCount,
-          shelf:       shelfCount,
-          views:       liveSaves,
-          claims:      livePendingClaims,
-          pickupsUp:   actionBuckets.pickupsToday + actionBuckets.pickupsWeek,
-          sold:        lastDropRecap.sold,
-          unsold:      Math.max(0, liveCount - 1),
-          timeLeft:    countdownToClose,
-          soldRecap:   lastDropRecap.sold,
-          earnedRecap: lastDropRecap.earned,
-          returned:    lastDropRecap.returnedCount,
+    <>
+      <SellerOverview
+        firstName={firstName}
+        accessToken={accessToken}
+        refreshKey={refreshKey}
+        actions={{
+          listItem: () => onNav("add-manual"),
+          share: shareItems.length > 0 ? () => setShowShare(true) : null,
+          goToItems: (filter, itemId = null) => (goToItems ? goToItems(filter, itemId) : onNav("items")),
+          openThread: (conversationId) => (onOpenThread ? onOpenThread(conversationId) : onNav("messages")),
+          editItem: (itemId) => {
+            const item = Array.isArray(sellerItems) ? sellerItems.find((i) => i && i.id === itemId) : null;
+            if (item && onEdit) onEdit(item); else if (goToItems) goToItems(null, itemId);
+          },
+          confirmPickup: (row) => setPendingPickup(row),
+          nav: (view) => onNav(view),
         }}
       />
-
-      {/* Phase-specific contributions strip:
-          between → upcoming items (Going Live Preview)
-          live / closing → real-time event feed */}
-      {dropPhase === "between" && (
-        <GoingLivePreview
-          items={(() => {
-            if (!usingBackend) {
-              return [
-                { id: 1, e: "\u{1F6CF}️", title: "Full Bedroom Set",    price: 600, layer: "drop", bundleContents: ["Queen bed frame", "Mattress", "2 nightstands", "Dresser"] },
-                { id: 2, e: "\u{1F4FA}",       title: "LG 55\" Smart TV",    price: 250, layer: "shelf" },
-                { id: 3, e: "\u{1F6CB}️", title: "Sofa Set 3 Seater",   price: 500, layer: "drop"  },
-                { id: 4, e: "\u{1F527}",       title: "DeWalt Drill Set",    price: 65,  layer: "drop"  },
-              ];
-            }
-            return sellerItems
-              .filter((i) => i && i.status === "LIVE" && (i.placement === "DROP" || i.placement === "SHELF"))
-              .slice(0, 8)
-              .map((i) => ({
-                id:     i.id,
-                title:  i.title,
-                price:  i.price,
-                photos: Array.isArray(i.photos) ? i.photos : [],
-                e:      CATEGORY_EMOJI[i.category] || "\u{1F4E6}",
-                layer:  i.placement === "DROP" ? "drop" : "shelf",
-                bundleContents: Array.isArray(i.bundleContents) && i.isBundle ? i.bundleContents : null,
-              }));
-          })()}
-          onNav={onNav}
+      {showShare && <ShareSheet items={shareItems} onClose={() => setShowShare(false)}/>}
+      {pendingPickup && (
+        <PickupConfirmDialog
+          kind="pickup"
+          item={{ t: pendingPickup.title, e: "\u{1F4E6}", photos: pendingPickup.photo ? [pendingPickup.photo] : [] }}
+          buyer={null}
+          isMobile={width <= 768}
+          onCancel={() => setPendingPickup(null)}
+          onConfirm={confirmPickup}
         />
       )}
-      {(dropPhase === "live" || dropPhase === "closing") && (
-        <LiveActivity events={activityEvents} onNav={onNav}/>
+      {toast && (
+        <ModalPortal>
+          <div style={{ position: "fixed", left: 16, right: 16, bottom: width <= 768 ? "calc(84px + env(safe-area-inset-bottom, 0px))" : 24, zIndex: Z.toast, display: "flex", justifyContent: "center", pointerEvents: "none" }}>
+            <div role="status" className="fade-in" style={{ pointerEvents: "auto", width: "100%", maxWidth: 520, display: "flex", alignItems: "center", gap: 10, padding: "12px 14px 12px 16px", borderRadius: 14, background: C.greenMist, border: "1px solid " + C.green + "40", boxShadow: "0 12px 32px -8px rgba(15, 54, 11, 0.3)" }}>
+              <CheckCircle size={16} style={{ color: C.greenDeep, flexShrink: 0 }} aria-hidden="true"/>
+              <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 700, color: C.greenDeep, flex: 1, overflowWrap: "anywhere" }}>{toast}</p>
+              <button onClick={() => setToast(null)} aria-label="Dismiss" style={{ background: "none", border: "none", cursor: "pointer", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <X size={14} style={{ color: C.greenDeep }} aria-hidden="true"/>
+              </button>
+            </div>
+          </div>
+        </ModalPortal>
       )}
-
-      {/* Sell-with-AI teaser — moved to Settings → Sell with AI (BUG-046). */}
-
-      {/* Needs your attention — discrete metric tiles (v2 ActionItems pattern).
-          One tile per category: pickups today, pickups this week, unread
-          messages, drafts. Replaces the older per-claim row layout. */}
-      <ActionItems
-        pickupsToday={actionBuckets.pickupsToday}
-        pickupsWeek={actionBuckets.pickupsWeek}
-        messages={actionBuckets.messages}
-        drafts={draftsCount}
-        onNav={onNav}
-      />
-
-      {/* Lifetime impact card — links to History. */}
-      <ImpactCard
-        rehomed={lifetimeStats.rehomed}
-        earned={lifetimeStats.earned}
-        weight={lifetimeStats.weight}
-        onNav={onNav}
-      />
-
-      {/* ShareSheet modal — opened from BetweenHero. Items list = real seller
-          inventory that's going live (queued for DROP or live on SHELF). */}
-      {showShare && (
-        <ShareSheet
-          items={(() => {
-            if (!usingBackend) {
-              return [
-                { id: 1, t: "Full Bedroom Set",  price: 600, layer: "drop", isBundle: true, bundleContents: ["Queen bed frame", "Mattress", "2 nightstands", "Dresser"]  },
-                { id: 2, t: "LG 55\" Smart TV",  price: 250, layer: "shelf" },
-                { id: 3, t: "Sofa Set 3 Seater", price: 500, layer: "drop"  },
-              ];
-            }
-            return sellerItems
-              .filter((i) => i && i.status === "LIVE" && (i.placement === "DROP" || i.placement === "SHELF"))
-              .map((i) => ({
-                id:       i.id,
-                t:        i.title,
-                price:    i.price,
-                layer:    i.placement === "DROP" ? "drop" : "shelf",
-                isBundle: !!i.isBundle,
-                bundleContents: Array.isArray(i.bundleContents) ? i.bundleContents : [],
-              }));
-          })()}
-          onClose={() => setShowShare(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-// v2-style white card. Standalone stat tile used by ContextualStats.
-function BannerStat({ icon: Ic, label, value }) {
-  const { isMobile } = useViewport();
-  // On mobile, stack vertically so the full card width is available to the
-  // label ("ON SHELF", "QUEUED", etc) — the horizontal layout used 40px for
-  // the icon + 12px gap + 32px padding, leaving only ~16px in a 100px-wide
-  // column, which truncated the label with an ellipsis.
-  return (
-    <div style={{
-      display: "flex",
-      flexDirection: isMobile ? "column" : "row",
-      alignItems: isMobile ? "flex-start" : "center",
-      gap: isMobile ? 6 : 12,
-      padding: isMobile ? "10px 12px" : "14px 18px 14px 14px",
-      borderRadius: 14, background: C.paper,
-      border: "1px solid " + C.fawn,
-      boxShadow: _SH_XS,
-      minWidth: 0,
-      // Phones: a wrapping row (ContextualStats). The basis is in em so it
-      // grows with the text: three across at normal size, two plus one
-      // full-width tile once a larger font size wouldn't fit three.
-      flex: isMobile ? "1 1 5.5em" : undefined,
-    }}>
-      <div style={{
-        width: isMobile ? 28 : 40, height: isMobile ? 28 : 40,
-        borderRadius: isMobile ? 8 : 11,
-        background: "linear-gradient(135deg, " + C.greenMist + " 0%, " + C.greenMist + "80 100%)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        flexShrink: 0,
-        border: "1px solid " + C.green + "20",
-      }}>
-        <Ic size={isMobile ? 13 : 18} style={{ color: C.greenDeep }} strokeWidth={2.3}/>
-      </div>
-      <div style={{ textAlign: "left", minWidth: 0, width: "100%" }}>
-        {/* Phones: the label wraps ("BACK ON / SHELF") rather than being cut off. */}
-        <p style={{ fontFamily: F.head, fontSize: 9, fontWeight: 800, color: C.mink, letterSpacing: "0.1em", marginBottom: 2, textTransform: "uppercase", ...(isMobile ? {} : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }) }}>{label}</p>
-        <p style={{ fontFamily: F.head, fontSize: isMobile ? 19 : 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em", lineHeight: 1, whiteSpace: "nowrap" }}>{value}</p>
-      </div>
-    </div>
-  );
-}
-
-// 3-up stat strip whose content depends on phase (between/live/closing). In
-// the between+fresh-recap window (~30h post-close) it swaps to last Drop's
-// SOLD / EARNED / BACK ON SHELF totals.
-function ContextualStats({ dropPhase, isFreshRecap, data }) {
-  const { isMobile } = useViewport();
-  const freshRecap = [
-    { icon: CheckCircle, label: "SOLD",          value: String(data.soldRecap) },
-    { icon: DollarSign,  label: "EARNED",        value: "$" + data.earnedRecap },
-    { icon: Package,     label: "BACK ON SHELF", value: String(data.returned) },
-  ];
-  const sets = {
-    between: isFreshRecap ? freshRecap : [
-      { icon: Box,           label: "QUEUED",   value: String(data.queued) },
-      { icon: ClipboardList, label: "DRAFTS",   value: String(data.drafts) },
-      { icon: Package,       label: "ON SHELF", value: String(data.shelf)  },
-    ],
-    live: [
-      // Label switched from "VIEWS TODAY" to "WATCHING" — the value is the sum
-      // of watcher counts across the seller's live items (BUG-044). There's no
-      // view-event tracking yet, so labelling it "views" was misleading.
-      { icon: Heart,  label: "WATCHING", value: String(data.views) },
-      { icon: Tag,    label: "CLAIMS",   value: String(data.claims) },
-      { icon: MapPin, label: "PICKUPS",  value: String(data.pickupsUp) },
-    ],
-    closing: [
-      { icon: CheckCircle, label: "SOLD",      value: String(data.sold) },
-      { icon: Package,     label: "UNSOLD",    value: String(data.unsold) },
-      { icon: Clock,       label: "TIME LEFT", value: data.timeLeft },
-    ],
-  };
-  const items = sets[dropPhase] || sets.between;
-  return (
-    <div style={isMobile
-      ? { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 22 }
-      : { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
-      {items.map((s, i) => (
-        <BannerStat key={i} icon={s.icon} label={s.label} value={s.value}/>
-      ))}
-    </div>
+    </>
   );
 }
 
@@ -3934,7 +2616,7 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
           </div>
           <div>
             <label htmlFor={fieldId + "-price"} style={FORM_LABEL}>Price ($) *</label>
-            <input id={fieldId + "-price"} className="dy-field" value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" type="number" inputMode="decimal" style={{ ...FORM_INPUT, width: 160, fontWeight: 700 }} />
+            <input id={fieldId + "-price"} className="dy-field" value={price} onChange={e => setPrice(decimalAmountText(e.target.value))} placeholder="0.00" type="text" inputMode="decimal" autoComplete="off" style={{ ...FORM_INPUT, width: 160, fontWeight: 700 }} />
             <p style={{ fontFamily: F.body, fontSize: 12, color: C.ash, marginTop: 6 }}>Enter 0 for a free giveaway.</p>
           </div>
 
@@ -4291,17 +2973,11 @@ function ManualItemForm({ onDone, onBack, onGoToItems, onGoToSettings = null, on
 function InventoryTabs({ activeView, onNav, accessToken = null }) {
   const { isMobile } = useViewport();
 
-  // Orders badge — pending claims (PROPOSED) + scheduled pickups (ACCEPTED),
-  // i.e. exactly the two sections OrdersView renders. Fetched here for the
-  // same reason as openQuestions below: one number on every inventory tab.
-  // It used to be threaded in from each parent, and each parent meant
-  // something different by it — MyItemsView sent pickups only, ClaimsView
-  // sent pending claims only, and OrdersView sent a hardcoded `4`, so the
-  // badge sat there reading "4" above a page saying "No claims to review".
-  // Kept split rather than as one total: the page below has a section per
-  // number, and a bare badge of "1" over a "Pending Claims: 0" stat reads as a
-  // stale claim when it is really an accepted pickup. The subtitle spells the
-  // breakdown out so the badge is never ambiguous.
+  // My items badge (it was the Orders tab's): offers awaiting the seller
+  // (PROPOSED claims the buyer set last) + pickups pending (ACCEPTED). Fetched
+  // here so every inventory tab shows the same number; the subtitle spells
+  // the breakdown out ("1 claim needs your response · 1 pickup pending") so the badge
+  // is never ambiguous.
   const [ordersPending, setOrdersPending] = useState(0);
   const [ordersPickups, setOrdersPickups] = useState(0);
   const [ordersUrgent, setOrdersUrgent] = useState(0);
@@ -4324,13 +3000,14 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
       if (!proposed && !accepted) return;
       const pending = Array.isArray(proposed?.claims) ? proposed.claims : [];
       const pickups = Array.isArray(accepted?.claims) ? accepted.claims : [];
-      setOrdersPending(pending.length);
+      // Offers awaiting the seller (not counters waiting on the buyer).
+      setOrdersPending(pending.filter((c) => c && c.lastAmountBy !== c.sellerId).length);
       setOrdersPickups(pickups.length);
       // Urgent = needs the seller today: every pending claim is waiting on an
-      // answer, plus any pickup scheduled for today. Same day heuristic as
-      // PickupsView's todayCount.
+      // answer, plus any pickup scheduled for today (the same rule as the
+      // Claimed · pickup pending → Today filter).
       const dueToday = pickups.filter((c) => pickupWhen(c?.pickupSlot, { since: c?.createdAt }).kind === "today").length;
-      setOrdersUrgent(pending.length + dueToday);
+      setOrdersUrgent(pending.filter((c) => c && c.lastAmountBy !== c.sellerId).length + dueToday);
     });
     return () => { cancelled = true; };
   }, [accessToken, activeView, ordersTick]);
@@ -4353,17 +3030,18 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
   // the sum of the two sections on the page, so after a seller accepts a
   // claim the number stays at 1 — it has moved from "pending claim" to
   // "scheduled pickup", not stuck.
+  // What the My items badge counts, said out loud (the Orders tab's job
+  // before it was folded into My items).
   const ordersBreakdown = [
-    ordersPending > 0 && (ordersPending === 1 ? "1 claim to review" : ordersPending + " claims to review"),
-    ordersPickups > 0 && (ordersPickups === 1 ? "1 scheduled pickup" : ordersPickups + " scheduled pickups"),
+    ordersPending > 0 && (ordersPending === 1 ? "1 claim needs your response" : ordersPending + " claims need your response"),
+    ordersPickups > 0 && (ordersPickups === 1 ? "1 pickup pending" : ordersPickups + " pickups pending"),
   ].filter(Boolean);
 
   const tabs = [
-    { id: "items",  label: "My items",  view: "items" },
-    { id: "orders", label: "Orders",    view: "orders", count: ordersCount, urgent: ordersUrgent, title: ordersBreakdown.join(" · ") },
+    { id: "items",  label: "My items",  view: "items", count: ordersCount, urgent: ordersUrgent, title: ordersBreakdown.join(" · "), ariaLabel: ordersBreakdown.length ? "My items, " + ordersBreakdown.join(", ") : null },
     // Buyers' public questions are visible on the listing whether or not the
     // seller replies, so an unanswered one is urgent by default.
-    { id: "questions", label: "Questions", view: "questions", count: openQuestions, urgent: openQuestions },
+    { id: "questions", label: "Questions", view: "questions", count: openQuestions, urgent: openQuestions, ariaLabel: openQuestions > 0 ? "Questions, " + openQuestions + (openQuestions === 1 ? " unanswered question" : " unanswered questions") : null },
   ];
   return (
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: isMobile ? "0 auto 12px" : "0 auto 14px" }}>
@@ -4376,16 +3054,12 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
               : <Box size={isMobile ? 18 : 20} style={{ color: C.greenDeep }} strokeWidth={2.2}/>}
           </div>
           <div style={{ minWidth: 0 }}>
-            <h1 style={{ fontFamily: F.head, fontSize: isMobile ? 24 : 30, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.05, marginBottom: 4 }}>{activeView === "orders" ? "Orders" : activeView === "questions" ? "Questions" : "My items"}</h1>
+            <h1 style={{ fontFamily: F.head, fontSize: isMobile ? 24 : 30, fontWeight: 900, color: C.ink, letterSpacing: "-0.03em", lineHeight: 1.05, marginBottom: 4 }}>{activeView === "questions" ? "Questions" : "My items"}</h1>
             <p style={{ fontFamily: F.body, fontSize: isMobile ? 12.5 : 14, fontWeight: 500, color: C.mink, lineHeight: 1.45, maxWidth: 560 }}>
-              {activeView === "orders"
-                ? (!accessToken
-                    ? "Upcoming pickups you need to handle."
-                    : ordersBreakdown.length > 0
-                      ? ordersBreakdown.join(" · ") + "."
-                      : "Claims and scheduled pickups land here — nothing waiting on you right now.")
-                : activeView === "questions"
-                  ? "Buyers asking about your listings. Answers are public on the item."
+              {activeView === "questions"
+                ? "Buyers asking about your listings. Answers are public on the item."
+                : ordersBreakdown.length > 0
+                  ? ordersBreakdown.join(" · ") + "."
                   : "Everything you have listed, in draft, or pending review."}
             </p>
           </div>
@@ -4397,9 +3071,9 @@ function InventoryTabs({ activeView, onNav, accessToken = null }) {
           row scrolls sideways instead of squeezing a label. */}
       <div className={isMobile ? "preview-scroll" : undefined} style={{ display: "flex", gap: isMobile ? 4 : 8, borderBottom: "1.5px solid " + C.fawn, paddingBottom: 0, overflowX: isMobile ? "auto" : undefined, scrollbarWidth: isMobile ? "none" : undefined }}>
         {tabs.map(tab => {
-          const active = activeView === tab.view || (tab.view === "orders" && ["orders","claims","pickups","history"].includes(activeView));
+          const active = activeView === tab.view;
           return (
-            <button key={tab.id} onClick={() => onNav(tab.view)} style={{
+            <button key={tab.id} onClick={() => onNav(tab.view)} aria-label={tab.ariaLabel || undefined} aria-current={active ? "page" : undefined} style={{
               position: "relative", display: "flex", alignItems: "center", gap: isMobile ? 6 : 8,
               padding: isMobile ? "10px 12px 12px" : "11px 18px 13px", border: "none", cursor: "pointer",
               whiteSpace: "nowrap", flexShrink: 0,
@@ -4577,39 +3251,18 @@ function QuestionsView({ onNav, accessToken = null, onQuestionsChanged = null })
   );
 }
 
-function OrdersView({ onNav, accessToken = null, onClaimsChanged = null, onOpenThread = null, onViewItem = null }) {
-  // The Orders tab badge is no longer passed in from here — InventoryTabs
-  // fetches it. This used to hold `scheduledCount = 4` / `todayCount = 1`,
-  // placeholders that outlived the Phase B demo data and kept claiming four
-  // orders on an empty Orders page.
-  return (
-    <div>
-      <InventoryTabs activeView="orders" onNav={onNav} accessToken={accessToken}/>
-
-      {/* Pending claims — wired to GET /api/claims/incoming */}
-      <div style={{ marginBottom: 28 }}>
-        <h2 style={{ fontFamily: F.head, fontSize: 16, fontWeight: 800, color: C.ink, marginBottom: 12, letterSpacing: "-0.01em" }}>Pending claims</h2>
-        <ClaimsView onNav={onNav} embedded={true} accessToken={accessToken} onClaimsChanged={onClaimsChanged}/>
-      </div>
-
-      {/* Scheduled pickups — wired to GET /api/claims/incoming?status=ACCEPTED */}
-      <div>
-        <PickupsView onNav={onNav} embedded={true} accessToken={accessToken} onChanged={onClaimsChanged} onOpenThread={onOpenThread} onViewItem={onViewItem}/>
-      </div>
-    </div>
-  );
-}
-
-// Closing-time banner — replaces the standard Drop strip when the live Drop is
-// within the closing threshold (≤3h to Sun 7pm). Surfaces bulk-discount presets
-// + custom % so the seller can lower all unsold prices in one tap.
 function ClosingTimeBanner({ counts, onDiscount }) {
   const { isMobile } = useViewport();
   const [showCustom, setShowCustom] = useState(false);
   const [custom, setCustom] = useState("20");
+  // 1–95%. Empty or out of range: Apply is disabled and the hint says why. It
+  // used to apply 1% to every unsold item when the field was empty.
+  const customPct = Number(custom);
+  const customProblem = custom === "" || !(customPct >= 1 && customPct <= 95) ? "Enter 1–95%" : null;
+  const customHintId = useId();
   function applyCustom() {
-    const n = Math.max(1, Math.min(95, Math.round(Number(custom) || 0)));
-    if (n) { onDiscount(n); setShowCustom(false); }
+    if (customProblem) return;
+    onDiscount(customPct); setShowCustom(false);
   }
   return (
     <div style={{
@@ -4654,30 +3307,38 @@ function ClosingTimeBanner({ counts, onDiscount }) {
           </button>
         ))}
         {!showCustom ? (
-          <button onClick={() => setShowCustom(true)} style={{
+          <button onClick={() => setShowCustom(true)} className="dy-banner-pill" style={{
+            "--pill-edge": C.claret, "--pill-tint": PILL_TINT.claret,
             padding: "9px 16px", borderRadius: 999,
-            border: "1.5px solid " + C.claret + "40",
             cursor: "pointer", fontFamily: F.head, fontSize: 12, fontWeight: 800,
-            background: C.paper, color: C.claret,
+            color: C.claret,
           }}>
             Custom %
           </button>
         ) : (
-          <div style={{
+          <>
+          {/* The ring for the percent field is on this pill (see
+              .dy-pct-field), so it wraps the whole field, not just the
+              narrow input inside it. */}
+          <div className="dy-pct-field" style={{
+            "--pill-edge": C.claret,
             display: "inline-flex", alignItems: "center", gap: 4,
             padding: "3px 6px", borderRadius: 999,
-            border: "1.5px solid " + C.claret + "40", background: C.paper,
+            border: "1.5px solid " + C.claret, background: C.paper,
           }}>
             <input
-              type="text" inputMode="numeric" autoFocus
+              type="text" inputMode="numeric" autoFocus autoComplete="off"
+              aria-label="Custom discount, percent"
               value={custom}
-              onChange={e => setCustom(e.target.value.replace(/[^0-9]/g, "").slice(0, 2))}
+              onChange={e => setCustom(wholeAmountText(e.target.value, 2))}
+              aria-invalid={customProblem ? true : undefined}
+              aria-describedby={customProblem ? customHintId : undefined}
               onKeyDown={e => { if (e.key === "Enter") applyCustom(); if (e.key === "Escape") setShowCustom(false); }}
               style={{ width: 36, padding: "4px 6px", border: "none", outline: "none", fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.claret, background: "transparent", textAlign: "right" }}
             />
             <span style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.claret }}>%</span>
-            <button onClick={applyCustom} style={{
-              padding: "6px 12px", borderRadius: 999, border: "none", cursor: "pointer",
+            <button onClick={applyCustom} disabled={!!customProblem} aria-describedby={customProblem ? customHintId : undefined} style={{
+              padding: "6px 12px", borderRadius: 999, border: "none", cursor: customProblem ? "not-allowed" : "pointer", opacity: customProblem ? 0.5 : 1,
               fontFamily: F.head, fontSize: 11, fontWeight: 800,
               background: "linear-gradient(180deg, " + C.claret + " 0%, #A8281C 100%)",
               color: "#fff",
@@ -4688,6 +3349,8 @@ function ClosingTimeBanner({ counts, onDiscount }) {
               <X size={11}/>
             </button>
           </div>
+          <AmountHint id={customHintId} problem={customProblem} style={{ color: C.claret }}/>
+          </>
         )}
       </div>
     </div>
@@ -4705,7 +3368,8 @@ function adaptSellerItem(api) {
   // in the History tab; ARCHIVED is the seller's manual remove. CLAIMED items
   // stay visible — they're in flight (buyer claimed, seller confirmed,
   // pickup pending) and the seller still cares about them.
-  if (api.status === "SOLD" || api.status === "ARCHIVED") return null;
+  // Sold, taken down by an admin, or removed by the seller: not in My items.
+  if (api.status === "SOLD" || api.status === "ARCHIVED" || api.status === "REMOVED") return null;
   const placementUi = ENUM_TO_PLACEMENT_LABEL[api.placement] || "drop";
   const isDraft = api.status === "DRAFT";
   let shelfDays;
@@ -4768,11 +3432,95 @@ function adaptSellerItem(api) {
     // offers / accepted claims are open (then it can't be removed).
     hasBuyerActivity: !!api.hasBuyerActivity,
     openClaimCount:   typeof api.openClaimCount === "number" ? api.openClaimCount : 0,
+    // Open offers (PROPOSED claims) from GET /api/items/mine, for the offers
+    // card. sellerCountered: the seller set the amount last, so it's the
+    // buyer's turn (the buyer set it on a new offer or a counter back).
+    openClaims: Array.isArray(api.openClaims)
+      ? api.openClaims.filter(c => c && c.status === "PROPOSED").map(c => ({
+          id:              c.id,
+          amount:          typeof c.amount === "number" ? c.amount : api.price,
+          buyerId:         c.buyerId,
+          buyer:           c.buyer?.name || "Buyer",
+          buyerAvatar:     c.buyer?.avatar || null,
+          sellerCountered: !!c.lastAmountBy && c.lastAmountBy !== c.buyerId,
+          at:              c.proposedAt || c.createdAt || null,
+          conversationId:  c.conversationId || null,
+        }))
+      : [],
     raw:         api,
   };
 }
 
-function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefresh = null, sellerItemsLoading, accessToken, onOpenThread = null }) {
+// My items filter chips. scroll=false: they wrap. scroll=true (phones): one
+// row that scrolls sideways, with the chips fading out at whichever edge has
+// more of them, and the selected chip brought into view when it changes. The
+// fade is a mask on the row, set straight on the element as it scrolls (no
+// re-render per scroll event).
+const CHIP_FADE = 28;
+function ChipScrollRow({ scroll, selectedKey, ariaLabel, children }) {
+  const ref = useRef(null);
+  const firstRun = useRef(true);
+  // The fade: on the left once scrolled, on the right while more is to come.
+  const updateFade = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (!scroll) { el.style.maskImage = ""; el.style.webkitMaskImage = ""; return; }
+    const more = el.scrollWidth - el.clientWidth;
+    const left = el.scrollLeft > 1;
+    const right = el.scrollLeft < more - 1;
+    const mask = left || right
+      ? "linear-gradient(to right, " + (left ? "transparent 0, #000 " + CHIP_FADE + "px" : "#000 0") + ", " + (right ? "#000 calc(100% - " + CHIP_FADE + "px), transparent 100%" : "#000 100%") + ")"
+      : "";
+    el.style.maskImage = mask;
+    el.style.webkitMaskImage = mask;
+  }, [scroll]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    updateFade();
+    if (!scroll) return;
+    el.addEventListener("scroll", updateFade, { passive: true });
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateFade) : null;
+    if (ro) { ro.observe(el); [...el.children].forEach(c => ro.observe(c)); }
+    return () => { el.removeEventListener("scroll", updateFade); if (ro) ro.disconnect(); };
+  }, [scroll, updateFade]);
+  // The selected chip, centred in the row where it can be (at once the first
+  // time, smoothly after that unless the user prefers reduced motion).
+  useEffect(() => {
+    const el = ref.current;
+    const instant = firstRun.current;
+    firstRun.current = false;
+    if (!el || !scroll) return;
+    const chip = el.querySelector('[aria-pressed="true"]');
+    if (!chip) return;
+    const target = chip.offsetLeft - (el.clientWidth - chip.offsetWidth) / 2;
+    const reduce = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollTo({ left: Math.max(0, target), behavior: instant || reduce ? "auto" : "smooth" });
+  }, [scroll, selectedKey]);
+  return (
+    <div
+      ref={ref}
+      role="group"
+      aria-label={ariaLabel}
+      className={scroll ? "dy-chip-scroll" : undefined}
+      style={scroll
+        // The padding leaves room for the chips' focus ring inside the
+        // scrolling box; the negative margin keeps the row where it was.
+        ? { position: "relative", display: "flex", gap: 6, flexWrap: "nowrap", overflowX: "auto", overflowY: "hidden", scrollbarWidth: "none", overscrollBehaviorX: "contain", padding: "5px 5px", margin: "-5px -5px 7px" }
+        : { position: "relative", display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// initialFilter / highlightItemId: where a link landed (a bell entry, an old
+// Orders link, an Overview shortcut). The root remounts this view for each
+// such link, so they're only read once.
+const MY_ITEMS_FILTERS = new Set(["all", "draft", "queued", "live", "shelf", "pickups", "action"]);
+// Older addresses and links: filter=offers was "Offers to review".
+const MY_ITEMS_FILTER_ALIASES = { offers: "action" };
+function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefresh = null, sellerItemsLoading, accessToken, onOpenThread = null, initialFilter = null, initialPickupWhen = null, initialSearch = null, highlightItemId = null }) {
   const { isMobile, width } = useViewport();
   // The table's fixed tracks (photo, status, price, actions) need ~600px before
   // Item and Category get any room; beside the sidebar that's only there from
@@ -4789,7 +3537,21 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
   const countdownToOpen  = formatCompactCountdown(nextDropAt, now);
   const countdownToClose = formatCompactCountdown(dropCloseAt, now);
 
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(() => {
+    const f = MY_ITEMS_FILTER_ALIASES[initialFilter] || initialFilter;
+    return f && MY_ITEMS_FILTERS.has(f) ? f : "all";
+  });
+  // Under "Claimed · pickup pending": all of them, or by the buyer's suggested time.
+  const [pickupWhenFilter, setPickupWhenFilter] = useState(() => (initialPickupWhen === "today" || initialPickupWhen === "upcoming" ? initialPickupWhen : "all"));
+  // A title search from the header's "Search my items…": narrows whichever
+  // filter is chosen, until it's cleared.
+  const [search, setSearch] = useState(initialSearch || "");
+  const searchQ = search.trim().toLowerCase();
+  // The card a link pointed at: scrolled into view and outlined for a moment.
+  const [highlightId, setHighlightId] = useState(highlightItemId || null);
+  const [offerBusyId, setOfferBusyId] = useState(null);
+  const [pendingWithdraw, setPendingWithdraw] = useState(null);
+  const [pendingDecline, setPendingDecline] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
   const [priceEditId, setPriceEditId] = useState(null);
   const [tempPrice, setTempPrice] = useState("");
@@ -4852,7 +3614,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     if (!accessToken) return;
     if (typeof id === "string" && id.startsWith("demo-")) return;
     try {
-      await apiRequest("/api/items/" + encodeURIComponent(id), {
+      return await apiRequest("/api/items/" + encodeURIComponent(id), {
         method: "DELETE",
         token: accessToken,
       });
@@ -4885,7 +3647,10 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     // BUG-055 — CLAIMED renamed to RESERVED. Both old + new accepted during
     // any rolling-restart window so the UI doesn't go blank if a stale
     // response arrives.
-    if (item.backendStatus === "RESERVED" || item.backendStatus === "CLAIMED") return "claimed";
+    // Also when the item carries an ACCEPTED claim whatever its status says
+    // (isPickupPending): such an item showed as "On the Shelf" with Share,
+    // Lower price and Edit active and the open-offer wording.
+    if (isPickupPending(item)) return "claimed";
     if (item.publishedTo === "drop" && !dropIsLive) return "queued";
     if (item.publishedTo === "drop" && dropIsLive)  return "live";
     if (item.publishedTo === "shelf" && dropIsLive) return "live";  // Shelf items auto-join Live Drop
@@ -4904,14 +3669,27 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
   // Filters follow the lifecycle. "Claimed" only shows up when there's at
   // least one such item — keeps the filter row clean while still surfacing
   // a meaningful filter when it matters.
-  const myItemsClaimedCount = items.filter(i => lifecycleOf(i) === "claimed").length;
+  // Claimed · action pending: every item with an open claim the seller hasn't
+  // accepted or declined. Ones waiting on the seller's answer come first, then
+  // ones where the seller countered and the buyer has to answer.
+  // Claimed · pickup pending: accepted claims waiting for pickup.
+  const hasOffers = (i) => !isPickupPending(i) && Array.isArray(i.openClaims) && i.openClaims.length > 0;
+  const needsSeller = (i) => i.openClaims.some(c => !c.sellerCountered);
+  const actionItems = [
+    ...items.filter(i => hasOffers(i) && needsSeller(i)),
+    ...items.filter(i => hasOffers(i) && !needsSeller(i)),
+  ];
+  const pickupItems = items.filter(i => lifecycleOf(i) === "claimed");
+  const pickupWhenOf = (i) => pickupWhen(i.activeClaimSlot, { since: i.activeClaimCreatedAt }).kind;
+  const myItemsClaimedCount = pickupItems.length;
   const allFilters = [
-    { id: "all",    label: "All" },
-    { id: "draft",  label: "Drafts" },
-    { id: "queued", label: "Queued for Drop" },
-    { id: "live",   label: "Live in Drop" },
-    { id: "shelf",  label: "On the Shelf" },
-    ...(myItemsClaimedCount > 0 ? [{ id: "claimed", label: "Claimed · pickup pending" }] : []),
+    { id: "all",     label: "All" },
+    { id: "draft",   label: "Drafts" },
+    { id: "queued",  label: "Queued for Drop" },
+    { id: "live",    label: "Live in Drop" },
+    { id: "shelf",   label: "On the Shelf" },
+    { id: "pickups", label: "Claimed \u00B7 pickup pending" },
+    { id: "action",  label: "Claimed \u00B7 action pending" },
   ].filter(f => f.id !== "live" || dropIsLive);
 
   const counts = {
@@ -4920,10 +3698,32 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     queued:  items.filter(i => lifecycleOf(i) === "queued").length,
     live:    items.filter(i => lifecycleOf(i) === "live").length,
     shelf:   items.filter(i => lifecycleOf(i) === "shelf").length,
-    claimed: myItemsClaimedCount,
+    // Items, like every other chip. (The tab badge and the header line count
+    // the claims waiting on the seller.)
+    pickups: myItemsClaimedCount,
+    action:  actionItems.length,
+  };
+  const pickupCounts = {
+    all:      pickupItems.length,
+    today:    pickupItems.filter(i => pickupWhenOf(i) === "today").length,
+    upcoming: pickupItems.filter(i => pickupWhenOf(i) === "upcoming").length,
   };
 
-  const filtered = filter === "all" ? items : items.filter(i => lifecycleOf(i) === filter);
+  const statusFiltered = filter === "all" ? items
+    : filter === "action" ? actionItems
+    : filter === "pickups" ? (pickupWhenFilter === "all" ? pickupItems : pickupItems.filter(i => pickupWhenOf(i) === pickupWhenFilter))
+    : items.filter(i => lifecycleOf(i) === filter);
+  const filtered = searchQ ? statusFiltered.filter(i => String(i.t || i.title || "").toLowerCase().includes(searchQ)) : statusFiltered;
+  // What an empty list says, per filter.
+  const emptyCopy = searchQ
+    ? ["No items match \u201C" + search.trim() + "\u201D", filter === "all" ? "Try another word, or clear the search." : "Try another word or another filter, or clear the search."]
+    : filter === "action"
+    ? ["No claims waiting on you or a buyer", "When a buyer claims or makes an offer on one of your items, it shows up here until you accept or decline. Items you\u2019ve countered stay here while the buyer decides."]
+    : filter === "pickups"
+      ? (pickupWhenFilter === "today" ? ["No pickups today", "No buyer suggested a time today."]
+        : pickupWhenFilter === "upcoming" ? ["No upcoming pickups", "No pickups with a suggested time coming up."]
+        : ["No claimed items waiting for pickup", "When you accept a claim, the item waits here until it's picked up."])
+      : ["Nothing here yet", "Items with this status will appear here."];
 
   // --------- Row actions ---------
   // Each action does an optimistic local update so the UI is snappy, then
@@ -4987,14 +3787,75 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     const kind = it && lifecycleOf(it) === "draft" ? "Draft" : "Listing";
     setItems(prev => prev.filter(i => i.id !== id));
     try {
-      await apiDeleteItem(id);
-      flash(kind + " deleted: " + (it ? "\u201C" + it.t + "\u201D" : "your item") + ".");
+      const r = await apiDeleteItem(id);
+      const name = it ? "\u201C" + it.t + "\u201D" : "your item";
+      flash(r && r.removed
+        ? kind + " removed: " + name + ". Buyers can no longer see it; their conversations with you are kept."
+        : kind + " deleted: " + name + ".");
     } catch {
       setItems(snapshot);
     }
   }
 
   function beginPriceEdit(item) { setPriceEditId(item.id); setTempPrice(String(item.price)); }
+
+  // ── Offers (State C): the claims API, then the list refetches. ──────────
+  // A refusal (the buyer withdrew or the offer expired a moment ago, another
+  // offer was just accepted) shows the server's reason and refetches too.
+  async function claimAction(claim, path, body, okMsg, failPrefix) {
+    if (!accessToken) return false;
+    setOfferBusyId(claim.id);
+    try {
+      await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/" + path, {
+        method: "PATCH",
+        token:  accessToken,
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      flash(okMsg);
+      return true;
+    } catch (err) {
+      flash(failPrefix + (err && err.message ? err.message : "try again"));
+      return false;
+    } finally {
+      setOfferBusyId(null);
+      if (onRefresh) onRefresh();
+    }
+  }
+  const quoted = (item) => "\u201C" + item.t + "\u201D";
+  const acceptOffer  = (item, c) => claimAction(c, "accept", null, "Accepted $" + c.amount + " from " + c.buyer + ". " + quoted(item) + " is now waiting for pickup.", "Couldn\u2019t accept: ");
+  const declineOffer = (item, c) => claimAction(c, "decline", null, "Declined " + c.buyer + "\u2019s offer on " + quoted(item) + ".", "Couldn\u2019t decline: ");
+  const counterOffer = (item, c, amount) => claimAction(c, "amount", { amount }, "Countered at $" + amount + " on " + quoted(item) + ". Waiting for " + c.buyer + ".", "Couldn\u2019t send the counter: ");
+  async function confirmWithdraw() {
+    const p = pendingWithdraw;
+    setPendingWithdraw(null);
+    if (!p) return;
+    await claimAction(p.claim, "decline", null, "Counter withdrawn. " + p.claim.buyer + "\u2019s offer on " + quoted(p.item) + " is closed.", "Couldn\u2019t withdraw the counter: ");
+  }
+  async function confirmDecline() {
+    const p = pendingDecline;
+    setPendingDecline(null);
+    if (!p) return;
+    await declineOffer(p.item, p.claim);
+  }
+
+  // A link's card: scroll it into view once it's in the list, outline it for
+  // a few seconds. (The filter it needs was set as this view mounted.)
+  useEffect(() => {
+    if (!highlightId) return;
+    const el = typeof document !== "undefined" ? document.getElementById("item-card-" + highlightId) : null;
+    if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    const tm = setTimeout(() => setHighlightId(null), 3500);
+    return () => clearTimeout(tm);
+  }, [highlightId, items]);
+  // The filter is part of the address (tab=items&filter=action), so a refresh
+  // or a shared link keeps it; the one-off item= of a link is dropped.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (filter === "all") url.searchParams.delete("filter"); else url.searchParams.set("filter", filter);
+    url.searchParams.delete("item");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  }, [filter]);
 
   // The ⋯ menu for one Inventory row: the same actions, under the same
   // per-status rules, as the buttons it replaces. An action that applies to
@@ -5009,7 +3870,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     // refuses otherwise). Both ask first.
     const saveToDrafts = (reason) => ({ id: "drafts", label: "Save to Drafts", icon: FileDown, disabledReason: reason || null, onSelect: () => setConfirmRemove(item) });
     const deleteListing = (reason) => ({ id: "delete", label: "Delete listing", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(item),
-      disabledReason: reason || (item.hasBuyerActivity ? DELETE_BLOCKED_BY_BUYERS : null) });
+      disabledReason: reason || (item.openClaimCount > 0 ? DELETE_BLOCKED_BY_OFFER : null) });
     const offerOpen = item.openClaimCount > 0 ? REMOVE_BLOCKED_BY_OFFER : null;
     if (lc === "draft") return [
       { id: "publish", label: "Publish", icon: Send, onSelect: () => openPublishChooser(item) },
@@ -5019,7 +3880,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       // Permanent, so only for drafts no buyer ever touched: deleting one
       // would erase buyers' saves, questions and messages.
       { id: "delete", label: "Delete draft", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(item),
-        disabledReason: item.hasBuyerActivity ? "Buyers have saved or messaged about it, so it can't be deleted." : null },
+        disabledReason: null },
     ];
     if (lc === "queued") return [
       share,
@@ -5048,15 +3909,18 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       saveToDrafts(offerOpen),
       deleteListing(),
     ];
-    // "claimed": a buyer's claim has been accepted. Not shared (BUG-089: the
-    // sale is already in flight), not edited, not removed.
+    // "claimed": a buyer's claim has been accepted and the item is waiting
+    // for pickup. Not shared (BUG-089: the sale is already in flight), no
+    // price change, not edited, not removed; each says why.
     return [
       item.activeClaimId
         ? { id: "pickup", label: "Mark as picked up", icon: Check, onSelect: () => openRowPickup(item), disabledReason: pickupBusyId === item.id ? "Saving…" : null }
-        : { id: "review", label: "Review claim", icon: ClipboardList, onSelect: () => onNav && onNav("orders") },
-      { ...edit, disabledReason: "Can't edit while a sale is in progress." },
-      saveToDrafts("Can't save to Drafts while a sale is in progress. Manage it in Orders."),
-      deleteListing("Can't delete while a sale is in progress."),
+        : { id: "review", label: "View details", icon: ClipboardList, onSelect: () => onView && onView(item) },
+      { ...share, disabledReason: SALE_PENDING_REASON },
+      { id: "lower", label: "Lower price", icon: TrendingDown, onSelect: () => {}, disabledReason: SALE_PENDING_REASON },
+      { ...edit, disabledReason: SALE_PENDING_REASON },
+      saveToDrafts(SALE_PENDING_DRAFTS),
+      deleteListing(SALE_PENDING_DELETE),
     ];
   }
   async function commitPriceEdit() {
@@ -5262,7 +4126,9 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
               : counts.shelf + " selling on the Shelf now · " + counts.queued + " queued for Saturday's Drop"}
           </p>
         </div>
-        <button onClick={() => onNav("add-manual")} className="cta-primary" style={{ padding: "10px 18px", borderRadius: 999, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 800, background: C.paper, color: dropIsLive ? C.greenDeep : C.amberDeep, fontFamily: F.head, boxShadow: "0 1px 0 " + (dropIsLive ? C.green : C.amber) + "40", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0, width: isMobile ? "100%" : "auto" }}>
+        {/* White pill with a solid edge in the banner's text tone (amber
+            between Drops, green while it's live): see .dy-banner-pill. */}
+        <button onClick={() => onNav("add-manual")} className="cta-primary dy-banner-pill" style={{ "--pill-edge": dropIsLive ? C.greenDeep : C.amberDeep, "--pill-tint": dropIsLive ? PILL_TINT.green : PILL_TINT.amber, padding: "10px 18px", borderRadius: 999, cursor: "pointer", fontSize: 12, fontWeight: 800, color: dropIsLive ? C.greenDeep : C.amberDeep, fontFamily: F.head, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0, width: isMobile ? "100%" : "auto" }}>
           <Plus size={13} strokeWidth={2.5}/> List more
         </button>
       </div>
@@ -5303,18 +4169,49 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
         </button>
       )}
 
-      {/* Filter tabs */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+      {/* Search results: what was searched, how many, and a way out. */}
+      {searchQ && (
+        <div role="status" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 12px 10px 16px", marginBottom: 12, borderRadius: 14, background: C.soPeach, border: "1px solid " + C.soLine }}>
+          <Search size={16} aria-hidden="true" style={{ color: C.so, flexShrink: 0 }}/>
+          <p style={{ flex: 1, minWidth: 0, fontFamily: F.head, fontSize: 14, fontWeight: 700, color: C.soInk, overflowWrap: "anywhere" }}>
+            Results for &ldquo;{search.trim()}&rdquo; &middot; {filtered.length} {filtered.length === 1 ? "item" : "items"}
+          </p>
+          <button type="button" onClick={() => setSearch("")} style={{ minHeight: 40, padding: "0 14px", borderRadius: 999, border: "1.5px solid #F2B48E", background: C.paper, color: C.so, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <X size={14} aria-hidden="true"/> Clear search
+          </button>
+        </div>
+      )}
+
+      {/* Filter tabs: wrap on larger screens; one sideways-scrolling row on
+          phones (see ChipScrollRow). */}
+      <ChipScrollRow scroll={width < 640} selectedKey={filter} ariaLabel="Filter items">
         {allFilters.map(f => {
           const on = filter === f.id;
           return (
-            <button key={f.id} onClick={() => setFilter(f.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 999, border: "1.5px solid " + (on ? C.ink : C.fawn), background: on ? C.ink : C.paper, color: on ? "#fff" : C.mink, fontFamily: F.head, fontSize: 12.5, fontWeight: 700, cursor: "pointer", transition: "all 150ms" }}>
+            <button key={f.id} type="button" aria-pressed={on} onClick={() => setFilter(f.id)} style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, whiteSpace: "nowrap", padding: "7px 14px", borderRadius: 999, border: "1.5px solid " + (on ? C.ink : C.fawn), background: on ? C.ink : C.paper, color: on ? "#fff" : C.mink, fontFamily: F.head, fontSize: 12.5, fontWeight: 700, cursor: "pointer", transition: "all 150ms" }}>
               {f.label}
               <span style={{ fontFamily: F.head, fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 999, background: on ? "rgba(255,255,255,0.18)" : C.sand, color: on ? "#fff" : C.ash }}>{counts[f.id]}</span>
             </button>
           );
         })}
-      </div>
+      </ChipScrollRow>
+
+      {/* Claimed · pickup pending: all, or by the buyer's suggested time (the old
+          Orders → Scheduled pickups Today / Upcoming / Pending cards). */}
+      {filter === "pickups" && (
+        <div role="group" aria-label="Pickups by time" style={{ display: "flex", gap: 6, margin: "-4px 0 12px", flexWrap: "wrap" }}>
+          {[["all", "All pickups"], ["today", "Today"], ["upcoming", "Upcoming"]].map(([id, label]) => {
+            const on = pickupWhenFilter === id;
+            return (
+              <button key={id} type="button" aria-pressed={on} onClick={() => setPickupWhenFilter(id)}
+                style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 36, padding: "6px 12px", borderRadius: 999, border: "1.5px solid " + (on ? C.ai : C.fawn), background: on ? C.aiMist : C.paper, color: on ? C.ai : C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+                {label}
+                <span style={{ fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 999, background: on ? C.paper : C.sand, color: on ? C.ai : C.ash }}>{pickupCounts[id]}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Items list */}
       {filtered.length === 0 && (
@@ -5327,8 +4224,8 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
             </>
           ) : (
             <>
-              <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, marginBottom: 4 }}>Nothing here yet</p>
-              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink }}>Items with this status will appear here.</p>
+              <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, marginBottom: 4 }}>{emptyCopy[0]}</p>
+              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink }}>{emptyCopy[1]}</p>
             </>
           )}
         </div>
@@ -5340,14 +4237,16 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
           No column header and no Category / Status columns. Full width, with
           larger sizes from 640px up (RS below). */}
       <div style={{ display: "flex", flexDirection: "column", gap: width >= 640 ? 12 : 10 }}>
-        {filtered.map(item => {
+        {filtered.map(item => (
+          <div key={item.id} id={"item-card-" + item.id} style={{ borderRadius: 18, transition: "box-shadow 300ms", boxShadow: highlightId === item.id ? "0 0 0 3px " + C.amber + ", 0 8px 24px " + C.amber + "33" : "none" }}>
+          {(() => {
           const lc = lifecycleOf(item);
           const meta = lifecycleMeta[lc];
           const RS = width >= 640 ? ROW_SIZE.large : ROW_SIZE.phone;
           const pillSize = { fontSize: RS.pill, padding: RS.pillPad };
           const details = [rowStatusText(item, lc), item.cond.replace(" - ", " – ")];
           if (item.saves > 0) details.push(item.saves === 1 ? "1 save" : item.saves + " saves");
-          // A claimed item is a pickup: the shared pickup card (as in Orders).
+          // State B — an accepted claim: the pickup card (Image B).
           if (lc === "claimed" && item.activeClaimId) {
             return (
               <PickupCard
@@ -5365,6 +4264,23 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
               />
             );
           }
+          // State C — open offers on a listed item: the offers card (Image C).
+          if ((lc === "shelf" || lc === "live") && hasOffers(item)) {
+            return (
+              <OfferCard
+                item={item}
+                width={width}
+                busyId={offerBusyId}
+                onOpen={onView}
+                menu={<ItemActionsMenu itemName={item.t} actions={itemActions(item, lc)} size={40}/>}
+                onAccept={c => acceptOffer(item, c)}
+                onDecline={c => setPendingDecline({ item, claim: c })}
+                onCounter={(c, amount) => counterOffer(item, c, amount)}
+                onWithdraw={c => setPendingWithdraw({ item, claim: c })}
+              />
+            );
+          }
+          // State A (and drafts / queued items): the listed row (Image A).
           return (
             <article key={item.id} style={{ display: "flex", flexDirection: "column", gap: 12, padding: width < 400 ? "14px" : RS.pad, borderRadius: 16, border: "1px solid " + ROW.border, background: C.paper }}>
               <div style={{ display: "flex", alignItems: "center", gap: RS.gap }}>
@@ -5426,7 +4342,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
                   {priceEditId === item.id ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 2, justifyContent: "flex-end" }}>
                       <span style={{ fontFamily: F.head, fontSize: 15, fontWeight: 900, color: C.green }}>$</span>
-                      <input type="text" value={tempPrice} autoFocus aria-label={"New price for " + item.t} onChange={e => setTempPrice(e.target.value.replace(/[^0-9.]/g, ""))}
+                      <input type="text" inputMode="decimal" autoComplete="off" value={tempPrice} autoFocus aria-label={"New price for " + item.t} onChange={e => setTempPrice(decimalAmountText(e.target.value))}
                         onBlur={commitPriceEdit}
                         onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setPriceEditId(null); }}
                         style={{ width: 60, padding: "2px 6px", borderRadius: 6, border: "1.5px solid " + C.green, fontFamily: F.head, fontSize: 15, fontWeight: 900, color: C.green, outline: "none", background: C.paper, textAlign: "center" }}/>
@@ -5448,7 +4364,9 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
               </div>
             </article>
           );
-        })}
+          })()}
+          </div>
+        ))}
       </div>
 
       {pendingPickup && (
@@ -5610,37 +4528,66 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       )}
 
       {/* Delete draft / Delete listing — destructive, can't be undone */}
-      {confirmDelete && (lifecycleOf(confirmDelete) === "draft" ? (
+      {/* Delete: an item no buyer touched is deleted outright; one buyers saved,
+          asked about, messaged about or claimed is removed instead (the server
+          decides the same way), and the dialog says what happens. */}
+      {confirmDelete && (() => {
+        const isDraft = lifecycleOf(confirmDelete) === "draft";
+        const touched = !!confirmDelete.hasBuyerActivity;
+        const what = isDraft ? "draft" : "listing";
+        return (
+          <ConfirmListingDialog
+            item={confirmDelete}
+            isMobile={isMobile}
+            ariaLabel={(touched ? "Remove this " : "Delete this ") + what}
+            title={(touched ? "Remove this " : "Delete this ") + what + "?"}
+            subtitle={touched ? "Buyers have saved, asked about or messaged about it." : "No buyer has saved, asked about or messaged about it."}
+            statusLabel={isDraft ? "Draft" : (lifecycleMeta[lifecycleOf(confirmDelete)] || lifecycleMeta.shelf).label}
+            body={touched
+              ? "It leaves your items, and buyers can no longer see, save or claim it. Their conversations with you are kept, so you can still message each other, and they\u2019ll see it\u2019s no longer available. This can\u2019t be undone."
+              : (isDraft ? "The draft and its photos, description and price will be deleted. This can\u2019t be undone." : "This permanently deletes the listing. This can\u2019t be undone.")}
+            confirmLabel={(touched ? "Remove " : "Delete ") + what}
+            cancelLabel={"Keep " + what}
+            confirmIcon={Trash2}
+            onCancel={() => setConfirmDelete(null)}
+            onConfirm={() => { const id = confirmDelete.id; setConfirmDelete(null); deleteItem(id); }}
+          />
+        );
+      })()}
+      {pendingWithdraw && (
         <ConfirmListingDialog
-          item={confirmDelete}
+          item={pendingWithdraw.item}
           isMobile={isMobile}
-          ariaLabel="Delete this draft"
-          title="Delete this draft?"
-          subtitle="This can't be undone."
-          statusLabel="Draft"
-          body="The draft and its photos, description and price will be deleted. No buyer has saved, asked about or messaged about it."
-          confirmLabel="Delete draft"
-          cancelLabel="Keep draft"
-          confirmIcon={Trash2}
-          onCancel={() => setConfirmDelete(null)}
-          onConfirm={() => { const id = confirmDelete.id; setConfirmDelete(null); deleteItem(id); }}
+          ariaLabel="Withdraw your counter"
+          title="Withdraw your counter?"
+          subtitle={"Your $" + pendingWithdraw.claim.amount + " counter to " + pendingWithdraw.claim.buyer + "."}
+          statusLabel="Waiting for the buyer"
+          body={"This closes the negotiation with " + pendingWithdraw.claim.buyer + ": their offer is declined and they\u2019re told. The item stays listed."}
+          confirmLabel="Withdraw counter"
+          cancelLabel="Keep counter"
+          confirmIcon={Undo2}
+          onCancel={() => setPendingWithdraw(null)}
+          onConfirm={confirmWithdraw}
         />
-      ) : (
+      )}
+      {/* Decline: asks first (Accept doesn't). The buyer is told; the item
+          stays listed. */}
+      {pendingDecline && (
         <ConfirmListingDialog
-          item={confirmDelete}
+          item={pendingDecline.item}
           isMobile={isMobile}
-          ariaLabel="Delete this listing"
-          title="Delete this listing?"
-          subtitle="No buyer has saved, asked about or messaged about it."
-          statusLabel={(lifecycleMeta[lifecycleOf(confirmDelete)] || lifecycleMeta.shelf).label}
-          body="This permanently deletes the listing. This can't be undone."
-          confirmLabel="Delete listing"
-          cancelLabel="Keep listing"
-          confirmIcon={Trash2}
-          onCancel={() => setConfirmDelete(null)}
-          onConfirm={() => { const id = confirmDelete.id; setConfirmDelete(null); deleteItem(id); }}
+          ariaLabel={"Decline " + pendingDecline.claim.buyer + "’s offer"}
+          title={"Decline " + pendingDecline.claim.buyer + "’s offer of $" + pendingDecline.claim.amount + "?"}
+          subtitle={pendingDecline.claim.amount >= pendingDecline.item.price ? "A full-price claim." : "Listed at $" + pendingDecline.item.price + "."}
+          statusLabel="Claimed \u00B7 action pending"
+          body={"They’ll be notified and the item stays listed."}
+          confirmLabel="Decline offer"
+          cancelLabel="Keep offer"
+          confirmIcon={X}
+          onCancel={() => setPendingDecline(null)}
+          onConfirm={confirmDecline}
         />
-      ))}
+      )}
       {confirmRemove && (
         <ConfirmListingDialog
           item={confirmRemove}
@@ -5691,10 +4638,20 @@ function rowStatusText(item, lc) {
 
 // Shown when Save to Drafts is unavailable because a buyer's offer or accepted
 // claim is open. Matches the server's refusal (PATCH /api/items/:id).
-const REMOVE_BLOCKED_BY_OFFER = "Can't save to Drafts while a buyer's offer is open. Decline it in Orders first.";
-// Delete listing is unavailable once any buyer has saved, asked about,
-// messaged about or claimed the item (the server refuses too).
-const DELETE_BLOCKED_BY_BUYERS = "Buyers have interacted with this item. Save it to Drafts instead.";
+const REMOVE_BLOCKED_BY_OFFER = "Can't save to Drafts while a buyer's offer is open. Decline the offer first.";
+// Delete listing while an offer is open (the server refuses it too).
+const DELETE_BLOCKED_BY_OFFER = "Can't delete while a buyer's offer is open. Decline the offer first.";
+// A sale waiting for pickup: the seller accepted a buyer's claim. The item is
+// RESERVED (or the legacy CLAIMED), or it carries the accepted claim itself:
+// an item whose status lags its claim (as migration 20261119130000 left some)
+// is still a pending sale, not a listing. The listing can't change until the
+// pickup is done or the claim is released (the server refuses it too).
+function isPickupPending(item) {
+  return !!item && (item.backendStatus === "RESERVED" || item.backendStatus === "CLAIMED" || !!item.activeClaimId);
+}
+const SALE_PENDING_REASON = "Not available while a sale is pending pickup.";
+const SALE_PENDING_DRAFTS = "Can't save to Drafts while a sale is pending pickup.";
+const SALE_PENDING_DELETE = "Can't delete while a sale is pending pickup.";
 // Inventory row sizes: phones (under 640px) and everything wider.
 const ROW_SIZE = {
   phone: { pad: "14px 16px", gap: 14, thumb: 64, thumbRadius: 13, emoji: 30, name: 16, details: 13.5, detailsGap: 4, pill: 12, pillPad: "4px 10px", pillGap: 8, price: 19, strike: 13, menu: 38 },
@@ -5702,6 +4659,195 @@ const ROW_SIZE = {
 };
 // One pill size for status, bundle and free-pile labels.
 const ROW_PILL = { display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 11, fontWeight: 650, lineHeight: 1.2, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap", maxWidth: "100%" };
+
+// ── Offers card (State C) ──────────────────────────────────────────────────
+// A listed item with open offers: the client's card (Image C) in place of the
+// listed row. The best offer is on the card (highest amount, then earliest),
+// with Accept $X · Counter · Decline; "+N more offers" lists the rest, each
+// with its own actions. An offer the seller countered is the buyer's turn:
+// "Waiting for {buyer}", with Change counter and Withdraw counter (which
+// declines it, after a confirmation). Counter is unavailable on a claim at
+// or above the listed price (there's nothing to negotiate), with the reason.
+// All of it comes from GET /api/items/mine (openClaims); every action goes to
+// the claims API, and the list refetches on the server's answer and on the
+// socket's claim events, so the card turns into the pickup card (accepted)
+// or back into the listed row (last offer declined, withdrawn or expired).
+const OFFER_COUNTER_FULL  = "This is a full-price claim.";
+const OFFER_COUNTER_ABOVE = "This offer is above your listed price.";
+function offerLabel(c, listed) {
+  if (c.sellerCountered) return "Your counter";
+  return c.amount === listed ? "Full price claim" : c.amount < listed ? "Offer below asking" : "Offer above asking";
+}
+// Offers awaiting the seller first, best first (highest amount, then the
+// earliest); then the ones waiting on the buyer, oldest first.
+function sortOpenOffers(claims) {
+  const at = (c) => (c.at ? new Date(c.at).getTime() : 0);
+  const awaiting = claims.filter(c => !c.sellerCountered).sort((a, b) => (b.amount - a.amount) || (at(a) - at(b)));
+  const countered = claims.filter(c => c.sellerCountered).sort((a, b) => at(a) - at(b));
+  return [...awaiting, ...countered];
+}
+function OfferCard({ item, width, busyId = null, onOpen = null, menu = null, onAccept, onDecline, onCounter, onWithdraw }) {
+  const phone = width < 641;
+  const wide = width >= 1100;
+  const [expanded, setExpanded] = useState(false);
+  const [counterFor, setCounterFor] = useState(null);
+  const [counterText, setCounterText] = useState("");
+  const listId = useId();
+  const offers = sortOpenOffers(item.openClaims || []);
+  const [primary, ...others] = offers;
+  if (!primary) return null;
+  const listed = item.price;
+  const awaitingCount = offers.filter(c => !c.sellerCountered).length;
+
+  const counterProblem = (c) => offerAmountProblem(counterText)
+    || (Number(counterText) === c.amount ? (c.sellerCountered ? "That's your current counter." : "That's the buyer's offer. To agree to it, accept it.") : null);
+  function startCounter(c) {
+    setCounterFor(c.id);
+    setCounterText(String(c.sellerCountered ? c.amount : Math.max(1, Math.round((c.amount + listed) / 2))));
+  }
+  async function submitCounter(c) {
+    if (counterProblem(c)) return;
+    const ok = await onCounter(c, Number(counterText));
+    if (ok) { setCounterFor(null); setCounterText(""); }
+  }
+
+  const btnBase = { minHeight: 44, padding: "8px 14px", borderRadius: 8, fontFamily: F.body, fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, flex: phone ? 1 : "0 0 auto", whiteSpace: "nowrap" };
+
+  function actionsFor(c) {
+    const busy = busyId === c.id;
+    const hintId = "offer-counter-hint-" + c.id;
+    if (counterFor === c.id) {
+      const problem = counterProblem(c);
+      return (
+        <>
+          <span aria-hidden="true" style={{ fontSize: 14, fontWeight: 800, color: C.ink, fontFamily: F.head }}>$</span>
+          <input
+            type="text" inputMode="numeric" autoComplete="off" autoFocus
+            value={counterText}
+            onChange={e => setCounterText(wholeAmountText(e.target.value))}
+            onKeyDown={e => { if (e.key === "Enter") submitCounter(c); if (e.key === "Escape") { setCounterFor(null); setCounterText(""); } }}
+            aria-label={(c.sellerCountered ? "New counter to " : "Counter to ") + c.buyer + ", in dollars"}
+            aria-invalid={problem ? true : undefined}
+            aria-describedby={problem ? hintId : undefined}
+            disabled={busy}
+            className="dy-field"
+            style={{ width: phone ? 96 : 92, minHeight: 44, padding: "7px 10px", borderRadius: 8, border: "1.5px solid " + C.smoke, fontFamily: F.head, fontSize: 16, fontWeight: 700, color: C.ink, background: C.paper }}
+          />
+          <button type="button" onClick={() => submitCounter(c)} disabled={busy || !!problem} aria-describedby={problem ? hintId : undefined} className="cta-primary"
+            style={{ ...btnBase, border: "none", background: C.gPrimary, color: "#fff", fontWeight: 800, cursor: busy || problem ? "not-allowed" : "pointer", opacity: problem ? 0.5 : 1 }}>
+            {busy ? "Sending…" : c.sellerCountered ? "Update counter" : "Send counter"}
+          </button>
+          <button type="button" onClick={() => { setCounterFor(null); setCounterText(""); }} disabled={busy}
+            style={{ ...btnBase, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, cursor: busy ? "not-allowed" : "pointer" }}>Cancel</button>
+          <AmountHint id={hintId} problem={problem} style={{ flexBasis: "100%", textAlign: phone ? "left" : "right" }}/>
+        </>
+      );
+    }
+    if (c.sellerCountered) {
+      return (
+        <>
+          <span style={{ padding: "8px 12px", borderRadius: 999, background: C.amberMist, color: C.amberDeep, fontFamily: F.head, fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5, border: "1.5px solid " + C.amber + "30", flexBasis: phone ? "100%" : "auto", justifyContent: "center" }}>
+            <Clock size={12} aria-hidden="true"/> Waiting for {c.buyer}
+          </span>
+          <button type="button" onClick={() => startCounter(c)} disabled={busy} aria-label={"Change your counter to " + c.buyer}
+            style={{ ...btnBase, border: "1.5px solid " + C.gPrimary + "55", background: C.gLightBg || "#ecfdf5", color: C.gPrimary, cursor: busy ? "not-allowed" : "pointer" }}>
+            <RefreshCw size={12} aria-hidden="true"/> Change counter
+          </button>
+          <button type="button" onClick={() => onWithdraw(c)} disabled={busy} aria-label={"Withdraw your counter to " + c.buyer}
+            style={{ ...btnBase, border: "1px solid #FECACA", background: C.paper, color: "#DC2626", cursor: busy ? "not-allowed" : "pointer" }}>
+            <Undo2 size={12} aria-hidden="true"/> Withdraw counter
+          </button>
+        </>
+      );
+    }
+    const counterReason = c.amount >= listed ? (c.amount === listed ? OFFER_COUNTER_FULL : OFFER_COUNTER_ABOVE) : null;
+    const reasonId = "offer-counter-reason-" + c.id;
+    return (
+      <>
+        <button type="button" onClick={() => onAccept(c)} disabled={busy} aria-label={"Accept $" + c.amount + " from " + c.buyer + " for " + item.t} className="cta-primary"
+          style={{ ...btnBase, border: "none", background: C.gPrimary, color: "#fff", fontWeight: 800, cursor: busy ? "not-allowed" : "pointer" }}>
+          {busy ? "Saving…" : "Accept $" + c.amount}
+        </button>
+        {/* aria-disabled, not disabled: it stays reachable, and says why. */}
+        <button type="button" onClick={counterReason || busy ? undefined : () => startCounter(c)} aria-disabled={counterReason || busy ? "true" : undefined}
+          aria-label={"Counter " + c.buyer + "\u2019s offer"} aria-describedby={counterReason ? reasonId : undefined} title={counterReason || undefined}
+          style={{ ...btnBase, border: "1.5px solid " + C.gPrimary + "55", background: C.gLightBg || "#ecfdf5", color: C.gPrimary, cursor: counterReason || busy ? "not-allowed" : "pointer", opacity: counterReason ? 0.45 : 1 }}>
+          <RefreshCw size={12} aria-hidden="true"/> Counter
+        </button>
+        <button type="button" onClick={() => onDecline(c)} disabled={busy} aria-label={"Decline " + c.buyer + "\u2019s offer"}
+          style={{ ...btnBase, border: "1px solid #FECACA", background: C.paper, color: "#DC2626", fontWeight: 600, cursor: busy ? "not-allowed" : "pointer" }}>Decline</button>
+        {counterReason && (
+          <span id={reasonId} style={{ flexBasis: "100%", fontFamily: F.body, fontSize: 11.5, fontWeight: 600, color: C.mink, textAlign: phone ? "left" : "right" }}>{"Counter isn\u2019t available: " + counterReason.charAt(0).toLowerCase() + counterReason.slice(1)}</span>
+        )}
+      </>
+    );
+  }
+
+  // One offer: label line, (on the card's own row) the item, the buyer, the
+  // amount and the actions. Compact for the "+N more" list.
+  function renderOffer(c, isPrimary) {
+    const busy = busyId === c.id;
+    const thumb = 52;
+    const photo = item.photos && item.photos.length > 0 ? item.photos[0] : null;
+    return (
+      <div style={{ opacity: busy ? 0.6 : 1 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          {isPrimary && !c.sellerCountered && <StatusBadge status="offer" size="sm"/>}
+          <span style={{ fontSize: 12, color: C.mink, fontWeight: 600, fontFamily: F.body }}>{offerLabel(c, listed)}</span>
+          <span style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>{relativeTimeShort(c.at)}</span>
+          {isPrimary && menu && <span style={{ marginLeft: "auto" }}>{menu}</span>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: phone ? 10 : 14, flexWrap: "wrap" }}>
+          {isPrimary && (
+            <button type="button" tabIndex={-1} aria-hidden="true" onClick={() => onOpen && onOpen(item)}
+              style={{ width: phone ? 46 : thumb, height: phone ? 46 : thumb, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, overflow: "hidden", padding: 0, cursor: "pointer" }}>
+              {photo ? <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/> : <span>{item.e}</span>}
+            </button>
+          )}
+          <div style={{ flex: 1, minWidth: phone ? "55%" : 0 }}>
+            {isPrimary && (
+              <button type="button" onClick={() => onOpen && onOpen(item)} className="dy-row-name"
+                style={{ display: "block", maxWidth: "100%", fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.head, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}>{item.t}</button>
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: isPrimary ? 4 : 0, fontSize: 12, color: C.mink, fontFamily: F.body }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><UserAvatar avatar={c.buyerAvatar} name={c.buyer} size={20} decorative initialsBg={avatarBg(c.buyer)} fontFamily={F.head} fontSize={8}/> {c.buyer}</span>
+            </div>
+          </div>
+          <div style={{ textAlign: "right", marginRight: wide ? 10 : 0, flexShrink: 0 }}>
+            <p style={{ fontSize: 18, fontWeight: 900, color: C.amberDeep, fontFamily: F.head }}>{"$" + c.amount}</p>
+            {c.amount !== listed && (
+              <p style={{ fontSize: 11, fontWeight: 500, color: C.ash, fontFamily: F.body, textDecoration: "line-through", marginTop: 1 }}>{"$" + listed + " listed"}</p>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: wide ? "flex-start" : "flex-end", flexShrink: 0, width: wide ? "auto" : "100%", marginTop: wide ? 0 : 4, flexWrap: "wrap" }}>
+            {actionsFor(c)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <article aria-label={item.t + ": " + (awaitingCount > 0 ? awaitingCount + " offer" + (awaitingCount === 1 ? "" : "s") + " to review" : "waiting for the buyer")}
+      style={{ padding: phone ? "14px" : "16px 18px", borderRadius: 16, border: "2px solid " + C.oSoft, background: C.paper }}>
+      {renderOffer(primary, true)}
+      {others.length > 0 && (
+        <>
+          <button type="button" onClick={() => setExpanded(x => !x)} aria-expanded={expanded} aria-controls={listId}
+            style={{ marginTop: 12, minHeight: 40, width: phone ? "100%" : "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.sand, color: C.ink, fontFamily: F.head, fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>
+            {expanded ? "Hide other offers" : "+" + others.length + " more offer" + (others.length === 1 ? "" : "s")}
+            <ChevronDown size={14} aria-hidden="true" style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 150ms" }}/>
+          </button>
+          <ul id={listId} hidden={!expanded} style={{ listStyle: "none", margin: "10px 0 0", padding: 0, display: expanded ? "flex" : "none", flexDirection: "column", gap: 10 }}>
+            {others.map(c => (
+              <li key={c.id} style={{ borderTop: "1px solid " + C.fawn, paddingTop: 10 }}>{renderOffer(c, false)}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </article>
+  );
+}
 
 // ── Pickup cards ───────────────────────────────────────────────────────────
 // One card for an accepted claim waiting to be picked up, shared by My items
@@ -5912,16 +5058,6 @@ function ConfirmListingDialog({ item, isMobile, ariaLabel, title, subtitle, stat
    menu: components/inventory/ItemActionsMenu.tsx. */
 
 
-/* ============================== CLAIMS ============================== */
-// Demo claims kept around so /preview/seller-dashboard still tells the design
-// story when there's no signed-in seller. The wired version below uses these
-// only when no accessToken is supplied.
-const DEMO_CLAIMS = [
-  { id: "demo-c1", e: "\u{1F4FA}", t: "LG 55 inch Smart TV",   listed: 250, offered: 250, buyer: "James K.", time: "3h ago" },
-  { id: "demo-c2", e: "\u{1F6CB}\u{FE0F}", t: "Sofa Set 3 Seater", listed: 500, offered: 500, buyer: "Priya R.", time: "5h ago" },
-  { id: "demo-c3", e: "\u{1FA91}", t: "IKEA KALLAX Bookshelf", listed: 35,  offered: 35,  buyer: "Tom W.",   time: "1d ago" },
-];
-
 // Format an ISO timestamp as a short relative string ("3h ago", "2d ago").
 function relativeTimeShort(iso) {
   if (!iso) return "";
@@ -6038,323 +5174,6 @@ function adaptSellerConversation(api, myId) {
     lastMessageAt: api.lastMessageAt || null,
     messages: [],
   };
-}
-
-function ClaimsView({ onNav, embedded = false, accessToken = null, onClaimsChanged = null }) {
-  const { isMobile } = useViewport();
-  const [successMsg, setSuccessMsg] = useState(null);
-  const [errorMsg, setErrorMsg]     = useState(null);
-  const [claims, setClaims]         = useState(accessToken ? [] : DEMO_CLAIMS);
-  const [loading, setLoading]       = useState(!!accessToken);
-  // Track in-flight accept/decline per claim so we can disable buttons
-  const [busyId, setBusyId]         = useState(null);
-  // BUG-055 — counter-offer state. The seller can counter a PROPOSED claim
-  // with a new amount via PATCH /api/claims/:id/amount. counterId is the
-  // claim being countered; counterAmt is the text-input value.
-  const [counterId, setCounterId]   = useState(null);
-  const [counterAmt, setCounterAmt] = useState("");
-
-  function flash(msg) {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(null), 4000);
-  }
-  function fail(msg) {
-    setErrorMsg(msg);
-    setTimeout(() => setErrorMsg(null), 4500);
-  }
-
-  // Adapter: backend claim -> UI claim shape used by the existing render code.
-  // BUG-090 — this comment used to claim "GET /api/claims/incoming returns only
-  // PROPOSED claims". It does not: with no `status` query param the backend
-  // returns EVERY claim for the seller in every terminal state (CANCELLED,
-  // DECLINED, EXPIRED, PICKED_UP, CONFIRMED). Both fetches below now pass
-  // ?status=PROPOSED explicitly. PROPOSED is exactly "live negotiation" —
-  // countering via PATCH /:id/amount keeps the status and only flips
-  // `lastAmountBy`, so it covers both "your turn" and "waiting for buyer".
-  //   shape: { id, status, amount, lastAmountBy, proposedAt,
-  //            item:{id,title,price,photos}, buyer:{id,name,email} }
-  // The UI didn't have an "offer below ask" concept on the backend, so we
-  // present every pending claim as a full-price claim (offered === listed).
-  function adaptClaim(api) {
-    if (!api) return null;
-    // BUG-053 — `offered` reflects the agreed sale price (claim.price when
-    // set, falls back to the item's listed price for vanilla claims).
-    const offered = typeof api.amount === "number" ? api.amount : (api.item?.price ?? 0);
-    return {
-      id:       api.id,
-      // The row showed a hardcoded box for every claim. /api/claims/incoming
-      // has always sent the item's resolved `photos`; this adapter just never
-      // read them, so a seller deciding between claims couldn't see which of
-      // their listings each one was for. `e` is the category emoji fallback
-      // for items with no photo, matching the Inventory rows.
-      photos:   Array.isArray(api.item?.photos) ? api.item.photos.filter(Boolean) : [],
-      e:        CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
-      t:        api.item?.title || "Item",
-      listed:   api.item?.price ?? 0,
-      offered,
-      buyer:    api.buyer?.name || "Buyer",
-      buyerAvatar: api.buyer?.avatar || null,
-      time:     relativeTimeShort(api.proposedAt || api.createdAt),
-      // BUG-055.1 — whose turn is it? GET /incoming only returns claims
-      // where I'm the seller, so lastAmountBy === sellerId means I made the
-      // last offer; ball is in the buyer's court. lastAmountBy === buyerId
-      // means buyer made the offer; ball is in my court (Accept/Counter/Decline).
-      iMadeTheOffer: api.lastAmountBy === api.sellerId,
-    };
-  }
-
-  // Pull pending claims for this seller. Standalone preview (no accessToken)
-  // keeps the demo array. The fetch is wrapped in a stable callback so the
-  // socket listener below can re-run it without duplicating the body.
-  const reloadClaims = () => {
-    if (!accessToken) return;
-    apiRequest("/api/claims/incoming?status=PROPOSED", { token: accessToken })
-      .then(data => {
-        const list = Array.isArray(data?.claims) ? data.claims.map(adaptClaim).filter(Boolean) : [];
-        setClaims(list);
-      })
-      .catch(() => { /* keep current list on transient errors */ });
-  };
-  useEffect(() => {
-    if (!accessToken) { setClaims(DEMO_CLAIMS); setLoading(false); return; }
-    let cancelled = false;
-    setLoading(true);
-    apiRequest("/api/claims/incoming?status=PROPOSED", { token: accessToken })
-      .then(data => {
-        if (cancelled) return;
-        const list = Array.isArray(data?.claims) ? data.claims.map(adaptClaim).filter(Boolean) : [];
-        setClaims(list);
-      })
-      .catch(err => {
-        if (cancelled) return;
-        fail("Couldn't load claims: " + (err?.message || "try again"));
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [accessToken]);
-  // Real-time: a buyer just claimed something or cancelled a claim. Refetch
-  // the pending list so the row appears/disappears without a manual reload.
-  useSocketEvent("claim:new",     () => reloadClaims());
-  useSocketEvent("claim:updated", () => reloadClaims());
-
-  const offers = claims.length;
-
-  async function handleAccept(claim) {
-    // Standalone preview short-circuit
-    if (!accessToken || (typeof claim.id === "string" && claim.id.startsWith("demo-"))) {
-      setClaims(prev => prev.filter(c => c.id !== claim.id));
-      flash("Offer accepted! " + claim.t + " is reserved for " + claim.buyer + " at $" + claim.offered + " until pickup.");
-      return;
-    }
-    setBusyId(claim.id);
-    // Optimistic remove — accepting one claim also auto-rejects siblings on the
-    // same item server-side, so refetch is the safest way to resync.
-    const snapshot = claims;
-    setClaims(prev => prev.filter(c => c.id !== claim.id));
-    try {
-      await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/accept", {
-        method: "PATCH",
-        token:  accessToken,
-      });
-      flash("Offer accepted! " + claim.t + " is reserved for " + claim.buyer + " until pickup.");
-      // Item became CLAIMED — let parent refetch the items list so My Items reflects it.
-      if (onClaimsChanged) onClaimsChanged();
-    } catch (err) {
-      setClaims(snapshot);
-      fail("Accept failed: " + (err?.message || "try again"));
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function handleDecline(claim) {
-    if (!accessToken || (typeof claim.id === "string" && claim.id.startsWith("demo-"))) {
-      setClaims(prev => prev.filter(c => c.id !== claim.id));
-      flash(claim.t + " — offer from " + claim.buyer + " declined. Item remains listed.");
-      return;
-    }
-    setBusyId(claim.id);
-    const snapshot = claims;
-    setClaims(prev => prev.filter(c => c.id !== claim.id));
-    try {
-      await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/decline", {
-        method: "PATCH",
-        token:  accessToken,
-      });
-      flash(claim.t + " — offer from " + claim.buyer + " declined.");
-      if (onClaimsChanged) onClaimsChanged();
-    } catch (err) {
-      setClaims(snapshot);
-      fail("Decline failed: " + (err?.message || "try again"));
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  // BUG-055 — seller-side counter. Updates Claim.amount in place; status
-  // stays PROPOSED so the buyer sees the new amount and can accept/counter
-  // back. Backend resets the 36h expiry on each amount update.
-  async function handleCounter(claim) {
-    const amt = Math.round(Number(counterAmt));
-    if (!Number.isFinite(amt) || amt <= 0) {
-      fail("Enter a valid counter amount.");
-      return;
-    }
-    if (!accessToken || (typeof claim.id === "string" && claim.id.startsWith("demo-"))) {
-      setClaims(prev => prev.map(c => c.id === claim.id ? { ...c, offered: amt } : c));
-      setCounterId(null); setCounterAmt("");
-      flash("Counter offered $" + amt + " on " + claim.t + ".");
-      return;
-    }
-    setBusyId(claim.id);
-    try {
-      await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/amount", {
-        method: "PATCH",
-        token:  accessToken,
-        body:   JSON.stringify({ amount: amt }),
-      });
-      setClaims(prev => prev.map(c => c.id === claim.id ? { ...c, offered: amt } : c));
-      setCounterId(null); setCounterAmt("");
-      flash("Counter offered $" + amt + " on " + claim.t + ". Waiting for the buyer.");
-    } catch (err) {
-      fail("Counter failed: " + (err?.message || "try again"));
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  return (
-    <div>
-      {!embedded && <InventoryTabs activeView="orders" onNav={onNav} accessToken={accessToken}/>}
-
-      {/* Success toast */}
-      {successMsg && (
-        <div role="status" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.gLightBg, border: "1px solid " + C.gSoft, marginBottom: 16 }}>
-          <CheckCircle size={18} style={{ color: C.gPrimary }} />
-          <p style={{ fontSize: 13, fontWeight: 600, color: C.gDark, fontFamily: F.body, flex: 1 }}>{successMsg}</p>
-          <button onClick={() => setSuccessMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.ash }} /></button>
-        </div>
-      )}
-
-      {/* Error toast */}
-      {errorMsg && (
-        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
-          <AlertCircle size={18} style={{ color: C.claret }} />
-          <p style={{ fontSize: 13, fontWeight: 600, color: C.claret, fontFamily: F.body, flex: 1 }}>{errorMsg}</p>
-          <button onClick={() => setErrorMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
-        </div>
-      )}
-
-      {/* Summary */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-        <div style={{ flex: 1, padding: 16, borderRadius: 14, border: offers > 0 ? "2px solid " + C.oSoft : "1px solid #f0f0f0", backgroundColor: offers > 0 ? C.oLightBg : "#fff", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: C.oLightBg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <DollarSign size={18} style={{ color: C.amberDeep }} />
-          </div>
-          <div>
-            <p style={{ fontSize: 22, fontWeight: 900, color: C.amberDeep, fontFamily: F.head }}>{offers}</p>
-            <p style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>Pending Claims</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Loading */}
-      {loading && (
-        <div style={{ padding: 40, textAlign: "center" }}>
-          <p style={{ fontSize: 13, color: C.ash, fontFamily: F.body }}>Loading claims…</p>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!loading && claims.length === 0 && (
-        <div style={{ padding: 60, textAlign: "center" }}>
-          <ClipboardList size={32} style={{ color: C.smoke, marginBottom: 12 }} />
-          <p style={{ fontSize: 15, fontWeight: 700, color: C.ash, fontFamily: F.body }}>No claims to review</p>
-          <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>When buyers claim your items, they appear here for you to accept or decline.</p>
-        </div>
-      )}
-
-      {/* Claims list */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {claims.map(claim => {
-          const isBusy = busyId === claim.id;
-          return (
-            <div key={claim.id} style={{ padding: isMobile ? "14px 14px" : "16px 18px", borderRadius: 16, border: "2px solid " + C.oSoft, background: C.paper, opacity: isBusy ? 0.6 : 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-                <StatusBadge status="offer" size="sm"/>
-                <span style={{ fontSize: 12, color: C.mink, fontWeight: 600, fontFamily: F.body }}>
-                  {claim.iMadeTheOffer ? "Your counter" : claim.offered === claim.listed ? "Full price claim" : claim.offered < claim.listed ? "Offer below asking" : "Offer above asking"}
-                </span>
-                <span style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>{claim.time}</span>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14, flexWrap: "wrap" }}>
-                <div style={{ width: isMobile ? 46 : 52, height: isMobile ? 46 : 52, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: isMobile ? 22 : 24, flexShrink: 0, overflow: "hidden" }}>
-                  {claim.photos && claim.photos.length > 0 ? (
-                    <img src={claim.photos[0]} alt={claim.t} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
-                  ) : (
-                    <span>{claim.e}</span>
-                  )}
-                </div>
-
-                <div style={{ flex: 1, minWidth: isMobile ? "60%" : 0 }}>
-                  <p style={{ fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.head, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{claim.t}</p>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4, fontSize: 12, color: C.mink, fontFamily: F.body }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 5 }}><UserAvatar avatar={claim.buyerAvatar} name={claim.buyer} size={20} decorative initialsBg={avatarBg(claim.buyer)} fontFamily={F.head} fontSize={8}/> {claim.buyer}</span>
-                  </div>
-                </div>
-
-                {/* Price — shows current offered amount and the listed price
-                    when the buyer's offer differs (offer or seller-counter). */}
-                <div style={{ textAlign: "right", marginRight: isMobile ? 0 : 10, flexShrink: 0 }}>
-                  <p style={{ fontSize: 18, fontWeight: 900, color: C.amberDeep, fontFamily: F.head }}>${claim.offered}</p>
-                  {claim.offered !== claim.listed && (
-                    <p style={{ fontSize: 11, fontWeight: 500, color: C.ash, fontFamily: F.body, textDecoration: "line-through", marginTop: 1 }}>${claim.listed} listed</p>
-                  )}
-                </div>
-
-                {/* Actions — Accept / Counter / Decline. BUG-055.1: only
-                    visible when the BUYER made the last offer. If the seller
-                    countered, the ball is in the buyer's court — show a
-                    "Waiting for buyer" pill instead. */}
-                <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0, width: isMobile ? "100%" : "auto", marginTop: isMobile ? 8 : 0, flexWrap: "wrap" }}>
-                  {claim.iMadeTheOffer ? (
-                    <span style={{ padding: "8px 14px", borderRadius: 999, background: C.amberMist || "#fef3c7", color: C.amberDeep || "#92400e", fontFamily: F.head, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, border: "1.5px solid " + (C.amber || "#f59e0b") + "30" }}>
-                      <Clock size={12}/> Waiting for buyer
-                    </span>
-                  ) : counterId === claim.id ? (
-                    <>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: C.ink, fontFamily: F.head }}>$</span>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={counterAmt}
-                        onChange={e => setCounterAmt(e.target.value)}
-                        placeholder={String(Math.max(1, Math.round((claim.offered + claim.listed) / 2)))}
-                        autoFocus
-                        aria-label="Counter offer amount"
-                        className="dy-field"
-                        disabled={isBusy}
-                        style={{ width: 92, minHeight: 44, padding: "7px 10px", borderRadius: 8, border: "1.5px solid " + C.smoke, fontFamily: F.head, fontSize: 16, fontWeight: 700, color: C.ink, background: C.paper }}
-                      />
-                      <button onClick={() => handleCounter(claim)} disabled={isBusy} className="cta-primary" style={{ minHeight: 44, flex: isMobile ? 1 : undefined, padding: "8px 12px", borderRadius: 8, border: "none", background: C.gPrimary, color: "#fff", fontFamily: F.body, fontSize: 11, fontWeight: 800, cursor: isBusy ? "not-allowed" : "pointer" }}>Send</button>
-                      <button onClick={() => { setCounterId(null); setCounterAmt(""); }} disabled={isBusy} style={{ minHeight: 44, flex: isMobile ? 1 : undefined, padding: "8px 10px", borderRadius: 8, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.body, fontSize: 11, fontWeight: 700, cursor: isBusy ? "not-allowed" : "pointer" }}>Cancel</button>
-                    </>
-                  ) : (
-                    <>
-                      <button onClick={() => handleAccept(claim)} disabled={isBusy} style={{ minHeight: 44, flex: isMobile ? 1 : undefined, padding: "8px 14px", borderRadius: 8, border: "none", cursor: isBusy ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 700, backgroundColor: C.gPrimary, color: "#fff", fontFamily: F.body, flex: isMobile ? 1 : "0 0 auto" }}>Accept ${claim.offered}</button>
-                      <button onClick={() => { setCounterId(claim.id); setCounterAmt(String(Math.max(1, Math.round((claim.offered + claim.listed) / 2)))); }} disabled={isBusy} style={{ minHeight: 44, flex: isMobile ? 1 : undefined, padding: "8px 14px", borderRadius: 8, border: "1.5px solid " + C.gPrimary + "55", background: C.gLightBg || "#ecfdf5", color: C.gPrimary, fontFamily: F.body, fontSize: 11, fontWeight: 700, cursor: isBusy ? "not-allowed" : "pointer", flex: isMobile ? 1 : "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}><RefreshCw size={11}/> Counter</button>
-                      <button onClick={() => handleDecline(claim)} disabled={isBusy} style={{ minHeight: 44, flex: isMobile ? 1 : undefined, padding: "8px 14px", borderRadius: 8, border: "1px solid #FECACA", cursor: isBusy ? "not-allowed" : "pointer", fontSize: 11, fontWeight: 600, background: C.paper, color: "#DC2626", fontFamily: F.body, flex: isMobile ? 1 : "0 0 auto" }}>Decline</button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 /* ============================== SELLER MESSAGES ============================== */
@@ -6976,8 +5795,6 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
   // a claim id (preferred) or — if the caller still passes a message id from
   // legacy data — fall through to a no-op.
   const [offerBusyMsgId, setOfferBusyMsgId] = useState(null);
-  const [counterDraftMsgId, setCounterDraftMsgId] = useState(null);
-  const [counterDraftAmount, setCounterDraftAmount] = useState("");
   async function acceptOffer(claimId) {
     if (!usingBackend || !claimId) return;
     setOfferBusyMsgId(claimId);
@@ -7006,29 +5823,6 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
       });
     } catch (err) {
       setErrorMsg("Couldn't decline: " + (err?.message || "try again"));
-      setTimeout(() => setErrorMsg(null), 4500);
-    } finally {
-      setOfferBusyMsgId(null);
-    }
-  }
-  async function submitCounter(claimId) {
-    const amt = Math.round(Number(counterDraftAmount));
-    if (!Number.isFinite(amt) || amt <= 0) {
-      setErrorMsg("Enter a valid counter amount.");
-      setTimeout(() => setErrorMsg(null), 4500);
-      return;
-    }
-    setOfferBusyMsgId(claimId);
-    try {
-      await apiRequest("/api/claims/" + encodeURIComponent(claimId) + "/amount", {
-        method: "PATCH",
-        token:  accessToken,
-        body:   JSON.stringify({ amount: amt }),
-      });
-      setCounterDraftMsgId(null);
-      setCounterDraftAmount("");
-    } catch (err) {
-      setErrorMsg("Couldn't counter: " + (err?.message || "try again"));
       setTimeout(() => setErrorMsg(null), 4500);
     } finally {
       setOfferBusyMsgId(null);
@@ -7648,6 +6442,14 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
               </div>
             ) : (
             <>
+            {/* You removed the listing: the buyer sees "no longer available";
+                you can still message each other, but no offers or claims. */}
+            {active.item?.status === "REMOVED" && (
+              <div role="note" style={{ padding: "10px 16px", borderTop: "1px solid " + C.fawn, background: C.sand, display: "flex", alignItems: "center", gap: 8 }}>
+                <AlertCircle size={15} style={{ color: C.mink, flexShrink: 0 }} aria-hidden="true"/>
+                <p style={{ fontFamily: F.body, fontSize: 12.5, fontWeight: 600, color: C.ink }}>You removed this listing. The buyer sees it&apos;s no longer available; you can still message each other here.</p>
+              </div>
+            )}
             {/* Staged photo, waiting on send — same contract as the buyer
                 composer: picking shows it, send shares it. */}
             {pendingAttachment && (
@@ -7773,386 +6575,6 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
           />
         )}
       </div>
-    </div>
-  );
-}
-
-// Demo pickups kept for /preview/seller-dashboard so the design preview works
-// without auth. The wired version below uses these only when no accessToken
-// is supplied.
-const DEMO_PICKUPS = [
-  { id: "demo-p1", e: "\u{1F4FA}", t: "LG 55 inch Smart TV", price: 250, buyer: "James K.", date: "Today", time: "12:00 - 2:00 PM", isToday: true, isPastDue: true, relistsIn: "1h 47m" },
-  { id: "demo-p2", e: "\u{1F6CF}\u{FE0F}", t: "Full Bedroom Set", price: 550, buyer: "Sarah M.", date: "Sat, Apr 25", time: "2:00 - 4:00 PM", isToday: false },
-  { id: "demo-p3", e: "\u{1F6CB}\u{FE0F}", t: "Sofa Set 3 Seater", price: 480, buyer: "Priya R.", date: "Sun, Apr 26", time: "10:00 AM - 12:00 PM", isToday: false },
-  { id: "demo-p4", e: "\u{1F527}", t: "DeWalt Drill Set", price: 65, buyer: "Tom W.", date: "Mon, Apr 27", time: "5:00 - 7:00 PM", isToday: false },
-];
-
-
-function PickupsView({ onNav, embedded = false, accessToken = null, onChanged = null, onOpenThread = null, onViewItem = null }) {
-  const { isMobile, width } = useViewport();
-  const [ratingItem, setRatingItem] = useState(null);
-  const [ratingStars, setRatingStars] = useState(0);
-  const [ratingNote, setRatingNote] = useState("");
-  // Mark picked up / Mark as no-show / Release item, waiting for "yes".
-  const [pendingPickup, setPendingPickup] = useState(null);
-  // Today / Upcoming / Pending filter cards. "pending" is every pickup.
-  const [pickupFilter, setPickupFilter] = useState("pending");
-  const [successMsg, setSuccessMsg] = useState(null);
-  const [errorMsg, setErrorMsg]     = useState(null);
-  const [loading, setLoading]       = useState(!!accessToken);
-  const [busyId, setBusyId]         = useState(null);
-
-  const [pickups, setPickups] = useState(accessToken ? [] : DEMO_PICKUPS);
-
-  // Adapter: backend confirmed claim -> UI pickup shape used by the existing
-  // render code. Backend pickupSlot is freeform ("Sat 2pm-4pm"), so we surface
-  // it as the schedule string and try to detect "today" by checking whether
-  // the slot string starts with today's short day name.
-  function adaptPickup(api) {
-    if (!api) return null;
-    const slot = api.pickupSlot || "";
-    // Today / upcoming / past / unscheduled, and the card's time label.
-    const when = pickupWhen(slot, { since: api.createdAt });
-    const isToday = when.kind === "today";
-    return {
-      id:      api.id,
-      // Same fix as the pending-claims rows: the item's photos come down with
-      // the claim, so show the listing rather than a hardcoded box.
-      photos:  Array.isArray(api.item?.photos) ? api.item.photos.filter(Boolean) : [],
-      e:       CATEGORY_EMOJI[api.item?.category] || "\u{1F4E6}",
-      t:       api.item?.title || "Item",
-      price:   (typeof api.amount === "number" ? api.amount : api.item?.price) ?? 0,
-      buyer:   api.buyer?.name || "Buyer",
-      buyerAvatar: api.buyer?.avatar || null,
-      when,
-      isToday,
-      itemId:  api.item?.id || api.itemId || null,
-      conversationId: api.conversationId || null,
-      cat:     ENUM_TO_CATEGORY_LABEL[api.item?.category] || "",
-      // BUG-055 — buyer-side "Confirm receipt" pings the seller. Surfaces
-      // as a high-priority badge so the seller knows the buyer is waiting
-      // for them to mark the pickup complete.
-      buyerConfirmedReceipt: !!api.buyerConfirmedReceiptAt,
-    };
-  }
-
-  // Fetch confirmed claims on mount when authed. Standalone preview falls back
-  // to the demo list defined above.
-  const reloadPickups = () => {
-    if (!accessToken) return;
-    apiRequest("/api/claims/incoming?status=ACCEPTED", { token: accessToken })
-      .then(data => {
-        const list = Array.isArray(data?.claims) ? data.claims.map(adaptPickup).filter(Boolean) : [];
-        setPickups(list);
-      })
-      .catch(() => {});
-  };
-  useEffect(() => {
-    if (!accessToken) { setPickups(DEMO_PICKUPS); setLoading(false); return; }
-    let cancelled = false;
-    setLoading(true);
-    apiRequest("/api/claims/incoming?status=ACCEPTED", { token: accessToken })
-      .then(data => {
-        if (cancelled) return;
-        const list = Array.isArray(data?.claims) ? data.claims.map(adaptPickup).filter(Boolean) : [];
-        setPickups(list);
-      })
-      .catch(err => {
-        if (cancelled) return;
-        setErrorMsg("Couldn't load pickups: " + (err?.message || "try again"));
-        setTimeout(() => setErrorMsg(null), 4500);
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [accessToken]);
-  // A buyer cancelled a ACCEPTED claim, or the seller confirmed a new pending
-  // one — either way refetch so the scheduled-pickups list stays current.
-  useSocketEvent("claim:updated", () => reloadPickups());
-
-  // Pending = every pickup; Today / Upcoming by the buyer's suggested time
-  // (pickupWhen). Unscheduled and past times count under Pending only.
-  const whenOf = (p) => p.when || pickupWhen([p.date, p.time].filter(Boolean).join(" · "));
-  const todayCount = pickups.filter(p => whenOf(p).kind === "today").length;
-  const upcomingCount = pickups.filter(p => whenOf(p).kind === "upcoming").length;
-  const shownPickups = pickupFilter === "pending" ? pickups : pickups.filter(p => whenOf(p).kind === pickupFilter);
-  const plural = (n, word) => n + " " + word + (n === 1 ? "" : "s");
-  const filterAnnouncement = pickupFilter === "today" ? "Showing " + plural(shownPickups.length, "pickup") + " for today."
-    : pickupFilter === "upcoming" ? "Showing " + plural(shownPickups.length, "upcoming pickup") + "."
-    : "Showing all " + plural(shownPickups.length, "pending pickup") + ".";
-
-  // The server marks it picked up first (markClaimPickedUp); the rating
-  // prompt opens only after that succeeds. This used to open the rating
-  // straight away and send the PATCH once it closed, so a claim cancelled
-  // since the list loaded still got a rating window. A refusal now shows the
-  // server's reason and refetches, which drops the stale row.
-  async function handlePickedUp(item) {
-    if (busyId) return;
-    if (!(await commitPickedUp(item))) return;
-    setRatingItem(item);
-    setRatingStars(0);
-    setRatingNote("");
-  }
-
-  // Marks the pickup on the server before any rating window opens. Standalone
-  // preview (demo IDs or no token) just removes the row locally. Returns
-  // whether the pickup went through — the rating window only opens if so.
-  async function commitPickedUp(item) {
-    if (!accessToken || (typeof item.id === "string" && item.id.startsWith("demo-"))) {
-      setPickups(prev => prev.filter(p => p.id !== item.id));
-      setSuccessMsg("Pickup complete! " + item.t + " marked as picked up.");
-      setTimeout(() => setSuccessMsg(null), 4000);
-      return true;
-    }
-    setBusyId(item.id);
-    // Hard 20s timeout — same defensive measure we added to the offer / claim
-    // flows. Without it, if the network or auto-refresh path stalls, busyId
-    // never clears and the seller can't mark any more pickups until they
-    // refresh the page.
-    const pickupTimeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Request timed out. Please try again.")), 20000)
-    );
-    try {
-      await Promise.race([markClaimPickedUp(item.id, accessToken), pickupTimeout]);
-      setPickups(prev => prev.filter(p => p.id !== item.id));
-      setSuccessMsg("Pickup complete! " + item.t + " marked as picked up.");
-      setTimeout(() => setSuccessMsg(null), 4000);
-      // Item flipped to SOLD server-side — refresh the parent's items list.
-      if (onChanged) onChanged();
-      return true;
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      if (typeof console !== "undefined") console.error("[PickupsView] picked-up failed:", err);
-      setErrorMsg(pickupErrorText(err));
-      setTimeout(() => setErrorMsg(null), 4500);
-      reloadPickups();
-      return false;
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  // Close the modal and persist the seller's rating of the buyer. The pickup
-  // already landed in handlePickedUp — the backend only accepts a review on
-  // a PICKED_UP claim, and the window doesn't open until it is one.
-  async function submitRating({ skip = false } = {}) {
-    const item  = ratingItem;
-    const stars = ratingStars;
-    const note  = ratingNote.trim();
-    setRatingItem(null);
-    if (!item) return;
-    if (!accessToken || (typeof item.id === "string" && item.id.startsWith("demo-"))) return;
-    if (skip || stars < 1) return;
-    try {
-      await apiRequest("/api/claims/" + encodeURIComponent(item.id) + "/review", {
-        method: "POST",
-        token:  accessToken,
-        body:   JSON.stringify({ rating: stars, text: note || undefined }),
-      });
-      setSuccessMsg("Pickup complete! Your " + stars + "-star rating of " + item.buyer + " was saved.");
-      setTimeout(() => setSuccessMsg(null), 4000);
-    } catch (err) {
-      // The pickup itself succeeded — only the rating failed, so say exactly
-      // that rather than implying the whole thing fell over.
-      setErrorMsg("Pickup saved, but the rating didn't send: " + (err?.message || "try again"));
-      setTimeout(() => setErrorMsg(null), 4500);
-    }
-  }
-
-  // Mark as no-show / Release item (each confirmed first): the claim is
-  // cancelled and the item is back on sale at once (cancelAcceptedClaim).
-  // Optimistic; the card comes back if the server refuses.
-  async function cancelPickup(item, kind) {
-    const snapshot = pickups;
-    setPickups(prev => prev.filter(p => p.id !== item.id));
-    if (accessToken && !(typeof item.id === "string" && item.id.startsWith("demo-"))) {
-      try {
-        await cancelAcceptedClaim(item.id, kind, accessToken);
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        if (typeof console !== "undefined") console.error("[PickupsView] " + kind + " failed:", err);
-        setPickups(snapshot);
-        reloadPickups();
-        setErrorMsg(pickupCancelErrorText(kind, err));
-        setTimeout(() => setErrorMsg(null), 4500);
-        return;
-      }
-    }
-    setSuccessMsg(pickupCancelToast(kind, item.t));
-    setTimeout(() => setSuccessMsg(null), 4500);
-    // The item is back on sale: refresh My items too.
-    if (onChanged) onChanged();
-  }
-  async function confirmPendingPickup() {
-    const p = pendingPickup;
-    setPendingPickup(null);
-    if (!p) return;
-    if (p.kind === "pickup") await handlePickedUp(p.item);
-    else await cancelPickup(p.item, p.kind);
-  }
-  function pickupActions(p) {
-    return pickupMenuActions({
-      onMessage: p.conversationId && onOpenThread ? () => onOpenThread(p.conversationId) : null,
-      onView: p.itemId && onViewItem ? () => onViewItem(p.itemId) : null,
-      onNoShow: () => setPendingPickup({ kind: "no-show", item: p }),
-      onRelease: () => setPendingPickup({ kind: "release", item: p }),
-    });
-  }
-
-  return (
-    <div>
-      {!embedded && <InventoryTabs activeView="orders" onNav={onNav} accessToken={accessToken} />}
-
-      {/* Success toast */}
-      {successMsg && (
-        <div role="status" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.gLightBg, border: "1px solid " + C.gSoft, marginBottom: 16 }}>
-          <CheckCircle size={18} style={{ color: C.gPrimary }} />
-          <p style={{ fontSize: 13, fontWeight: 600, color: C.gDark, fontFamily: F.body, flex: 1 }}>{successMsg}</p>
-          <button onClick={() => setSuccessMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.ash }} /></button>
-        </div>
-      )}
-
-      {/* Error toast */}
-      {errorMsg && (
-        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", borderRadius: 12, backgroundColor: C.claretMist, border: "1px solid " + C.claret + "33", marginBottom: 16 }}>
-          <AlertCircle size={18} style={{ color: C.claret }} />
-          <p style={{ fontSize: 13, fontWeight: 600, color: C.claret, fontFamily: F.body, flex: 1 }}>{errorMsg}</p>
-          <button onClick={() => setErrorMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}><X size={14} style={{ color: C.claret }} /></button>
-        </div>
-      )}
-
-      {/* Scheduled pickups: the total, then Today / Upcoming / Pending cards
-          that filter the list below (Pending = all of them). */}
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        <h2 style={{ fontFamily: F.head, fontSize: 16, fontWeight: 800, color: C.ink, letterSpacing: "-0.01em" }}>Scheduled pickups</h2>
-        <span style={{ fontFamily: F.body, fontSize: 13, fontWeight: 600, color: ROW.muted }}>{pickups.length} pending</span>
-      </div>
-      <div role="group" aria-label="Filter pickups" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: width < 400 ? 6 : isMobile ? 8 : 12, marginBottom: 16 }}>
-        {[["today", "Today", todayCount, MapPin], ["upcoming", "Upcoming", upcomingCount, Calendar], ["pending", "Pending", pickups.length, Package]].map(([key, label, count, Icon]) => {
-          const on = pickupFilter === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={on}
-              onClick={() => setPickupFilter(key)}
-              className="dy-pickup-filter"
-              style={{ minHeight: 56, display: "flex", alignItems: "center", gap: width < 400 ? 0 : 10, padding: width < 400 ? "10px 10px" : "12px 14px", borderRadius: 14, border: "1px solid " + (on ? C.greenDeep : ROW.border), boxShadow: on ? "inset 0 0 0 1px " + C.greenDeep : "none", background: on ? C.greenMist : C.paper, cursor: "pointer", textAlign: "left", minWidth: 0 }}
-            >
-              {width >= 400 && (
-                <span aria-hidden="true" style={{ width: 36, height: 36, borderRadius: 11, background: on ? C.paper : ROW.thumb, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <Icon size={17} style={{ color: on ? C.greenDeep : ROW.muted }}/>
-                </span>
-              )}
-              <span style={{ minWidth: 0 }}>
-                <span style={{ display: "block", fontFamily: F.head, fontSize: isMobile ? 19 : 22, fontWeight: 800, lineHeight: 1.1, color: on ? C.greenDeep : C.ink, fontVariantNumeric: "tabular-nums" }}>{count}</span>
-                <span style={{ display: "block", fontFamily: F.body, fontSize: 12.5, fontWeight: 650, color: on ? C.greenDeep : ROW.muted, marginTop: 2 }}>{label}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {/* Says what the list now shows when a filter card is chosen. */}
-      <p aria-live="polite" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>{filterAnnouncement}</p>
-
-      {/* Loading */}
-      {loading && (
-        <div style={{ padding: 40, textAlign: "center" }}>
-          <p style={{ fontSize: 13, color: C.ash, fontFamily: F.body }}>Loading pickups…</p>
-        </div>
-      )}
-
-      {/* Pickup items */}
-      {!loading && pickups.length === 0 && (
-        <div style={{ padding: 60, textAlign: "center" }}>
-          <MapPin size={32} style={{ color: "#e2e8f0", marginBottom: 12 }} />
-          <p style={{ fontSize: 15, fontWeight: 700, color: C.ash, fontFamily: F.body }}>No pickups scheduled</p>
-          <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>When buyers claim items and schedule pickup, they will appear here.</p>
-          {/* This list only holds ACCEPTED claims, so a seller who has just
-              completed a sale sees nothing here and has no idea the record
-              exists. Point them at History rather than ending the page. */}
-          {onNav && (
-            <button onClick={() => onNav("history")} style={{
-              marginTop: 14, padding: "9px 18px", borderRadius: 999,
-              border: "1.5px solid " + C.green + "40", background: C.paper,
-              color: C.greenDeep, cursor: "pointer",
-              fontFamily: F.head, fontSize: 12.5, fontWeight: 800,
-            }}>
-              See completed pickups in History
-            </button>
-          )}
-        </div>
-      )}
-
-      {!loading && pickups.length > 0 && shownPickups.length === 0 && (
-        <p style={{ padding: "28px 16px", textAlign: "center", fontFamily: F.body, fontSize: 13.5, fontWeight: 500, color: ROW.muted, border: "1px dashed " + ROW.border, borderRadius: 14 }}>
-          {pickupFilter === "today" ? "No pickups suggested for today." : "No upcoming pickups with a suggested time."}
-        </p>
-      )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {shownPickups.map(p => (
-          <PickupCard
-            key={p.id}
-            item={p}
-            buyer={p.buyer}
-            buyerAvatar={p.buyerAvatar}
-            price={p.price}
-            when={whenOf(p)}
-            width={width}
-            busy={busyId === p.id}
-            onPickup={() => setPendingPickup({ kind: "pickup", item: p })}
-            onOpen={p.itemId && onViewItem ? () => onViewItem(p.itemId) : null}
-            actions={pickupActions(p)}
-          />
-        ))}
-      </div>
-
-      {/* Rating modal */}
-      {ratingItem && (
-        <ModalPortal>
-        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal }}>
-          <ModalA11y label="Rate the buyer"/>
-          <div className={DIALOG_PANEL} style={{ width: 420, maxWidth: "calc(100% - 32px)", borderRadius: 24, background: C.paper, padding: 28, boxShadow: "0 24px 80px rgba(0,0,0,0.15)" }}>
-            <div style={{ textAlign: "center", marginBottom: 20 }}>
-              <div style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: C.gLightBg, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
-                <CheckCircle size={28} style={{ color: C.gPrimary }} />
-              </div>
-              <h3 style={{ fontSize: 18, fontWeight: 800, color: C.ink, fontFamily: F.head }}>Item Picked Up!</h3>
-              <p style={{ fontSize: 13, color: C.mink, marginTop: 4, fontFamily: F.body }}>{ratingItem.t} - picked up by {ratingItem.buyer}</p>
-            </div>
-
-            <div style={{ padding: 16, borderRadius: 14, border: "1px solid " + C.fawn, background: C.sand, marginBottom: 16 }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 10, fontFamily: F.body, textAlign: "center" }}>Rate this buyer</p>
-              <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 4 }}>
-                {[1, 2, 3, 4, 5].map(s => (
-                  <button key={s} onClick={() => setRatingStars(s)}
-                    style={{ background: "none", border: "none", cursor: "pointer", padding: 4, fontSize: 28 }}>
-                    <Star size={28} style={{ color: s <= ratingStars ? "#FBBF24" : "#e2e8f0", fill: s <= ratingStars ? "#FBBF24" : "none", strokeWidth: 1.5 }} />
-                  </button>
-                ))}
-              </div>
-              <p style={{ fontSize: 11, color: C.ash, textAlign: "center", fontFamily: F.body }}>
-                {ratingStars === 0 ? "Tap to rate" : ratingStars <= 2 ? "Could be better" : ratingStars <= 3 ? "Okay" : ratingStars === 4 ? "Great buyer!" : "Excellent buyer!"}
-              </p>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#334155", marginBottom: 6, fontFamily: F.body }}>Note (optional)</label>
-              <textarea value={ratingNote} onChange={e => setRatingNote(e.target.value)} placeholder="On time, friendly, easy transaction..." style={{ width: "100%", height: 60, padding: 10, borderRadius: 10, border: "1.5px solid #e2e8f0", fontSize: 12, fontFamily: F.body, resize: "none", outline: "none", boxSizing: "border-box" }} />
-            </div>
-
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => submitRating({ skip: false })} disabled={ratingStars < 1} style={{ flex: 1, padding: "12px 0", borderRadius: 999, border: "none", cursor: ratingStars < 1 ? "not-allowed" : "pointer", fontSize: 14, fontWeight: 700, fontFamily: F.body, backgroundColor: ratingStars < 1 ? C.fawn : C.gPrimary, color: ratingStars < 1 ? C.ash : "#fff" }}>Submit Rating</button>
-              <button onClick={() => submitRating({ skip: true })}
-                style={{ padding: "12px 20px", borderRadius: 50, border: "1.5px solid #e2e8f0", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: F.body, background: C.paper, color: C.mink }}>Skip</button>
-            </div>
-          </div>
-        </div>
-        </ModalPortal>
-      )}
-
-      {pendingPickup && (
-        <PickupConfirmDialog kind={pendingPickup.kind} item={pendingPickup.item} buyer={pendingPickup.item.buyer} isMobile={isMobile} onCancel={() => setPendingPickup(null)} onConfirm={confirmPendingPickup}/>
-      )}
     </div>
   );
 }
@@ -8304,26 +6726,21 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
   // BUG-055 — seller's "Rate buyer" modal state. Opens from the expanded
   // history row's Rate buyer CTA; POSTs to /api/claims/:id/review where the
   // backend writes to sellerReviewX fields (mirrors buyer's buyerReviewX).
+  // The form is the shared ReviewForm (stars + optional message), the one
+  // buyers use. A refusal stays in the form, with what was typed.
   const [rateTx, setRateTx]       = useState(null);
-  const [rateStars, setRateStars] = useState(0);
-  const [rateNote, setRateNote]   = useState("");
-  const openRateBuyer = (tx) => { setRateTx(tx); setRateStars(0); setRateNote(""); };
-  const cancelRate    = () => { setRateTx(null); setRateStars(0); setRateNote(""); };
-  const submitRate    = async () => {
-    if (!rateTx || rateStars < 1) { cancelRate(); return; }
-    try {
-      await apiRequest("/api/claims/" + encodeURIComponent(rateTx.id) + "/review", {
-        method: "POST",
-        token:  accessToken,
-        body:   JSON.stringify({ rating: rateStars, text: rateNote.trim() || undefined }),
-      });
-      // Optimistic update — flip the row to sellerRated locally.
-      setTransactions(prev => prev.map(t => t.id === rateTx.id ? { ...t, sellerRated: true, sellerRating: rateStars } : t));
-    } catch (err) {
-      setErrorMsg("Couldn't save rating: " + (err?.message || "try again"));
-      setTimeout(() => setErrorMsg(null), 4500);
-    }
-    cancelRate();
+  const openRateBuyer = (tx) => setRateTx(tx);
+  const cancelRate    = () => setRateTx(null);
+  const submitRate    = async (rating, text) => {
+    const tx = rateTx;
+    if (!tx) return;
+    await apiRequest("/api/claims/" + encodeURIComponent(tx.id) + "/review", {
+      method: "POST",
+      token:  accessToken,
+      body:   JSON.stringify(text ? { rating, text } : { rating }),
+    });
+    setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, sellerRated: true, sellerRating: rating } : t));
+    setRateTx(null);
   };
 
   // Adapter: backend PICKED_UP claim -> UI transaction shape used by the row
@@ -8499,22 +6916,15 @@ function SellerHistoryView({ embedded = false, accessToken = null }) {
       {rateTx && (
         <ModalPortal>
         <div onClick={cancelRate} style={{ position: "fixed", inset: 0, background: "rgba(11,47,32,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: 16 }}>
-          <ModalA11y label="Rate this transaction" onClose={cancelRate}/>
-          <div className={DIALOG_PANEL} onClick={e => e.stopPropagation()} style={{ background: C.paper, borderRadius: 20, padding: 24, width: "100%", maxWidth: 420, boxShadow: "0 20px 60px rgba(11,47,32,0.25)" }}>
-            <h3 style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.ink, marginBottom: 6 }}>Rate {rateTx.buyer}</h3>
-            <p style={{ fontFamily: F.body, fontSize: 13, color: C.mink, marginBottom: 16 }}>How was the transaction? Your rating helps other sellers and shows on {rateTx.buyer.split(" ")[0]}&rsquo;s buyer profile.</p>
-            <div style={{ display: "flex", gap: 4, marginBottom: 16, justifyContent: "center" }}>
-              {[1,2,3,4,5].map(n => (
-                <button key={n} onClick={() => setRateStars(n)} style={{ background: "none", border: "none", padding: 4, cursor: "pointer" }}>
-                  <Star size={32} style={{ color: n <= rateStars ? C.amber : C.fawn }} fill={n <= rateStars ? C.amber : "none"} strokeWidth={n <= rateStars ? 0 : 1.5}/>
-                </button>
-              ))}
-            </div>
-            <textarea value={rateNote} onChange={e => setRateNote(e.target.value)} placeholder="Optional — share a quick note about the buyer" maxLength={500} rows={3} style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 13, color: C.ink, resize: "vertical", outline: "none", marginBottom: 16 }}/>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button onClick={cancelRate} style={{ padding: "9px 16px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
-              <button onClick={submitRate} disabled={rateStars < 1} className="cta-primary" style={{ padding: "9px 18px", borderRadius: 999, border: "none", background: rateStars < 1 ? C.fawn : C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: rateStars < 1 ? "not-allowed" : "pointer", boxShadow: rateStars < 1 ? "none" : "0 2px 0 " + C.greenDeep }}>Submit rating</button>
-            </div>
+          <ModalA11y label={"Rate " + rateTx.buyer} onClose={cancelRate}/>
+          <div className={DIALOG_PANEL} onClick={e => e.stopPropagation()} style={{ background: C.paper, borderRadius: 20, padding: 24, width: "100%", maxWidth: 460, boxShadow: "0 20px 60px rgba(11,47,32,0.25)" }}>
+            <h3 style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 12 }}>Rate {rateTx.buyer}</h3>
+            <ReviewForm
+              variant="dialog"
+              prompt={"How was the transaction with " + rateTx.buyer + "?"}
+              onSubmit={submitRate}
+              onCancel={cancelRate}
+            />
           </div>
         </div>
         </ModalPortal>
@@ -8551,9 +6961,11 @@ function ItemDetailView({ item, onBack, onEdit, accessToken: _accessToken }) {
   const hasPhotos = photos.length > 0;
   const hero = hasPhotos ? photos[Math.min(active, photos.length - 1)] : null;
 
-  // Lifecycle pill — mirrors MyItemsView's logic
+  // Lifecycle pill — mirrors MyItemsView's logic (a pending sale first).
   const dropIsLive = false;
+  const salePending = isPickupPending(item);
   const lifecycle =
+    salePending ? "claimed" :
     item.status === "draft" ? "draft" :
     item.publishedTo === "drop"  && !dropIsLive ? "queued" :
     item.publishedTo === "drop"  &&  dropIsLive ? "live"   :
@@ -8564,7 +6976,9 @@ function ItemDetailView({ item, onBack, onEdit, accessToken: _accessToken }) {
     queued: { label: "Queued for Saturday's Drop",   bg: C.amberMist, color: C.amberDeep, border: C.amber + "40" },
     live:   { label: "Live in Drop",                  bg: C.greenMist, color: C.greenDeep, border: C.green + "40" },
     shelf:  { label: "On the Shelf",                  bg: C.sand,      color: C.ink,       border: C.smoke },
+    claimed: { label: "Claimed · pickup pending",     bg: C.aiMist,    color: C.ai,        border: C.ai + "40" },
   }[lifecycle];
+  const editReasonId = "item-detail-edit-reason-" + item.id;
 
   return (
     <div className="fade-in" style={{ maxWidth: isMobile ? "100%" : 1160, margin: "0 auto" }}>
@@ -8583,12 +6997,17 @@ function ItemDetailView({ item, onBack, onEdit, accessToken: _accessToken }) {
             </span>
           )}
           <button
-            onClick={onEdit}
+            onClick={salePending ? undefined : onEdit}
+            disabled={salePending}
+            aria-describedby={salePending ? editReasonId : undefined}
             className="cta-primary"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: "none", cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800, background: C.green, color: "#fff", boxShadow: "0 2px 0 " + C.greenDeep }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 10, border: "none", cursor: salePending ? "not-allowed" : "pointer", opacity: salePending ? 0.5 : 1, fontFamily: F.head, fontSize: 13, fontWeight: 800, background: C.green, color: "#fff", boxShadow: "0 2px 0 " + C.greenDeep }}
           >
             Edit item
           </button>
+          {salePending && (
+            <span id={editReasonId} style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink }}>{SALE_PENDING_REASON}</span>
+          )}
         </div>
       </div>
 
@@ -9256,7 +7675,7 @@ function EditItemView({ onBack, editingItem, aiSettings = {}, accessToken = null
           </div>
           <div>
             <label htmlFor={fieldId + "-price"} style={FORM_LABEL}>Price ($) *</label>
-            <input id={fieldId + "-price"} className="dy-field" value={price} onChange={e => setPrice(e.target.value)} placeholder="0.00" type="number" inputMode="decimal" style={{ ...FORM_INPUT, width: 160, fontWeight: 700 }} />
+            <input id={fieldId + "-price"} className="dy-field" value={price} onChange={e => setPrice(decimalAmountText(e.target.value))} placeholder="0.00" type="text" inputMode="decimal" autoComplete="off" style={{ ...FORM_INPUT, width: 160, fontWeight: 700 }} />
             <p style={{ fontFamily: F.body, fontSize: 12, color: C.ash, marginTop: 6 }}>Enter 0 for a free giveaway.</p>
           </div>
 
@@ -9631,11 +8050,11 @@ function AIListingEditModal({ item, onClose, onSave, aiSettings = {} }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
             <div>
               <label style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Price ($)</label>
-              <input type="text" value={price} onChange={e => setPrice(e.target.value)} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: "1.5px solid " + C.fawn, fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, outline: "none", background: C.paper, boxSizing: "border-box" }}/>
+              <input type="text" inputMode="decimal" autoComplete="off" value={price} onChange={e => setPrice(decimalAmountText(e.target.value))} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: "1.5px solid " + C.fawn, fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, outline: "none", background: C.paper, boxSizing: "border-box" }}/>
             </div>
             <div>
               <label style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Floor ($) <span style={{ color: C.ash, fontWeight: 600 }}>· override</span></label>
-              <input type="text" value={floor} onChange={e => setFloor(e.target.value)} placeholder={"Default: $" + defaultFloor} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: "1.5px solid " + C.fawn, fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, outline: "none", background: C.paper, boxSizing: "border-box" }}/>
+              <input type="text" inputMode="decimal" autoComplete="off" value={floor} onChange={e => setFloor(decimalAmountText(e.target.value))} placeholder={"Default: $" + defaultFloor} style={{ width: "100%", padding: "10px 14px", borderRadius: 12, border: "1.5px solid " + C.fawn, fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, outline: "none", background: C.paper, boxSizing: "border-box" }}/>
               <p style={{ fontFamily: F.body, fontSize: 10, fontWeight: 500, color: C.ash, marginTop: 4, fontStyle: "italic" }}>
                 {!floor || Number(floor) === defaultFloor ? "Using your " + floorPct + "% rule (= $" + defaultFloor + ")" : "Custom override · leave blank to use default"}
               </p>
@@ -9644,7 +8063,7 @@ function AIListingEditModal({ item, onClose, onSave, aiSettings = {} }) {
 
           <div style={{ marginBottom: 14, padding: "12px 14px", borderRadius: 12, background: C.sand, border: "1px solid " + C.fawn }}>
             <label style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Original retail ($) — optional</label>
-            <input type="text" value={retail} onChange={e => setRetail(e.target.value)} placeholder="e.g. 79" style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.ink, outline: "none", background: C.paper, boxSizing: "border-box" }}/>
+            <input type="text" inputMode="decimal" autoComplete="off" value={retail} onChange={e => setRetail(decimalAmountText(e.target.value))} placeholder="e.g. 79" style={{ width: "100%", padding: "9px 12px", borderRadius: 10, border: "1.5px solid " + C.fawn, fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.ink, outline: "none", background: C.paper, boxSizing: "border-box" }}/>
             <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 500, color: C.ash, marginTop: 6, fontStyle: "italic" }}>Just for your reference when pricing. Buyers won't see this.</p>
           </div>
 
@@ -10110,7 +8529,7 @@ function AIPhotoFlow({ onDone, onBack, aiSettings = {} }) {
                     {editingPriceId === it.id ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
                         <span style={{ fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.green }}>$</span>
-                        <input type="text" value={tempPrice} autoFocus onChange={e => setTempPrice(e.target.value.replace(/[^0-9.]/g, ""))}
+                        <input type="text" inputMode="decimal" autoComplete="off" value={tempPrice} autoFocus aria-label="New price" onChange={e => setTempPrice(decimalAmountText(e.target.value))}
                           onBlur={commitPriceEdit}
                           onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditingPriceId(null); }}
                           style={{ width: 68, padding: "3px 6px", borderRadius: 6, border: "1.5px solid " + C.green, fontFamily: F.head, fontSize: 18, fontWeight: 900, color: C.green, outline: "none", background: C.paper, textAlign: "center" }}/>
@@ -11329,9 +9748,12 @@ const fieldInput = {
 // that doesn't survive a reload. "messages" and "history" are intentionally
 // shared with the buyer tab list so switching roles keeps you on the same tab.
 const SELLER_TABS = new Set([
-  "overview", "items", "orders", "claims", "pickups", "questions",
-  "messages", "history", "settings",
+  "overview", "items", "questions", "messages", "history", "settings",
 ]);
+// The Orders tab (and its claims / pickups views) became My items' offers and
+// pickup cards. Old links, bookmarks, bell entries and shortcuts that name
+// them land on My items with the matching filter.
+const LEGACY_ITEMS_TABS = { orders: "action", claims: "action", pickups: "pickups" };
 
 export default function DropYardSellerDashboard({
   onSwitchRole = () => alert("In the full product, this switches to the buyer dashboard."),
@@ -11360,8 +9782,25 @@ export default function DropYardSellerDashboard({
     // A link naming a conversation lands in Messages whatever its tab says.
     if (params.get("conversation")) return "messages";
     const t = params.get("tab");
+    if (t && LEGACY_ITEMS_TABS[t]) return "items";
     return t && SELLER_TABS.has(t) ? t : "overview";
   });
+  // Where a link put My items: { filter, itemId, nonce }. A new nonce remounts
+  // the view on that filter with that item's card highlighted. Seeded from
+  // ?tab=items&filter=…&item=… (or an old ?tab=orders / claims / pickups).
+  const [itemsFocus, setItemsFocus] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
+    if (t && LEGACY_ITEMS_TABS[t]) return { filter: LEGACY_ITEMS_TABS[t], itemId: params.get("item"), nonce: 1 };
+    if (t === "items" && (params.get("filter") || params.get("item"))) return { filter: params.get("filter"), itemId: params.get("item"), nonce: 1 };
+    return null;
+  });
+  // `search`: a title search from the header ("Search my items…").
+  function goToItems(filter = null, itemId = null, pickupWhen = null, search = null) {
+    setItemsFocus((f) => ({ filter, itemId, pickupWhen, search: search || null, nonce: ((f && f.nonce) || 0) + 1 }));
+    setView("items");
+  }
   // What SellerMessagesView should open: { conversationId }. Seeded from a
   // ?conversation=<id> link; set again when a message notification is clicked.
   const [openThread, setOpenThread] = useState(conversationFromUrl);
@@ -11423,6 +9862,12 @@ export default function DropYardSellerDashboard({
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [pendingNav, setPendingNav] = useState(null);
   const safeNav = (target) => {
+    // Old Orders destinations (Overview shortcuts and the like).
+    if (LEGACY_ITEMS_TABS[target]) { setSettingsReturnTo(null); goToItems(LEGACY_ITEMS_TABS[target]); return; }
+    // The Overview "pickups today" tile: Claimed · pickup pending, on its Today chip.
+    if (target === "pickups-today") { setSettingsReturnTo(null); goToItems("pickups", null, "today"); return; }
+    // My items through the chrome: a fresh list, no filter from an old link.
+    if (target === "items") setItemsFocus(null);
     if (LISTING_VIEWS.has(target) && needsSellerOnboarding) {
       setPendingNav(target);
       setShowOnboarding(true);
@@ -11442,17 +9887,12 @@ export default function DropYardSellerDashboard({
 
   function goToEdit(item) { setEditingItem(item); setView("edit-item"); }
   function goToView(item) { setEditingItem(item); setView("item-detail"); }
-  // Pickup cards: Message buyer opens the claim's conversation; Orders' View
-  // details opens the item from the seller's own list.
+  // Pickup cards: Message buyer opens the claim's conversation; View details
+  // opens the item from the seller's own list.
   function openConversation(conversationId) {
     if (!conversationId) return;
     setOpenThread({ conversationId });
     setView("messages");
-  }
-  function openItemById(itemId) {
-    const raw = Array.isArray(sellerItems) ? sellerItems.find(i => i && i.id === itemId) : null;
-    const item = raw ? adaptSellerItem(raw) : null;
-    if (item) goToView(item);
   }
   // Deep-link into a specific Settings pane. `null` = normal entry (Account on
   // desktop, section list on mobile). Used by the listing form's "Set your
@@ -11487,6 +9927,9 @@ export default function DropYardSellerDashboard({
       if (target.conversationId) {
         setOpenThread({ conversationId: target.conversationId });
         setView("messages");
+      } else if (target.tab && (LEGACY_ITEMS_TABS[target.tab] || (target.tab === "items" && (target.filter || target.itemId)))) {
+        // An offer or pickup notification: My items, on that item's card.
+        goToItems(target.filter || LEGACY_ITEMS_TABS[target.tab] || null, target.itemId || null);
       } else if (target.tab && SELLER_TABS.has(target.tab)) {
         setView(target.tab);
       }
@@ -11531,8 +9974,10 @@ export default function DropYardSellerDashboard({
           onOpenSettings={() => goToSettings(null)}
           activeView={view}
           onToggleSidebar={() => setSidebarCollapsed(c => !c)}
+          sidebarCollapsed={sidebarCollapsed}
           onSwitchRole={onSwitchRole}
           otherUnread={inbox?.unread.buyer || 0}
+          onSearch={(q) => goToItems(null, null, null, q)}
         />
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
           {/* Desktop sidebar — rendered always so SSR/client markup matches; CSS
@@ -11541,13 +9986,10 @@ export default function DropYardSellerDashboard({
               (defaults to desktop) and pop out on hydration, shifting layout. */}
           <Sidebar activeView={view} onNav={safeNav} onSwitchRole={onSwitchRole} collapsed={sidebarCollapsed} messagesUnread={messagesUnreadCount} questionsPending={questionsPending} otherUnread={inbox?.unread.buyer || 0}/>
           <main className={"dy-seller-main" + (view === "messages" ? " dy-seller-main--flush" : "")}>
-            {view === "overview" && <Overview onNav={safeNav} user={user} sellerItems={sellerItems} accessToken={accessToken}/>}
-            {view === "items" && <MyItemsView onNav={safeNav} onEdit={goToEdit} onView={goToView} onOpenThread={openConversation} sellerItems={sellerItems} onItemsChange={onItemsChange} onRefresh={onItemCreated} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
+            {view === "overview" && <Overview onNav={safeNav} user={user} sellerItems={sellerItems} accessToken={accessToken} goToItems={goToItems} onOpenThread={openConversation} onEdit={goToEdit}/>}
+            {view === "items" && <MyItemsView key={itemsFocus ? "focus-" + itemsFocus.nonce : "plain"} initialFilter={itemsFocus ? itemsFocus.filter : null} initialPickupWhen={itemsFocus ? itemsFocus.pickupWhen : null} initialSearch={itemsFocus ? itemsFocus.search : null} highlightItemId={itemsFocus ? itemsFocus.itemId : null} onNav={safeNav} onEdit={goToEdit} onView={goToView} onOpenThread={openConversation} sellerItems={sellerItems} onItemsChange={onItemsChange} onRefresh={onItemCreated} sellerItemsLoading={sellerItemsLoading} accessToken={accessToken}/>}
             {view === "questions" && <QuestionsView onNav={safeNav} accessToken={accessToken} onQuestionsChanged={onQuestionsChanged}/>}
             {view === "item-detail" && <ItemDetailView item={editingItem} onBack={() => setView("items")} onEdit={() => setView("edit-item")} accessToken={accessToken}/>}
-            {view === "orders" && <OrdersView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated} onOpenThread={openConversation} onViewItem={openItemById}/>}
-            {view === "claims" && <ClaimsView onNav={setView} accessToken={accessToken} onClaimsChanged={onItemCreated}/>}
-            {view === "pickups" && <PickupsView onNav={setView} accessToken={accessToken} onChanged={onItemCreated} onOpenThread={openConversation} onViewItem={openItemById}/>}
             {view === "messages" && <SellerMessagesView user={user} accessToken={accessToken} convList={convList} onConvListChange={setConvList} openThread={openThread} onConsumeOpenThread={() => setOpenThread(null)}/>}
             {view === "history" && <SellerHistoryView accessToken={accessToken}/>}
             {/* Keyed on the requested pane so arriving from a deep link while

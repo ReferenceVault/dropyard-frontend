@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Instrument_Sans } from "next/font/google";
+import { Caveat, Geist, Geist_Mono, Instrument_Sans } from "next/font/google";
 import { Suspense } from "react";
 import "./globals.css";
 import { GlobalLayout } from "@/components/GlobalLayout";
@@ -20,6 +20,17 @@ const geistMono = Geist_Mono({
 const instrumentSans = Instrument_Sans({
   variable: "--font-instrument-sans",
   subsets: ["latin"],
+});
+
+// The seller Overview's handwritten line ("Small items. Big impact."). Not
+// preloaded: one line on one page shouldn't cost every page a font download.
+const caveat = Caveat({
+  variable: "--font-caveat",
+  subsets: ["latin"],
+  // 600: the seller Overview's "Small items. Big impact."; 700: the buyer
+  // Discover sign's "Drop opens in".
+  weight: ["600", "700"],
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -45,7 +56,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${instrumentSans.variable} ${caveat.variable} antialiased`}
         suppressHydrationWarning
       >
         <GoogleOAuthProviderWrapper>

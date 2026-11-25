@@ -27,7 +27,7 @@ import { categoryLabel } from "@/lib/categories";
 
 // ── Types ────────────────────────────────────────────────────────
 
-type ItemStatus = "DRAFT" | "LIVE" | "RESERVED" | "CLAIMED" | "SOLD" | "ARCHIVED";
+type ItemStatus = "DRAFT" | "LIVE" | "RESERVED" | "CLAIMED" | "SOLD" | "ARCHIVED" | "REMOVED";
 type Placement = "DROP" | "SHELF";
 
 type Moderation = {
@@ -78,6 +78,9 @@ const STATUS_META: Record<ItemStatus, { label: string; tone: StatusTone }> = {
   CLAIMED:  { label: "Claimed",   tone: "violet" },
   SOLD:     { label: "Sold",      tone: "sky" },
   ARCHIVED: { label: "Taken down", tone: "rose" },
+  // The seller deleted a listing buyers had interacted with: hidden from
+  // buyers, their threads and history kept. Not a moderation action.
+  REMOVED:  { label: "Removed by seller", tone: "slate" },
 };
 
 const TABS: { id: TabId; label: string }[] = [
@@ -88,6 +91,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "CLAIMED",  label: "Claimed" },
   { id: "SOLD",     label: "Sold" },
   { id: "ARCHIVED", label: "Taken down" },
+  { id: "REMOVED",  label: "Removed by seller" },
 ];
 
 
@@ -332,7 +336,10 @@ export default function AdminItemsPage() {
 
                   {/* Actions */}
                   <div className="flex items-center gap-2 lg:justify-end">
-                    {isHidden ? (
+                    {it.status === "REMOVED" ? (
+                      // Nothing to take down or restore: the seller removed it.
+                      <span className="text-[12px] font-semibold text-slate-500">Removed by seller</span>
+                    ) : isHidden ? (
                       <button
                         onClick={() => openModal(it, "unhide")}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[12px] font-semibold text-emerald-700 transition hover:bg-emerald-100"

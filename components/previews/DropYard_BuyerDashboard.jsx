@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
+import { Fragment, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useId } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 // uploadItemPhoto is named for its first caller but is a generic authed
@@ -8,13 +8,12 @@ import Link from "next/link";
 // token-refresh handling — so chat attachments reuse it rather than
 // re-implementing that wiring.
 import { apiRequest, uploadItemPhoto } from "@/lib/api";
+import { wholeAmountText, amountValue, offerAmountProblem } from "@/lib/amountInput";
 import { useSocket, useSocketEvent } from "@/context/SocketContext";
 import { useNotifications, useRoleConversations } from "@/context/NotificationsContext";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
-import { useDropCycle } from "@/context/DropCycleContext";
 import { formatPickupDateList, formatPickupWeekday } from "@/lib/pickupDates";
 import { PICKUP_WINDOWS, PICKUP_WINDOW_IDS, selectedPickupWindows } from "@/lib/pickupWindows";
-import { SocketHealthDot } from "@/components/SocketHealthDot";
 import { ChatEmojiTray } from "@/components/ChatEmojiTray";
 import { ModalA11y } from "@/components/ModalA11y";
 import { ModalPortal } from "@/components/ModalPortal";
@@ -33,6 +32,9 @@ import { MessageRow, DateSeparator } from "@/components/messages/MessageRow";
 import { ThreadMenu } from "@/components/messages/ThreadMenu";
 import { ReportDialog } from "@/components/messages/ReportDialog";
 import { ComposeDialog } from "@/components/messages/ComposeDialog";
+import { ReviewForm } from "@/components/reviews/ReviewForm";
+import { ItemShareButton } from "@/components/share/ItemShareButton";
+import { PickupConfirmedDialog } from "@/components/reviews/PickupConfirmedDialog";
 import { useThreadAutoScroll, NewMessagesPill } from "@/components/messages/useThreadAutoScroll";
 import { ThreadEmptyState, matchesOpenTarget, conversationFromUrl } from "@/components/messages/ThreadEmptyState";
 import { claimPill, isLiveClaim } from "@/components/messages/claimStatus";
@@ -51,8 +53,9 @@ import {
   nextDropMoment,
   formatCompactCountdown,
   getDropCycleInfo,
-  dropDayOf, dropTimeOf,
+  dropDayOf, dropTimeOf, dropTimeShortOf,
   DROP_OPEN_DAY, DROP_OPEN_HOUR, DROP_CLOSE_DAY, DROP_CLOSE_HOUR,
+  OPERATING_TIMEZONE,
 } from "@/lib/dropCycle";
 
 /** Shared SSR-safe live countdown to the next drop open. Returns "" on the
@@ -70,10 +73,10 @@ function useDropOpenCountdownString() {
 import {
   Search, Heart, Clock, MapPin, Package, ChevronLeft, ChevronRight, ChevronDown, SlidersHorizontal,
   LayoutGrid, ArrowUpDown,
-  Check, X, User, ShoppingBag, MessageSquare, Sparkles, Truck, Calendar,
+  Check, X, User, ShoppingBag, MessageSquare, Sparkles, Calendar,
   Star, Shield, Send, ArrowRight, ArrowLeft, Home, Tag, Bell, MessageCircle,
   CalendarDays, Compass, Archive, RefreshCw, Eye, Info, TrendingDown,
-  DollarSign, AlertCircle, CheckCircle, Share2, Award, Leaf,
+  DollarSign, AlertCircle, CheckCircle, Award, Leaf,
   Smile, Paperclip, Flag, ExternalLink,
   Mail,
   Banknote, Wallet,
@@ -82,7 +85,8 @@ import {
   KeyRound,
   Loader2,
   ShieldCheck,
-  Settings as SettingsIcon
+  Settings as SettingsIcon,
+  Bookmark, History as HistoryIcon, Store,
 } from "lucide-react";
 
 // Short relative-time string used in inbox previews ("3h ago"). Mirrors the
@@ -384,6 +388,9 @@ function adaptBuyerItem(api) {
     queuedAt:      api.queuedAt || null,
     fromPeek:      false,
     description:   api.description || "",
+    // The seller removed the listing (GET /api/watchlist marks it): Saved
+    // keeps a greyed "No longer available" card the buyer can remove.
+    unavailable:   !!api.unavailable || api.status === "REMOVED",
     raw:           api,
   };
 }
@@ -908,88 +915,103 @@ function UserMenu({ user, onSignout, onOpenSettings, dropState, round = false })
   );
 }
 
-// Magical "Switch to Seller" pill: amber-tinted gradient outline, Truck icon,
-// arrow that slides on hover, soft glow underneath, and a quick scale tick.
+// "Switch to Seller": a solid pill in the Drop's colour (brand green while a
+// Drop is live, brand brown between Drops, the same pair as the Discover
+// search button), with a shop icon, white bold label and an arrow that
+// slides on hover. White on green is 4.9:1 and on brown 5.1:1 (AA).
 // `unread` = seller-side conversations with unread messages, so a message to
-// the side you aren't looking at still shows. Same envelope tag as the
-// Messages tab's.
+// the side you aren't looking at still shows: an envelope tag on the pill's
+// top-right corner, white so it reads against the solid fill.
 // Phones under 640px: the bell, Switch and account buttons are three equal
-// 44px white circles with one soft shadow (the client's mockup). The bell's
-// size comes from .dy-buyer-actions in globals.css (it's shared with the
-// seller dashboard, whose header is unchanged).
+// 44px circles with one soft shadow (the client's mockup), and Switch is
+// icon-only. The bell's size comes from .dy-buyer-actions in globals.css.
+// `compact` (640–1,099px) is the same icon-only circle: 40px on tablets,
+// 36px at 640–768px to match the bell there.
 const HEADER_ROUND_SHADOW = "0 4px 14px -6px rgba(15, 54, 11, 0.30), 0 0 0 1px rgba(15, 54, 11, 0.06)";
 
-function SwitchToSellerButton({ onClick, compact = false, unread = 0, round = false }) {
+// Visually hidden but focusable and read by screen readers: the claim
+// dialog's native radios (the drawn circles are the visible part) and text
+// only meant to be heard.
+const SR_ONLY_INPUT = { position: "absolute", width: 1, height: 1, margin: -1, padding: 0, border: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", opacity: 0 };
+
+// Why an amount field's action is disabled ("Enter an amount"), under or beside
+// the field. A polite live region, so it's announced when it appears; the
+// field and the disabled button point at it with aria-describedby. Always
+// rendered (empty when there's nothing to say) so the live region exists
+// before its text does.
+function AmountHint({ id, problem, style = null }) {
+  return (
+    <span id={id} role="status" aria-live="polite" style={problem
+      ? { fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, ...style }
+      // Empty: no space taken, but still in the accessibility tree so the
+      // live region is there when its text arrives.
+      : { position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>
+      {problem || ""}
+    </span>
+  );
+}
+
+function SwitchToSellerButton({ onClick, compact = false, unread = 0, round = false, live = false, small = false }) {
   const [hover, setHover] = useState(false);
+  const fill = live ? C.green : C.amberDeep;
+  const tagText = live ? C.greenDeep : C.amberDeep;
+  const iconOnly = compact || round;
   const unreadLabel = unread > 0 ? `, ${unread} unread seller conversation${unread === 1 ? "" : "s"}` : "";
   return (
     <button
+      type="button"
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      aria-label={compact || unread > 0 ? "Switch to Seller" + unreadLabel : undefined}
-      title={compact || unread > 0 ? "Switch to Seller" + unreadLabel : undefined}
+      aria-label={iconOnly || unread > 0 ? "Switch to Seller" + unreadLabel : undefined}
+      title={iconOnly || unread > 0 ? "Switch to Seller" + unreadLabel : undefined}
       style={{
         position: "relative",
         display: "inline-flex",
         alignItems: "center",
-        gap: compact ? 0 : 8,
-        padding: compact ? "8px" : "8px 14px 8px 12px",
+        justifyContent: "center",
+        flexShrink: 0,
+        gap: 8,
+        ...(iconOnly
+          ? { width: round ? 44 : small ? 36 : 40, height: round ? 44 : small ? 36 : 40, padding: 0 }
+          : { height: 40, padding: "0 16px 0 14px" }),
         borderRadius: 999,
-        border: "1.5px solid " + (hover ? C.amber : C.fawn),
-        ...(round ? { width: 44, height: 44, padding: 0, justifyContent: "center", border: "none", flexShrink: 0 } : {}),
-        background: hover
-          ? "linear-gradient(135deg, " + C.amberMist + " 0%, " + C.paper + " 100%)"
-          : C.paper,
+        border: "none",
+        background: fill,
+        filter: hover ? "brightness(0.9)" : "none",
         cursor: "pointer",
         fontFamily: F.head,
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: 800,
-        color: hover ? C.amberDeep : C.mink,
-        boxShadow: round
-          ? HEADER_ROUND_SHADOW
-          : hover
-          ? "0 6px 18px " + C.amber + "33, 0 1px 2px rgba(31,29,25,0.04)"
-          : "0 1px 2px rgba(31,29,25,0.04)",
-        transform: hover ? "translateY(-1px)" : "translateY(0)",
-        transition: "all 200ms cubic-bezier(0.4, 0, 0.2, 1)",
+        color: "#fff",
+        whiteSpace: "nowrap",
+        boxShadow: round ? HEADER_ROUND_SHADOW : "0 4px 12px " + fill + "40",
+        transition: "filter 180ms ease, background-color 200ms ease, box-shadow 200ms ease",
       }}
     >
-      {/* Tiny truck tile that animates on hover */}
-      <span style={{
-        width: round ? 28 : 24, height: round ? 28 : 24, borderRadius: round ? 9 : 7,
-        background: hover ? C.amber : C.amberMist,
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        boxShadow: hover ? "0 2px 6px " + C.amber + "55" : "none",
-        transition: "all 200ms ease",
-      }}>
-        <Truck size={13} style={{ color: hover ? "#fff" : C.amberDeep }} strokeWidth={2.6}/>
-      </span>
-      {!compact && <span style={{ letterSpacing: "0.01em" }}>Switch to Seller</span>}
+      <Store size={iconOnly ? 18 : 16} strokeWidth={2.3} aria-hidden="true"/>
+      {!iconOnly && <span style={{ letterSpacing: "0.01em" }}>Switch to Seller</span>}
+      {!iconOnly && (
+        <ArrowRight
+          size={15}
+          strokeWidth={2.6}
+          aria-hidden="true"
+          style={{ transform: hover ? "translateX(3px)" : "translateX(0)", transition: "transform 200ms ease" }}
+        />
+      )}
       {unread > 0 && (
         <span aria-hidden="true" style={{
           position: "absolute", top: -7, right: -7,
           display: "inline-flex", alignItems: "center", gap: 3,
           padding: "2px 6px", borderRadius: 999,
-          background: C.green, color: "#fff",
-          boxShadow: "0 0 0 2px " + C.page,
+          background: C.paper, color: tagText,
+          boxShadow: "0 0 0 1.5px " + fill + ", 0 0 0 3.5px " + C.page,
           fontFamily: F.head, fontSize: 10, fontWeight: 800, lineHeight: 1.2,
           pointerEvents: "none",
         }}>
           <Mail size={11} strokeWidth={2.4}/>
           {unread > 99 ? "99+" : unread}
         </span>
-      )}
-      {!compact && (
-        <ArrowRight
-          size={13}
-          strokeWidth={2.6}
-          style={{
-            color: hover ? C.amberDeep : C.ash,
-            transform: hover ? "translateX(3px)" : "translateX(0)",
-            transition: "transform 200ms ease, color 200ms ease",
-          }}
-        />
       )}
     </button>
   );
@@ -1064,16 +1086,12 @@ function MobileBottomNav({ page, setPage, savedCount, claimsCount, unreadCount =
   );
 }
 
-// The active tab is underlined, never filled. Its colour follows the Drop:
-// golden brown between Drops, green while one is live, the same split
-// MobileBottomNav and the filter chips use.
+// The active tab is underlined, never filled, in both Drop states (the
+// client's header). Its colour follows the Drop: brown between Drops, green
+// while one is live, the same split as the bell, the Switch pill and the
+// search button. Label contrast on the page: green 4.6:1, brown 4.8:1 (AA).
 function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, otherUnread = 0, onSwitchRole, onReset, user, onSignout, dropState }) {
   const activeColor = dropState === "live" ? C.green : C.amberDeep;
-  // During a live Drop the active tab is a pale-green pill (dark-green label,
-  // solid green count) instead of the underline. Between Drops it keeps the
-  // brown underline. greenDeep, not green, for the label: green on greenMist
-  // is ~4.1:1, under AA for 15px text.
-  const livePill = dropState === "live";
   const { isMobile, width } = useViewport();
   const roundButtons = width < PHONE_HERO_MAX;
   // Tablet widths (769–1,099px): the full header needs ~1,010px (logo 153,
@@ -1082,18 +1100,28 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
   // logo keeps its size (a bit smaller), tabs and gutters tighten, and Switch
   // to Seller becomes the icon-only button phones use (same name, tooltip).
   const tablet = !isMobile && width < 1100;
+  // Small decorative icons before the tab labels (the client's header). The
+  // four icons take ~88px. From 900px the compact tablet layout has ~230px
+  // to spare around the tabs, so they show; at 769–899 it has as little as
+  // 120px, which two-digit Saved/Claims counts already need, so they hide.
+  // The label stays each tab's accessible name.
+  const tabIcons = !tablet || width >= 900;
+  // 1,100–1,199px: the full Switch pill and the tab icons need ~70px more
+  // than the roomy desktop spacing leaves when Saved and Claims both show
+  // two-digit counts (History slid under the bell), so tabs and gaps tighten.
+  const snug = !tablet && width < 1200;
   const navItems = [
     { id:"discover", label:"Discover" },
-    { id:"saved",    label:"Saved",    badge: savedCount  > 0 ? savedCount  : null },
-    { id:"claims",   label:"Claims",   badge: claimsCount > 0 ? claimsCount : null },
+    { id:"saved",    label:"Saved",    icon: Bookmark,      badge: savedCount  > 0 ? savedCount  : null },
+    { id:"claims",   label:"Claims",   icon: ShoppingBag,   badge: claimsCount > 0 ? claimsCount : null },
     // Messages carries the green envelope tag below instead of the neutral
     // fawn counter: unread messages need action, a saved count doesn't.
-    { id:"messages", label:"Messages", envelope: messagesUnread > 0 ? messagesUnread : null },
-    { id:"history",  label:"History" },
+    { id:"messages", label:"Messages", icon: MessageCircle, envelope: messagesUnread > 0 ? messagesUnread : null },
+    { id:"history",  label:"History",  icon: HistoryIcon },
   ];
   return (
     <header style={{ borderBottom: "1px solid " + C.fawn, background: C.page, position: "sticky", top: 0, zIndex: Z.header }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: isMobile ? "10px 16px" : tablet ? "14px 20px" : "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: isMobile ? 10 : tablet ? 12 : 24 }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: isMobile ? "10px 16px" : tablet ? "14px 20px" : "14px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: isMobile ? 10 : tablet ? 12 : snug ? 16 : 24 }}>
         <Link href="/" style={{ display: "block", border: "none", background: "transparent", cursor: "pointer", padding: 0, textDecoration: "none", ...(roundButtons ? { flex: "0 1 129px", minWidth: 0 } : isMobile ? {} : { flexShrink: 0 }) }}>
           {/* Sizes are for the trimmed asset, whose artwork fills ~94% of the
               box. Logo_1.png was 54% whitespace, so its 44px box only drew a
@@ -1105,7 +1133,7 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
 
         {/* Desktop primary nav — replaced by MobileBottomNav on small screens. */}
         {!isMobile && (
-          <nav style={{ display: "flex", alignItems: "center", gap: tablet ? 0 : 4, minWidth: 0 }}>
+          <nav style={{ display: "flex", alignItems: "center", gap: tablet ? 0 : snug ? 2 : 4, minWidth: 0 }}>
             {navItems.map(item => {
               const active = page === item.id;
               // Same padding active or not, so the underline never shifts
@@ -1115,14 +1143,15 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
                   position: "relative",
                   display: "flex", alignItems: "center", gap: 7,
                   // 8px under 880: room for two-digit Saved/Claims counts at 769.
-                  padding: tablet ? (width < 880 ? "9px 8px" : "9px 10px") : "9px 16px",
+                  padding: tablet ? (width < 880 ? "9px 8px" : "9px 10px") : snug ? "9px 11px" : "9px 16px",
                   border: "none", borderRadius: 999,
-                  background: active && livePill ? C.greenMist : "transparent",
-                  color: active ? (livePill ? C.greenDeep : activeColor) : C.mink,
+                  background: "transparent",
+                  color: active ? activeColor : C.mink,
                   fontSize: tablet ? 14 : 15, fontWeight: active ? 800 : 600, whiteSpace: "nowrap",
                   cursor: "pointer", fontFamily: F.head,
                   transition: "color 200ms, background-color 200ms",
                 }}>
+                  {tabIcons && item.icon && <item.icon size={16} strokeWidth={active ? 2.4 : 2.1} aria-hidden="true" style={{ flexShrink: 0, marginRight: -1 }}/>}
                   {item.label}
                   {/* Unread conversations — the buyer's counterpart of the
                       seller sidebar's envelope tag (same green, icon and
@@ -1151,8 +1180,8 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
                   {item.badge && (
                     <span style={{ fontSize: 11, fontWeight: 800, padding: "1px 8px", borderRadius: 20, background: active ? activeColor : C.fawn, color: active ? "#fff" : C.mink }}>{item.badge}</span>
                   )}
-                  {active && !livePill && (
-                    <span aria-hidden="true" style={{ position: "absolute", left: tablet ? 8 : 12, right: tablet ? 8 : 12, bottom: 0, height: 3, borderRadius: "3px 3px 0 0", background: activeColor }}/>
+                  {active && (
+                    <span aria-hidden="true" style={{ position: "absolute", left: tablet || snug ? 8 : 12, right: tablet || snug ? 8 : 12, bottom: 0, height: 3, borderRadius: "3px 3px 0 0", background: activeColor }}/>
                   )}
                 </button>
               );
@@ -1160,18 +1189,19 @@ function TopBar({ page, setPage, savedCount, claimsCount, messagesUnread = 0, ot
           </nav>
         )}
 
-        <div className={roundButtons ? "dy-buyer-actions" : undefined} style={{ display: "flex", alignItems: "center", flexShrink: 0, gap: roundButtons ? (width < 360 ? 7 : 10) : isMobile ? 6 : tablet ? 8 : 12 }}>
-          {/* BUG-064 — socket health pulse. Visible at a glance so we can spot
-              real-time outages without DevTools. Green=connected, amber=
-              reconnecting, gray=disconnected. */}
-          <SocketHealthDot />
+        {/* --dy-bell-ring: the gap ring around the bell's red badge, in the
+            header's own background colour. */}
+        <div className={roundButtons ? "dy-buyer-actions" : undefined} style={{ display: "flex", alignItems: "center", flexShrink: 0, gap: roundButtons ? (width < 360 ? 7 : 10) : isMobile ? 6 : tablet ? 8 : 12, "--dy-bell-ring": C.page }}>
+          {/* Thin divider between the tabs and this group (desktop and tablet,
+              where the tabs show). */}
+          {!isMobile && <span aria-hidden="true" style={{ width: 1, height: 28, background: C.fawn, flexShrink: 0, marginRight: tablet || snug ? 0 : 4 }}/>}
           {/* Everything waiting on BOTH sides: unread conversations and claim,
-              offer, pickup and question events. See NotificationBell. */}
-          <NotificationBell/>
-          {/* Switch-to-Seller pill. On mobile, render an icon-only compact variant
-             so it still fits at 360px alongside logo + avatar. Desktop keeps the
-             full label. */}
-          <SwitchToSellerButton onClick={() => onSwitchRole && onSwitchRole()} compact={isMobile || tablet} round={roundButtons} unread={otherUnread}/>
+              offer, pickup and question events. See NotificationBell. Its
+              circle follows the Drop: pale green live, pale amber between. */}
+          <NotificationBell tone={dropState === "live" ? "live" : "between"}/>
+          {/* Switch-to-Seller pill. Icon-only below 1,100px so it fits beside
+             the tabs (tablet) or the logo and avatar (phones). */}
+          <SwitchToSellerButton onClick={() => onSwitchRole && onSwitchRole()} compact={isMobile || tablet} round={roundButtons} unread={otherUnread} live={dropState === "live"} small={isMobile && !roundButtons}/>
           <UserMenu user={user} onSignout={onSignout} onOpenSettings={() => { onReset && onReset(); setPage("settings"); }} dropState={dropState} round={roundButtons}/>
         </div>
       </div>
@@ -1343,7 +1373,23 @@ function countdownParts(totalSec) {
 }
 
 // totalSec: null until the schedule is known (shown as "--").
-function PhoneDropHero({ live = false, photo, pill, headline, body, avatars = null, cardLabel, totalSec, when, action = null }) {
+// The live hero's sentence, on phones and desktop: "21 items live in
+// Barrhaven until Sunday at 7 PM. No rush to be first: sellers choose from
+// every claim." The count is the server's (liveStats), the day and time the
+// Drop record's end, in Toronto time. True to the claim rules: every claim,
+// at the listed price too, waits for the seller to accept it (PROPOSED), and
+// the seller can choose any of them.
+function LiveHeroSentence({ count, day, time, countColor }) {
+  const rule = "No rush to be first: sellers choose from every claim.";
+  if (count === null) return <>Items are live in Barrhaven until {day} at {time}. {rule}</>;
+  if (count === 0) return <>Nothing is claimable in this Drop right now — new items show up here the moment a neighbour posts one. The window closes {day} at {time}.</>;
+  return <><b style={{ color: countColor, fontWeight: 800 }}>{count} item{count === 1 ? "" : "s"}</b> live in Barrhaven until {day} at {time}. {rule}</>;
+}
+
+// pillNode / card / bodyStyle: the between-Drops hero passes the kraft chip
+// and sign (KraftChip, KraftSign) and the client's sub-text size; without
+// them (the live hero) it renders its own pill and countdown card.
+function PhoneDropHero({ live = false, photo, pill, headline, body, avatars = null, cardLabel, totalSec, when, action = null, pillNode = null, card = null, bodyStyle = null }) {
   const parts = totalSec == null ? null : countdownParts(totalSec);
   // Screen readers get the countdown to the minute, as plain text that is not
   // a live region: it reads when reached, and never announces the ticking.
@@ -1368,7 +1414,7 @@ function PhoneDropHero({ live = false, photo, pill, headline, body, avatars = nu
         {/* Status pill. Live: solid green with a pulsing dot (white, 4.9:1).
             Between Drops: the client's pale green "NEXT LIVE DROP" pill with a
             calendar (greenDeep on greenMist, 6.2:1), as on wider screens. */}
-        {live ? (
+        {pillNode ? pillNode : live ? (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "6px 14px 6px 11px", borderRadius: 999, background: accent, boxShadow: "0 2px 10px " + accent + "40" }}>
             <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", flexShrink: 0, animation: "pulseGreen 1.6s ease-in-out infinite" }}/>
             <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: "#fff", letterSpacing: "0.06em", textTransform: "uppercase" }}>{pill}</span>
@@ -1384,14 +1430,14 @@ function PhoneDropHero({ live = false, photo, pill, headline, body, avatars = nu
           {headline}
         </h1>
 
-        <p style={{ fontFamily: F.body, fontSize: 15, fontWeight: 450, color: HERO_TEXT, lineHeight: 1.55, marginTop: 12 }}>
+        <p className={bodyStyle ? "dy-kraft-sub" : undefined} style={{ fontFamily: F.body, fontSize: 15, fontWeight: 450, color: HERO_TEXT, lineHeight: 1.55, marginTop: 12, ...bodyStyle }}>
           {body}
         </p>
 
         {avatars && <div style={{ marginTop: 12 }}>{avatars}</div>}
 
-        {/* Countdown card */}
-        <div style={{
+        {/* Countdown card (or the between-Drops kraft sign) */}
+        {card ? <div style={{ marginTop: 22 }}>{card}</div> : <div style={{
           marginTop: 22,
           background: HERO_CARD,
           borderRadius: 28,
@@ -1438,7 +1484,7 @@ function PhoneDropHero({ live = false, photo, pill, headline, body, avatars = nu
             <span style={{ fontFamily: F.head, fontSize: 17, fontWeight: 800, color: C.greenDeep, letterSpacing: "-0.01em" }}>{when}</span>
             {action}
           </div>
-        </div>
+        </div>}
       </div>
     </section>
   );
@@ -1464,6 +1510,80 @@ function PhoneRemindButton({ reminded, onClick }) {
 }
 
 const visuallyHiddenStyle = { position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 };
+
+/* ============================================================
+   KRAFT SIGN — the Discover hero between Drops (client redesign)
+   The two-part chip ("NOVEMBER 28 · NEXT LIVE DROP") and the countdown as
+   a cardboard yard-sale sign: "Drop opens in" handwritten, the time left on
+   three price stickers, when the doors open, and "Remind me" as a hanging
+   price tag. Styles: .dy-kraft-* in globals.css (tape and the tag's hole are
+   pseudo-elements; under 900px the board wraps, untilted).
+   The numbers come from the Drop record (useDropSchedule, Toronto time).
+   Stickers are decorative for screen readers; they get one sentence instead,
+   which only changes once a minute (it is not a live region).
+   ============================================================ */
+function KraftChip({ opensAt }) {
+  // "November 28": the Toronto calendar date of the Drop record's opening.
+  const date = opensAt ? opensAt.toLocaleDateString("en-US", { timeZone: OPERATING_TIMEZONE, month: "long", day: "numeric" }) : null;
+  return (
+    <span className="dy-kraft-chip">
+      {date && <span className="dy-kraft-chip__date">{date}</span>}
+      <span className="dy-kraft-chip__label">Next Live Drop</span>
+    </span>
+  );
+}
+
+function kraftSpoken(totalSec) {
+  if (totalSec == null) return "Drop opens soon";
+  const mins = Math.floor(totalSec / 60);
+  if (mins < 1) return "Drop opens in less than a minute";
+  const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60;
+  const part = (v, w) => v + " " + w + (v === 1 ? "" : "s");
+  return "Drop opens in " + [d > 0 && part(d, "day"), (d > 0 || h > 0) && part(h, "hour"), part(m, "minute")].filter(Boolean).join(", ");
+}
+
+function KraftSign({ totalSec, opensAt, reminded, onRemindMe }) {
+  // At least an hour left: DAYS / HRS / MIN. Under an hour: HRS / MIN / SEC,
+  // with the seconds ticking. "--" until the schedule is known.
+  const known = totalSec != null;
+  const s = known ? totalSec : 0;
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  const stickers = known && s < 3600
+    ? [{ n: pad(h), u: "HRS" }, { n: pad(m), u: "MIN" }, { n: pad(sec), u: "SEC" }]
+    : [{ n: known ? String(d) : "-", u: d === 1 ? "DAY" : "DAYS" }, { n: known ? pad(h) : "--", u: "HRS" }, { n: known ? pad(m) : "--", u: "MIN" }];
+  // "Saturday, 8:00 AM" (Toronto).
+  const when = opensAt ? dropDayOf(opensAt) + ", " + dropTimeOf(opensAt) : "";
+  return (
+    <div className="dy-kraft-sign">
+      <div className="dy-kraft-board">
+        <div className="dy-kraft-title">
+          <span className="dy-kraft-hand" aria-hidden="true">Drop opens in</span>
+          <span className="dy-kraft-small" aria-hidden="true">Don&apos;t miss it</span>
+          <span className="dy-kraft-sr">{kraftSpoken(known ? totalSec : null)}</span>
+        </div>
+        <ul className="dy-kraft-stickers" aria-hidden="true">
+          {stickers.map((st) => (
+            <li key={st.u} className="dy-kraft-sticker">
+              <span className="dy-kraft-sticker__num">{st.n}</span>
+              <span className="dy-kraft-sticker__unit">{st.u}</span>
+            </li>
+          ))}
+        </ul>
+        <span className="dy-kraft-spacer" aria-hidden="true"/>
+        <div className="dy-kraft-when">
+          <span className="dy-kraft-small">Doors open</span>
+          <span className="dy-kraft-time">{when}</span>
+        </div>
+        {/* Opens the reminder settings, as before; once they're on it reads
+            "Reminders enabled" on the darker "pressed" brown. */}
+        <button type="button" onClick={onRemindMe} aria-haspopup="dialog" className="dy-kraft-remind" data-on={reminded ? "true" : undefined}>
+          {reminded ? <><Check size={15} strokeWidth={2.4} aria-hidden="true"/> Reminders enabled</> : <><Bell size={15} strokeWidth={2.2} aria-hidden="true"/> Remind me</>}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /* ============================================================
    ANTICIPATION BAND (Between Drops state)
@@ -1630,13 +1750,9 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
   const totalSec = schedule.ready ? Math.max(0, Math.floor((opensAt.getTime() - schedule.now.getTime()) / 1000)) : 0;
   const openDay = dropDayOf(opensAt);
   const openWhen = openDay + " " + dropTimeOf(opensAt);
-  const t = {
-    d: Math.floor(totalSec / 86400),
-    h: Math.floor((totalSec % 86400) / 3600),
-    m: Math.floor((totalSec % 3600) / 60),
-    s: totalSec % 60,
-  };
-  const pad = (n) => n < 10 ? "0" + n : "" + n;
+  // The client's sign (KraftSign) and chip (KraftChip), on every width.
+  const sign = <KraftSign totalSec={schedule.ready ? totalSec : null} opensAt={opensAt} reminded={reminded} onRemindMe={onRemindMe}/>;
+  const chip = <KraftChip opensAt={opensAt}/>;
 
   // The avatar row: every neighbour selling right now (useActiveSellers), not
   // only those with items queued for the Drop. Preview gets its own wording.
@@ -1662,8 +1778,11 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
   const bodyCopy = displayCount > 0
     ? <>Preview what your neighbours are selling and save your favourites before the {openDay} Drop opens.</>
     : reminded
-    ? <>Explore great finds on The Shelf while we count down to the next Live Drop. Your reminder is on.</>
-    : <>Explore great finds on The Shelf while we count down to the next Live Drop.</>;
+    ? <>Explore great finds on The Shelf before the next Live Drop. Your reminder is on.</>
+    : <>Explore great finds on The Shelf before the next Live Drop.</>;
+  // The client's sub-text: 19px in #4A4F48 (7.8:1 on the cream); a little
+  // smaller on the narrowest phones.
+  const SUB_COLOR = "#4A4F48";
 
   if (width < PHONE_HERO_MAX) {
     return (
@@ -1677,6 +1796,9 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
         totalSec={schedule.ready ? totalSec : null}
         when={openWhen}
         action={<PhoneRemindButton reminded={reminded} onClick={onRemindMe}/>}
+        pillNode={chip}
+        card={sign}
+        bodyStyle={{ fontSize: "clamp(16px, 4.6vw, 19px)", color: SUB_COLOR }}
       />
     );
   }
@@ -1720,14 +1842,9 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
       <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24, flexWrap: "wrap" }}>
         {/* Left side */}
         <div style={{ flex: 1, minWidth: "min(280px, 100%)" }}>
-          {/* NEXT LIVE DROP pill (the client's): pale green with a calendar,
-              dark green capitals (greenDeep on greenMist, 6.2:1). Same size
-              and place as the OPENS SATURDAY pill it replaces; the day and
-              hour are in the countdown bar below. */}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 12px 4px 10px", borderRadius: 999, background: C.greenMist, boxShadow: "inset 0 0 0 1px " + C.green + "30", marginBottom: 8 }}>
-            <CalendarDays size={12} strokeWidth={2.4} style={{ color: C.greenDeep, flexShrink: 0 }} aria-hidden="true"/>
-            <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.greenDeep, letterSpacing: "0.1em" }}>NEXT LIVE DROP</span>
-          </span>
+          {/* The client's two-part chip: the Drop's date on espresso, then
+              NEXT LIVE DROP (12.1:1 and 14.4:1). */}
+          <div style={{ marginBottom: 12 }}>{chip}</div>
 
           {/* Headline — the countdown pill below already spells out the day and
               hour, so this sells the idea rather than repeating the schedule. */}
@@ -1736,7 +1853,7 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
           </h1>
 
           {/* Body (see bodyCopy). HERO_TEXT, not CARD.muted: 8:1 on the cream. */}
-          <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 400, color: HERO_TEXT, maxWidth: 520, lineHeight: 1.55, marginBottom: 12 }}>
+          <p className="dy-kraft-sub" style={{ fontFamily: F.body, fontSize: 19, fontWeight: 400, color: SUB_COLOR, maxWidth: 620, lineHeight: 1.45, marginBottom: 12 }}>
             {bodyCopy}
           </p>
 
@@ -1746,59 +1863,8 @@ function AnticipationBand({ onRemindMe, reminded, queuedCount = null }) {
 
       </div>
 
-      {/* Countdown — a cream pill under the band copy, sized to its own
-          contents rather than stretched across the band. Replaces the stacked
-          card that used to sit in the right column: the clock reads
-          left-to-right on one line, and the open moment sits beside it so the
-          number is never shown without the time it counts to. */}
-      <div style={{
-        position: "relative", marginTop: 16,
-        width: "fit-content", maxWidth: "100%",
-        display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap",
-        padding: "8px 8px 8px 22px", borderRadius: 999,
-        background: "rgba(255, 248, 235, 0.92)",
-        border: "1.5px solid " + C.amberDeep + "25",
-        boxShadow: "0 6px 20px rgba(192, 104, 0, 0.14)",
-        backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-      }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-          {/* Clock badge (the client's): a brown clock on a pale cream circle
-              (amberDeep on amberSoft, 4.1:1; icons need 3:1). */}
-          <span style={{ width: 30, height: 30, borderRadius: "50%", background: C.amberSoft, boxShadow: "inset 0 0 0 1px " + C.amberDeep + "26", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <Clock size={16} strokeWidth={2.4} style={{ color: C.amberDeep }} aria-hidden="true"/>
-          </span>
-          <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 500, color: HERO_LABEL, whiteSpace: "nowrap" }}>Drop opens in</span>
-        </span>
-
-        <div style={{ display: "flex", alignItems: "baseline", gap: 3, fontFamily: F.head, fontSize: 26, fontWeight: 700, color: CARD.ink, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" }}>
-          <span>{t.d}</span>
-          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 600 }}>d</span>
-          <span style={{ marginLeft: 8 }}>{pad(t.h)}</span>
-          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 600 }}>h</span>
-          <span style={{ marginLeft: 8 }}>{pad(t.m)}</span>
-          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 600 }}>m</span>
-          <span style={{ marginLeft: 8 }}>{pad(t.s)}</span>
-          <span style={{ fontSize: 13, color: C.amberDeep, fontWeight: 600 }}>s</span>
-        </div>
-
-        <span style={{ width: 1, alignSelf: "stretch", margin: "6px 0", background: C.amberDeep + "28", flexShrink: 0 }}/>
-
-        <span style={{ flexShrink: 0, fontFamily: F.body, fontSize: 13, fontWeight: 600, color: C.mink, whiteSpace: "nowrap" }}>
-          {openWhen}
-        </span>
-
-        <button onClick={onRemindMe} aria-haspopup="dialog" style={{
-          display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
-          padding: "12px 22px", borderRadius: 999, border: "none",
-          background: reminded ? C.paper : C.amberDeep,
-          color: reminded ? C.amberDeep : "#fff",
-          fontFamily: F.head, fontSize: 13, fontWeight: 800,
-          cursor: "pointer", flexShrink: 0,
-          boxShadow: reminded ? "inset 0 0 0 1.5px " + C.amberDeep + "40" : "0 2px 0 " + C.amberDeep,
-        }}>
-          {reminded ? <><Check size={15}/> Reminders enabled</> : <><Bell size={15}/> Remind me</>}
-        </button>
-      </div>
+      {/* Countdown: the client's cardboard sign (KraftSign), under the copy. */}
+      <div style={{ position: "relative", marginTop: 18 }}>{sign}</div>
     </section>
   );
 }
@@ -1941,13 +2007,7 @@ function WelcomeBand() {
             <span aria-hidden="true" style={{ position: "absolute", left: 0, right: 0, bottom: -2, height: 3, background: C.amber, borderRadius: 2 }}/>
           </span>
         </>}
-        body={displayCount === null ? (
-          <>Items from your neighbours are claimable until {closeDay} at {closeTime}. Drops are first-come, first-served.</>
-        ) : displayCount > 0 ? (
-          <><b style={{ color: CARD.ink, fontWeight: 800 }}>{displayCount} item{displayCount === 1 ? "" : "s"}</b>{" "}from your neighbours {displayCount === 1 ? "is" : "are"} claimable until {closeDay} at {closeTime}. Drops are first-come, first-served.</>
-        ) : (
-          <>Nothing is claimable in this Drop right now — new items show up here the moment a neighbour posts one. The window closes {closeDay} at {closeTime}.</>
-        )}
+        body={<LiveHeroSentence count={displayCount} day={closeDay} time={dropTimeShortOf(closesAt)} countColor={CARD.ink}/>}
         avatars={hasSellers ? sellerRow() : null}
         cardLabel="Drop closes in"
         totalSec={now ? totalSec : null}
@@ -2032,17 +2092,8 @@ function WelcomeBand() {
               <span style={{ position: "absolute", left: 0, right: 0, bottom: -2, height: 3, background: C.amber, borderRadius: 2, opacity: 0.85 }}/>
             </span>
           </h1>
-          <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.82)", maxWidth: 520, lineHeight: 1.55, marginBottom: 12 }}>
-            {displayCount === null ? (
-              <>Items from your neighbours are claimable until {dropCloseDay()} at {dropCloseHour()}. Drops are first-come, first-served.</>
-            ) : displayCount > 0 ? (
-              <>
-                <b style={{ color: "#fff", fontWeight: 800 }}>{displayCount} item{displayCount === 1 ? "" : "s"}</b>
-                {" "}from your neighbours {displayCount === 1 ? "is" : "are"} claimable until {dropCloseDay()} at {dropCloseHour()}. Drops are first-come, first-served.
-              </>
-            ) : (
-              <>Nothing is claimable in this Drop right now — new items show up here the moment a neighbour posts one. The window closes {dropCloseDay()} at {dropCloseHour()}.</>
-            )}
+          <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.92)", maxWidth: 520, lineHeight: 1.55, marginBottom: 12 }}>
+            <LiveHeroSentence count={displayCount} day={dropDayOf(closesAt)} time={dropTimeShortOf(closesAt)} countColor="#fff"/>
           </p>
           {/* Avatar row — every neighbour selling in the live Drop. */}
           {hasSellers && sellerRow()}
@@ -2324,7 +2375,6 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
   // The segment with keyboard focus, raised above its neighbours so its
   // focus ring isn't painted over by the next segment.
   const [focusedSegment, setFocusedSegment] = useState(null);
-  const [compact, setCompact] = useState(false);
   // The capsule's own width, measured, picks how roomy the segments can be
   // (see barFit below). null until measured: then the viewport stands in.
   const [barWidth, setBarWidth] = useState(null);
@@ -2351,25 +2401,18 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
   useEffect(() => {
     if (!activeSegment) return;
     const onKey = (e) => { if (e.key === "Escape") closePanel(true); };
-    const onDown = (e) => { if (railRef.current && !railRef.current.contains(e.target)) closePanel(false); };
+    const onDown = (e) => {
+      // Pressing the page's scrollbar reaches the page as a mousedown on
+      // <html> (Chrome): that's scrolling, not a click outside, and closing
+      // the panel there is what let the bar collapse mid-search. A real
+      // click on the page lands on an element inside it.
+      if (e.target === document.documentElement) return;
+      if (railRef.current && !railRef.current.contains(e.target)) closePanel(false);
+    };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onDown);
     return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onDown); };
   }, [activeSegment, closePanel]);
-  useEffect(() => {
-    function onScroll() {
-      const y = window.scrollY || document.documentElement.scrollTop || 0;
-      setCompact(prev => {
-        if (!prev && y > 120) return true;
-        if (prev && y < 80) return false;
-        return prev;
-      });
-    }
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
   const sorts = [
     { id: "newest",    label: "Just listed" },
     { id: "nearest",   label: "Closest to you" },
@@ -2413,8 +2456,6 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
     );
   }
 
-  // When the expanded panel opens, always show the full capsule
-  const isCompact = compact && !activeSegment;
 
   function toggleSegment(seg) {
     setActiveSegment(cur => cur === seg ? null : seg);
@@ -2521,44 +2562,15 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
   const anyLabel = (what) => barFit === "full" ? "Any " + what : "Any";
   const searchHint = barFit === "full" ? "Items, categories, neighbours" : barFit === "medium" ? "Items or categories" : "Keywords";
 
+  // Same spacing above the bar in both Drop states (only colours change with
+  // the Drop): it used to be 28px between Drops and 14px live.
   return (
-    <section ref={railRef} style={{ padding: (state === "between" ? "28px" : "14px") + " 0 12px", position: "relative" }}>
-      {/* COMPACT PILL — when scrolled past threshold */}
-      {isCompact ? (
-        <button onClick={() => { window.scrollTo({ top: 0, behavior: "smooth" }); setTimeout(() => setActiveSegment("search"), 200); }} style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          width: "100%", maxWidth: 420, margin: "0 auto",
-          padding: "8px 8px 8px 22px", borderRadius: 999,
-          background: C.paper, border: "1px solid " + C.fawn,
-          boxShadow: "0 2px 8px rgba(31, 29, 25, 0.08)",
-          cursor: "pointer",
-          transition: "all 180ms",
-          fontFamily: F.head,
-        }}
-        onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 4px 14px rgba(31, 29, 25, 0.12)"; }}
-        onMouseLeave={e => { e.currentTarget.style.boxShadow = "0 2px 8px rgba(31, 29, 25, 0.08)"; }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: C.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {search ? search : "Search DropYard"}
-            </span>
-            {(cat !== "All" || hood !== "All" || cond !== "All" || sort !== "newest") && (
-              <span style={{ fontSize: 13, fontWeight: 500, color: C.mink, whiteSpace: "nowrap" }}>
-                · {cat !== "All" ? categoryLabel(cat) : hood !== "All" ? hood : cond !== "All" ? cond : sortShort}
-              </span>
-            )}
-          </div>
-          <span style={{
-            width: 32, height: 32, borderRadius: "50%",
-            background: state === "between" ? C.amberDeep : C.green, display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "0 2px 6px " + (state === "between" ? C.amberDeep : C.green) + "40",
-            flexShrink: 0,
-          }}>
-            <Search size={14} style={{ color: "#fff" }} strokeWidth={2.6}/>
-          </span>
-        </button>
-      ) : (
+    // The full bar at every scroll position: it used to collapse into a
+    // compact "Search DropYard" pill once the page was scrolled down, which
+    // could happen mid-search. It now always stays as it is, in the page.
+    <section ref={railRef} style={{ padding: "14px 0 12px", position: "relative" }}>
       <>
-      {/* FULL CAPSULE — default expanded */}
+      {/* FULL CAPSULE */}
       {/* A white rounded bar with a soft shadow. The 6px inset lets the
           search pill and the hover/active fills sit inside the edge. */}
       <div ref={capsuleRef} style={{
@@ -2796,54 +2808,14 @@ function FilterRail({ filter, setFilter, search, setSearch, cat, setCat, hood, s
         </div>
       )}
       </>
-      )}
     </section>
   );
 }
 
-/**
- * One-shot share for a single listing card. Uses the Web Share API on mobile
- * (where the OS sheet handles WhatsApp / SMS / Messenger natively) and falls
- * back to copying the link to the clipboard with a transient confirmation
- * for desktop. Returns the message the caller can surface as a toast. Kept
- * as a module-level helper so both ItemCard (buyer view) and the seller's
- * inventory cards can use the same code path. — BUG-051.
- */
-function getPublicItemUrl(item) {
-  const base = (typeof window !== "undefined" && window.location && window.location.origin)
-    ? window.location.origin
-    : "https://dropyard.app";
-  // BUG-085 — points at the public item page (app/item/[id]). This used to be
-  // "/?ref=share&item=<id>", i.e. the marketing homepage, so recipients never
-  // saw the listing. `ref=share` is kept for traffic attribution.
-  return base + "/item/" + encodeURIComponent(item?.id || "") + "?ref=share";
-}
-async function shareListing(item) {
-  const title = item?.title || item?.t || "DropYard listing";
-  const price = item?.p ?? item?.price;
-  const priceFragment = (typeof price === "number" && price >= 0) ? " · " + priceText(price) : "";
-  const text = "Check out \"" + title + "\"" + priceFragment + " on DropYard.";
-  const url = getPublicItemUrl(item);
-
-  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-    try {
-      await navigator.share({ title, text, url });
-      return null; // success — OS sheet already gave feedback
-    } catch (err) {
-      // User dismissed — don't bubble as an error.
-      if (err && err.name === "AbortError") return null;
-      // Fall through to clipboard.
-    }
-  }
-  if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
-    try {
-      await navigator.clipboard.writeText(text + " " + url);
-      return "Link copied to clipboard.";
-    } catch {
-      // Final fallback below.
-    }
-  }
-  return "Couldn't share — copy the link manually: " + url;
+// An item as the share button needs it: the dashboard's items carry the
+// title and price as t / p in places, title / price in others.
+function shareableOf(item) {
+  return { id: String(item?.id ?? ""), title: item?.title || item?.t || "DropYard listing", price: item?.p ?? item?.price ?? null };
 }
 
 /* ============================================================
@@ -3033,7 +3005,10 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
     : (item.sellerHood ? "In " + item.sellerHood : (item.dist || null));
 
   return (
-    <article onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in dy-card-lift" style={{ background: C.paper, borderRadius: 22, overflow: "hidden", border: "1px solid " + CARD.border, cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-2px)" : "translateY(0)", boxShadow: cardShadow, animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
+    // data-card-id / tabIndex -1: the claim dialog hands focus back to the
+    // card when its claim button has turned into a disabled "Waiting for
+    // seller" (not in the tab order; only focused from script).
+    <article data-card-id={item.id} tabIndex={-1} onClick={onOpen} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} className="fade-in dy-card-lift dy-focus" style={{ background: C.paper, borderRadius: 22, overflow: "hidden", border: "1px solid " + CARD.border, cursor: "pointer", transition: "all 250ms cubic-bezier(0.25, 1, 0.5, 1)", transform: hovered ? "translateY(-2px)" : "translateY(0)", boxShadow: cardShadow, animationDelay: Math.min(index * 40, 400) + "ms", display:"flex", flexDirection:"column" }}>
       {/* Full-bleed photo: it fills the whole 4:3 frame edge to edge, cropping
           to fit rather than shrinking into a white inset. ItemImage's own
           default is cover, so this card no longer overrides it. */}
@@ -3045,18 +3020,11 @@ function ItemCard({ item, saved, onToggleSave, onOpen, onClaimNow, index, liveMo
           spanStyle={{ transform: hovered ? "scale(1.03)" : "scale(1)", transition: "transform 400ms ease" }}
         />
         <div style={{ position: "absolute", top: 14, right: 14, display: "flex", gap: 10 }}>
-          {/* Share button (BUG-051). Uses Web Share API on mobile so users
-              get the native iOS/Android share sheet; clipboard fallback on
-              desktop. Stop propagation so the click doesn't also open the
-              item detail. */}
-          <button
-            onClick={async (e) => { e.stopPropagation(); await shareListing(item); }}
-            aria-label="Share this listing"
-            title="Share"
-            style={{ width: 42, height: 42, borderRadius: "50%", border: "none", background: CARD.iconBg, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-          >
-            <Share2 size={20} strokeWidth={2} style={{ color: CARD.green }}/>
-          </button>
+          {/* Share (components/share/ItemShareButton, as on the homepage):
+              the device's share sheet on phones, the share menu (WhatsApp,
+              Facebook, X, Email, Messages, Copy link) elsewhere. It keeps its
+              clicks to itself, so the card doesn't open the item. */}
+          <ItemShareButton item={shareableOf(item)} look="card" className="h-11 w-11"/>
           {/* No heart on your own listing (isOwn, from isOwnListing): nobody
               saves their own item, and the backend refuses it. Old self-saves
               were removed and never come back in Saved, so there's nothing to
@@ -3376,7 +3344,7 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview, currentU
             <div>
               <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink, marginBottom: 3 }}>This is a Sneak Peek</p>
               <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.5 }}>
-                The item isn't claimable yet. Save it now and we'll notify you the moment {dropOpenDay()}'s Drop opens at {dropOpenHour()} — first-come, first-served once it goes live.
+                The item isn't claimable yet. Save it now and we'll notify you the moment {dropOpenDay()}'s Drop opens at {dropOpenHour()}. Then claim it: the seller chooses from every claim, so there&apos;s no rush to be first.
               </p>
             </div>
           </div>
@@ -3459,7 +3427,7 @@ function PreviewItemDetail({ item, onBack, savedPreview, togglePreview, currentU
                   <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink }}>You're on the list</p>
                 </div>
                 <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.55 }}>
-                  We'll send you a notification {dropOpenDay()} at <b style={{ color: C.ink, fontWeight: 800 }}>{dropOpenHour()}</b> when this goes live. Open the app fast — Drops are first-come, first-served.
+                  We'll send you a notification {dropOpenDay()} at <b style={{ color: C.ink, fontWeight: 800 }}>{dropOpenHour()}</b> when this goes live. No need to rush: the seller chooses from every claim.
                 </p>
 
               </div>
@@ -3500,22 +3468,14 @@ function sneakCardType(isMobile) {
   };
 }
 
-// Share + save, top right of the photo. Share is ItemCard's (BUG-051): native
-// share sheet where available, clipboard otherwise. Both stop propagation so
-// neither opens the preview.
+// Share + save, top right of the photo. Share is the shared ItemShareButton
+// (as on ItemCard), with a 44px tap area around its 32px disc. Neither opens
+// the preview.
 function SneakPeekCardActions({ item, isSaved, onToggleSave, isOwn = false }) {
   const round = { width: 32, height: 32, borderRadius: "50%", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 2px 6px rgba(31,29,25,0.15)", transition: "all 150ms" };
   return (
     <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 8 }}>
-      <button
-        type="button"
-        onClick={async (e) => { e.stopPropagation(); await shareListing(item); }}
-        aria-label="Share this listing"
-        title="Share"
-        style={{ ...round, background: "rgba(255,255,255,0.92)", color: CARD.green }}
-      >
-        <Share2 size={15} strokeWidth={2.4}/>
-      </button>
+      <ItemShareButton item={shareableOf(item)} look="chip" className="h-8 w-8"/>
       {/* Not on your own listing (isOwnListing). */}
       {!isOwn && (
         <button
@@ -4059,7 +4019,20 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
   const { isMobile } = useViewport();
   const [step, setStep] = useState("confirm"); // "confirm" | "offer-sent" | "done"
   const [mode, setMode] = useState("listed"); // "listed" | "offer"
-  const [offer, setOffer] = useState(Math.round(item.price * 0.9));
+  // The offer is the field's TEXT, so it can be empty (see lib/amountInput).
+  // Prefilled at 90% of the asking price, as before; switching to "Claim at
+  // listed price" and back keeps whatever is in it, empty included.
+  const [offer, setOffer] = useState(() => wholeAmountText(String(Math.round(item.price * 0.9))));
+  const offerAmount = amountValue(offer);
+  // Why the offer can't be sent yet ("Enter an amount"), or null. Shown under
+  // the field and tied to the field and the disabled Send button.
+  const offerProblem = mode === "offer" ? offerAmountProblem(offer) : null;
+  const offerHintId = useId();
+  const offerGroupLabelId = useId();
+  // A click on a card (not in its amount field) moves focus to that card's
+  // radio, as clicking the old card buttons focused them, so the arrow keys
+  // work straight after. Programmatic focus after a click shows no focus ring.
+  const focusOption = (which) => { const r = document.getElementById(offerGroupLabelId + "-" + which); if (r && document.activeElement !== r) r.focus({ preventScroll: true }); };
   // Slots come from the seller's listing config, not a hardcoded list.
   // Empty = seller gave nothing concrete ("any day" / no days selected), which
   // renders a by-request notice instead of fabricated times. See BUG-082.
@@ -4073,6 +4046,64 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
   // onConfirm can hand the real claim id to the Claims-tab insert (instead of
   // a temporary "bc-..." id that would block cancel/refetch flows).
   const [realClaim, setRealClaim] = useState(null);
+  // What was focused as the dialog opened (a card's claim button, or the
+  // detail page's) and where it and its card sat on screen. Read once, in the
+  // first render, before ModalA11y moves focus.
+  const [opener] = useState(() => (typeof document !== "undefined" ? document.activeElement : null));
+  const [openedAt] = useState(() => {
+    if (!(opener instanceof HTMLElement) || opener === document.body) return null;
+    const card = opener.closest("[data-card-id]");
+    return { opener: opener.getBoundingClientRect().top, card: card ? card.getBoundingClientRect().top : null };
+  });
+  // Where focus goes on close. The opener, if it's still usable; after a
+  // claim it's usually gone (details swaps the button for the claim status)
+  // or disabled (a card's "Waiting for seller"), so then the claim status, or
+  // the card itself (focusable for this, not in the tab order).
+  const returnFocus = () => {
+    if (opener instanceof HTMLElement && opener.isConnected && !opener.disabled && opener !== document.body) return opener;
+    const status = document.getElementById("dy-claim-status");
+    if (status && status.getClientRects().length) return status;
+    const fromOpener = opener instanceof HTMLElement && opener.isConnected ? opener.closest("[data-card-id]") : null;
+    if (fromOpener) return fromOpener;
+    const cards = [...document.querySelectorAll("[data-card-id]")].filter((c) => c.getAttribute("data-card-id") === String(item.id) && c.getClientRects().length);
+    return cards.find((c) => { const r = c.getBoundingClientRect(); return r.bottom > 0 && r.top < window.innerHeight; }) || cards[0] || null;
+  };
+  // After a claim or offer has been sent, every way out (Done, ×, Esc, the
+  // backdrop) records it and leaves the buyer where they were; only "View in
+  // Claims" goes to the Claims tab. Before sending, closing just closes.
+  const sent = step === "done" || step === "offer-sent";
+  const dismiss = () => {
+    if (sent) { onConfirm(slot, item.price, realClaim, { viewClaims: false }); settleAfterClose(); }
+    onClose();
+  };
+  // After a sent claim the page under the dialog changes for a moment: the
+  // detail page swaps its Claim button for the (taller) claim status, and
+  // Discover refetches, which can move or re-render the card and drop focus.
+  // So for the next few seconds: keep the status / card where the button /
+  // card sat on screen, and put focus back on it if it has fallen to the
+  // page. Both stop as soon as the buyer scrolls, taps, clicks or types, and
+  // focus is never taken from something they moved to.
+  const settleAfterClose = () => {
+    let userMoved = false;
+    const stop = () => { userMoved = true; };
+    const EVENTS = ["wheel", "touchstart", "pointerdown", "keydown"];
+    // Attached on the next task, so the Esc / click that closed the dialog doesn't count.
+    setTimeout(() => EVENTS.forEach((e) => window.addEventListener(e, stop, { passive: true, capture: true })), 0);
+    const tick = () => {
+      const target = returnFocus();
+      if (!target || userMoved) return;
+      if (openedAt) {
+        const was = target.hasAttribute("data-card-id") ? openedAt.card : openedAt.opener;
+        const shift = was == null ? 0 : target.getBoundingClientRect().top - was;
+        if (Math.abs(shift) > 1 && Math.abs(shift) < window.innerHeight) window.scrollBy(0, shift);
+      }
+      const active = document.activeElement;
+      if (!active || active === document.body || !active.isConnected) target.focus({ preventScroll: true });
+    };
+    const TIMES = [0, 150, 500, 1000, 1600, 2400, 3200];
+    TIMES.forEach((ms) => setTimeout(tick, ms));
+    setTimeout(() => EVENTS.forEach((e) => window.removeEventListener(e, stop, { capture: true })), TIMES[TIMES.length - 1] + 50);
+  };
   // Real-item heuristic — backend cuids are non-numeric strings longer than 8
   // chars. Demo data uses numeric IDs ("c1", "c2"...) which we leave alone.
   const isRealItem = !!accessToken && typeof item.id === "string" && item.id.length > 8 && !item.id.startsWith("bc");
@@ -4090,9 +4121,11 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
 
     const body = { pickupSlot: slot || undefined };
     if (mode === "offer") {
-      const trimmedOffer = Math.max(1, Math.round(Number(offer) || 0));
-      if (trimmedOffer < 1) { setErrorMsg("Enter a valid offer amount."); return; }
-      body.amount = trimmedOffer;
+      // No silent rounding up: an empty or $0 offer used to go out as $1.
+      // The Send button is disabled until the amount is valid; this is the
+      // backstop.
+      if (offerProblem) { setErrorMsg(offerProblem + "."); return; }
+      body.amount = offerAmount;
     }
     // Otherwise: no amount → backend uses item.price (listed).
 
@@ -4133,15 +4166,15 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
   // rendered in place this overlay's zIndex only counted inside that
   // context and the top bar covered the modal's heading and close button.
   return createPortal(
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: isMobile ? 12 : 24, backdropFilter: "blur(4px)" }}>
-      <ModalA11y label="Claim this item" onClose={onClose}/>
+    <div onClick={dismiss} style={{ position: "fixed", inset: 0, background: "rgba(31, 29, 25, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: Z.modal, padding: isMobile ? 12 : 24, backdropFilter: "blur(4px)" }}>
+      <ModalA11y label="Claim this item" onClose={dismiss} returnFocus={returnFocus}/>
       <div onClick={e => e.stopPropagation()} className={"fade-in " + DIALOG_PANEL} style={{ background: C.paper, borderRadius: 24, width: "100%", maxWidth: 520, boxShadow: "0 24px 64px rgba(31, 29, 25, 0.2)" }}>
         {/* Header — stays at the top while the step below scrolls. */}
         <div style={{ ...dialogHead(0), padding: isMobile ? "20px 18px 18px 18px" : "24px 28px 18px 28px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h2 style={{ fontFamily: F.head, fontSize: isMobile ? 19 : 22, fontWeight: 900, color: C.ink, letterSpacing: "-0.02em" }}>
             {step === "confirm" ? "Claim this item" : step === "offer-sent" ? "Offer sent!" : "Claim sent!"}
           </h2>
-          <button onClick={onClose} aria-label="Close" style={{ border: "none", background: C.sand, width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
+          <button onClick={dismiss} aria-label="Close" style={{ border: "none", background: C.sand, width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0 }}>
             <X size={16} style={{ color: C.mink }}/>
           </button>
         </div>
@@ -4171,62 +4204,118 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
               <div>
                 <p style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.greenDeep, marginBottom: 4 }}>How claiming works</p>
                 <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 500, color: C.mink, lineHeight: 1.55 }}>
-                  Claiming reserves this item for you. You'll pick a pickup time and the seller will share pickup details with you in Messages. If you can't make it, cancel at least 2 hours before so someone else can claim it.
+                  Your claim goes to the seller, who chooses from every claim, so there&apos;s no rush to be first. Once they accept, you&apos;ll pick a pickup time and they&apos;ll share pickup details with you in Messages. If you can&apos;t make it, cancel at least 2 hours before so someone else can claim it.
                 </p>
               </div>
             </div>
 
-            {/* Two-card price selection */}
-            <p style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 12 }}>Your offer</p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
+            {/* Two-card price selection — a radio group. Each card holds a
+                native radio (visually hidden, so the drawn circle stays the
+                design): one Tab stop for the group, arrow keys move between
+                the options, Space selects, and screen readers hear "radio, 1
+                of 2, checked". The card itself isn't a button any more, so the
+                offer's amount field inside it is a plain field, not nested in a
+                control. Clicking anywhere on a card selects it; clicks inside
+                the amount field select the offer card and do nothing else. */}
+            <p id={offerGroupLabelId} style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.mink, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 12 }}>Your offer</p>
+            <div role="radiogroup" aria-label="Your offer" style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
 
               {/* Option A: Claim at listed price */}
-              <button onClick={() => setMode("listed")} style={{
+              <div className="dy-radio-card" onClick={() => { setMode("listed"); focusOption("listed"); }} style={{
+                position: "relative",
                 textAlign: "left", padding: 16, borderRadius: 14,
                 border: "2px solid " + (mode === "listed" ? C.green : C.fawn),
                 background: mode === "listed" ? C.greenMist : C.paper,
                 cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
               }}>
-                <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid " + (mode === "listed" ? C.green : C.smoke), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <input
+                  type="radio"
+                  className="dy-radio-input"
+                  id={offerGroupLabelId + "-listed"}
+                  name={offerGroupLabelId + "-mode"}
+                  value="listed"
+                  checked={mode === "listed"}
+                  onChange={() => setMode("listed")}
+                  aria-describedby={offerGroupLabelId + "-listed-desc"}
+                  style={SR_ONLY_INPUT}
+                />
+                <div aria-hidden="true" style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid " + (mode === "listed" ? C.green : C.smoke), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   {mode === "listed" && <div style={{ width: 10, height: 10, borderRadius: "50%", background: C.green }}/>}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>Claim at listed price</p>
-                  <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginTop: 2 }}>Instant confirmation · no negotiation</p>
+                  <label htmlFor={offerGroupLabelId + "-listed"} style={{ display: "block", cursor: "pointer", fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>Claim at listed price</label>
+                  <p id={offerGroupLabelId + "-listed-desc"} style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginTop: 2 }}>
+                    The seller confirms your claim · no negotiation
+                    {/* The price is read with the option; on screen it's the big figure at the right. */}
+                    <span style={SR_ONLY_INPUT}> · {priceText(item.price)}</span>
+                  </p>
                 </div>
-                <p style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: priceColor(item.price, C.green), flexShrink: 0 }}>{priceText(item.price)}</p>
-              </button>
+                <p aria-hidden="true" style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: priceColor(item.price, C.green), flexShrink: 0 }}>{priceText(item.price)}</p>
+              </div>
 
               {/* Option B: Make an offer */}
-              <button onClick={() => setMode("offer")} style={{
+              <div className="dy-radio-card" onClick={e => { setMode("offer"); if (!e.target.closest("input[type=text]")) focusOption("offer"); }} style={{
+                position: "relative",
                 textAlign: "left", padding: 16, borderRadius: 14,
                 border: "2px solid " + (mode === "offer" ? C.ai : C.fawn),
                 background: mode === "offer" ? C.aiMist : C.paper,
                 cursor: "pointer",
               }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: mode === "offer" ? 12 : 0 }}>
-                  <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid " + (mode === "offer" ? C.ai : C.smoke), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <input
+                    type="radio"
+                    className="dy-radio-input"
+                    id={offerGroupLabelId + "-offer"}
+                    name={offerGroupLabelId + "-mode"}
+                    value="offer"
+                    checked={mode === "offer"}
+                    onChange={() => setMode("offer")}
+                    aria-describedby={offerGroupLabelId + "-offer-desc"}
+                    style={SR_ONLY_INPUT}
+                  />
+                  <div aria-hidden="true" style={{ width: 20, height: 20, borderRadius: "50%", border: "2px solid " + (mode === "offer" ? C.ai : C.smoke), display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     {mode === "offer" && <div style={{ width: 10, height: 10, borderRadius: "50%", background: C.ai }}/>}
                   </div>
                   <div style={{ flex: 1 }}>
-                    <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, display: "flex", alignItems: "center", gap: 6 }}>
+                    <label htmlFor={offerGroupLabelId + "-offer"} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink }}>
                       Make a different offer
-                    </p>
-                    <p style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginTop: 2 }}>The seller will respond</p>
+                    </label>
+                    <p id={offerGroupLabelId + "-offer-desc"} style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, marginTop: 2 }}>The seller will respond</p>
                   </div>
                 </div>
                 {mode === "offer" && (
-                  <div onClick={e => e.stopPropagation()}>
+                  // Clicks here bubble to the card, which keeps "Make a
+                  // different offer" selected; nothing else listens.
+                  <div style={{ cursor: "default" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 12, border: "1.5px solid " + C.fawn, background: C.paper, marginBottom: 10 }}>
-                      <DollarSign size={16} style={{ color: C.mink }}/>
-                      <input type="number" value={offer} onChange={e => setOffer(parseInt(e.target.value) || 0)} placeholder="Your offer" style={{ border: "none", outline: "none", flex: 1, fontFamily: F.head, fontSize: 18, fontWeight: 800, color: C.ink, background: "transparent" }}/>
-                      <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, whiteSpace: "nowrap" }}>vs ${item.price} asking</span>
+                      <DollarSign size={16} style={{ color: C.mink }} aria-hidden="true"/>
+                      {/* Text, not type="number": whole dollars only, leading
+                          zeros dropped, and it can be emptied completely. */}
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={offer}
+                        onChange={e => { setMode("offer"); setOffer(wholeAmountText(e.target.value)); if (errorMsg) setErrorMsg(""); }}
+                        onFocus={() => setMode("offer")}
+                        placeholder="Your offer"
+                        aria-label="Your offer, in dollars"
+                        aria-invalid={offerProblem ? true : undefined}
+                        aria-describedby={offerGroupLabelId + "-asking" + (offerProblem ? " " + offerHintId : "")}
+                        style={{ border: "none", outline: "none", flex: 1, minWidth: 0, fontFamily: F.head, fontSize: 18, fontWeight: 800, color: C.ink, background: "transparent", cursor: "text" }}
+                      />
+                      <span id={offerGroupLabelId + "-asking"} style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, whiteSpace: "nowrap" }}>vs ${item.price} asking</span>
                     </div>
+                    {/* Announced when it appears (polite), and read again as
+                        the field's and the Send button's description. */}
+                    <p id={offerHintId} role="status" aria-live="polite" style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, margin: offerProblem ? "-4px 2px 10px" : 0 }}>
+                      {offerProblem || ""}
+                    </p>
                     {/* AI-agent response-time promise removed — the agent feature
                         isn't shipped yet. Restore alongside the offer-sent notice. */}
                   </div>
                 )}
-              </button>
+              </div>
             </div>
 
             {/* Pickup slots (only for listed-price claim) */}
@@ -4295,11 +4384,12 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
             {/* Action buttons — kept in view at the bottom of the panel. */}
             <div style={{ display: "flex", gap: 10, paddingTop: 2, ...dialogFoot(isMobile ? 22 : 28) }}>
               <button onClick={onClose} disabled={sending} style={{ flex: 1, padding: "12px 0", borderRadius: 12, border: "1.5px solid " + C.fawn, background: C.paper, fontFamily: F.head, fontSize: 14, fontWeight: 700, color: C.mink, cursor: sending ? "not-allowed" : "pointer", opacity: sending ? 0.6 : 1 }}>Cancel</button>
-              <button onClick={handlePrimary} disabled={sending} className="cta-primary" style={{ flex: 2, padding: "12px 0", borderRadius: 12, border: "none", background: mode === "offer" ? C.ai : C.green, color: "#fff", fontFamily: F.head, fontSize: 14, fontWeight: 800, cursor: sending ? "not-allowed" : "pointer", opacity: sending ? 0.7 : 1, boxShadow: "0 2px 0 " + (mode === "offer" ? "#6D28D9" : C.greenDeep), display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <button onClick={handlePrimary} disabled={sending || !!offerProblem} aria-describedby={offerProblem ? offerHintId : undefined} className="cta-primary" style={{ flex: 2, padding: "12px 0", borderRadius: 12, border: "none", background: mode === "offer" ? C.ai : C.green, color: "#fff", fontFamily: F.head, fontSize: 14, fontWeight: 800, cursor: sending || offerProblem ? "not-allowed" : "pointer", opacity: sending ? 0.7 : offerProblem ? 0.5 : 1, boxShadow: "0 2px 0 " + (mode === "offer" ? "#6D28D9" : C.greenDeep), display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 {sending
                   ? "Sending…"
                   : mode === "offer"
-                    ? (<><DollarSign size={16}/> Send offer of ${offer}</>)
+                    // Never "Send offer of $0": no amount until there's a valid one.
+                    ? (<><DollarSign size={16} aria-hidden="true"/> {offerProblem ? "Send offer" : "Send offer of $" + offerAmount}</>)
                     : (<><Check size={16}/> {isFreePrice(item.price) ? "Claim for free" : "Claim at $" + item.price}</>)}
               </button>
             </div>
@@ -4317,7 +4407,7 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
             </div>
             <h3 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.ink, marginBottom: 8 }}>Offer sent!</h3>
             <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, lineHeight: 1.55, marginBottom: 20 }}>
-              You offered <b style={{ color: C.ink }}>${offer}</b> for <b style={{ color: C.ink }}>{item.title}</b>. The seller will respond shortly.
+              You offered <b style={{ color: C.ink }}>${offerAmount}</b> for <b style={{ color: C.ink }}>{item.title}</b>. The seller will respond shortly.
             </p>
             <div style={{ padding: 14, borderRadius: 12, background: C.sand, border: "1px solid " + C.fawn, textAlign: "left", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
               <MessageSquare size={14} style={{ color: C.mink, flexShrink: 0 }}/>
@@ -4332,7 +4422,7 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
                   View in Messages
                 </button>
               )}
-              <button onClick={onClose} className="cta-primary" style={{ flex: onGoToMessages ? 1 : 2, padding: "13px 0", borderRadius: 12, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 14, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 0 " + C.greenDeep }}>Got it</button>
+              <button onClick={dismiss} className="cta-primary" style={{ flex: onGoToMessages ? 1 : 2, padding: "13px 0", borderRadius: 12, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 14, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 0 " + C.greenDeep }}>Got it</button>
             </div>
           </div>
         )}
@@ -4349,7 +4439,10 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
             <h3 style={{ fontFamily: F.head, fontSize: 22, fontWeight: 900, color: C.ink, marginBottom: 8 }}>Claim sent!</h3>
             <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, lineHeight: 1.55, marginBottom: 20 }}>
               Your claim on <b style={{ color: C.ink }}>{item.title}</b> at <b style={{ color: C.ink }}>{priceText(item.price)}</b> is with the seller.<br/>
-              Pickup: <b style={{ color: C.ink }}>{slot}</b><br/>
+              {/* No time chosen (the seller takes pickups by arrangement): no
+                  empty "Pickup:" label; the note below says they'll arrange
+                  it in Messages. */}
+              {slot && <>Pickup: <b style={{ color: C.ink }}>{slot}</b><br/></>}
               <span style={{ fontSize: 12.5, color: C.ash }}>The item stays listed until they confirm — other neighbours may claim it too.</span>
             </p>
             <div style={{ padding: 14, borderRadius: 12, background: C.sand, border: "1px solid " + C.fawn, textAlign: "left", marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
@@ -4360,11 +4453,11 @@ function ClaimModal({ item, onClose, onConfirm, accessToken = null, onGoToMessag
                 removed — the agent feature isn't shipped and nothing sends that
                 reminder. Restore when the agent lands. */}
             <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-              <button onClick={() => { onConfirm(slot, item.price, realClaim); }} className="cta-primary" style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 14, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 0 " + C.greenDeep }}>View in Claims</button>
-              {/* "Done" still records the claim in the parent's local state so
-                  the user finds it on the next visit to the Claims tab — the
-                  POST has already happened, this is just navigation parity. */}
-              <button onClick={() => { onConfirm(slot, item.price, realClaim); onClose(); }} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1.5px solid " + C.fawn, background: C.paper, fontFamily: F.head, fontSize: 14, fontWeight: 700, color: C.mink, cursor: "pointer" }}>Done</button>
+              <button onClick={() => { onConfirm(slot, item.price, realClaim, { viewClaims: true }); }} className="cta-primary" style={{ flex: 2, padding: "13px 0", borderRadius: 12, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 14, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 0 " + C.greenDeep }}>View in Claims</button>
+              {/* "Done" records the claim in the parent's state (so the card
+                  or the item page shows "Claim pending" at once) and leaves
+                  the buyer where they were. Only "View in Claims" navigates. */}
+              <button onClick={dismiss} style={{ flex: 1, padding: "13px 0", borderRadius: 12, border: "1.5px solid " + C.fawn, background: C.paper, fontFamily: F.head, fontSize: 14, fontWeight: 700, color: C.mink, cursor: "pointer" }}>Done</button>
             </div>
           </div>
         )}
@@ -4843,11 +4936,12 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
   const accentBg = C.greenMist;
   const discount = item.origPrice ? Math.round((1 - item.price / item.origPrice) * 100) : null;
 
-  const handleClaimConfirm = (slot, price, realClaim) => {
+  // The dialog has already said "Claim sent!": "View in Claims" goes there
+  // now; Done (×, Esc, backdrop) stays on this page, which shows the claim.
+  const handleClaimConfirm = (slot, price, realClaim, opts) => {
     setShowClaim(false);
     onClaimComplete({ ...item, price }, slot, realClaim);
-    setToast("Claim submitted! Check your Claims tab.");
-    setTimeout(() => onGoToClaims(), 1200);
+    if (opts && opts.viewClaims) onGoToClaims();
   };
 
   return (
@@ -5289,7 +5383,9 @@ function ItemDetail({ item, onBack, onClaimComplete, onGoToClaims, onGoToSeller,
                     (the seller accepts, counters or declines while it's open). */}
                 {myClaimUi ? (
                   <>
-                    <div role="status" aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {/* Focus lands here after the claim dialog closes (the Claim
+                        button it came from is gone): see ClaimModal's returnFocus. */}
+                    <div id="dy-claim-status" tabIndex={-1} className="dy-focus" role="status" aria-live="polite" style={{ display: "flex", flexDirection: "column", gap: 8, borderRadius: 12 }}>
                       <div style={{ padding: "14px 16px", borderRadius: 12, background: myClaimUi.tone.bg, border: "1px solid " + myClaimUi.tone.border, color: myClaimUi.tone.color, fontFamily: D.font, fontSize: 15, fontWeight: 650, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center" }}>
                         <myClaimUi.Icon size={17} strokeWidth={2.2} aria-hidden="true" style={{ flexShrink: 0 }}/> {myClaimUi.status}
                       </div>
@@ -5495,16 +5591,113 @@ function SavedPage({ savedIds, savedItems = null, onSelect, onClaimNow, onToggle
         <EmptyState illustration={<EmptySavedIllustration/>} title="Nothing saved yet" message="Tap the heart on items you’re interested in — they’ll gather here so you can claim them when the Drop opens." cta="Browse Discover" onCtaClick={onBrowse} accent={C.amber}/>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
-          {items.map((i, idx) => <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} myClaim={claimsByItem.get(i.id) || null} onOpenClaimThread={onOpenClaimThread} answerReady={answeredIds.has(i.id)} isOwn={isOwnListing(i, currentUserId)} onSwitchRole={onSwitchRole}/>)}
+          {items.map((i, idx) => i.unavailable ? <UnavailableSavedCard key={i.id} item={i} onRemove={() => onToggleSave && onToggleSave(i.id)}/> : <ItemCard key={i.id} item={i} saved={true} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(i))} onClaimNow={() => onClaimNow && onClaimNow(toDetailItem(i))} index={idx} liveMode={state === "live"} claimedByMe={claimedIds.has(i.id)} purchasedByMe={purchasedIds.has(i.id)} offerPending={offeredIds.has(i.id)} myClaim={claimsByItem.get(i.id) || null} onOpenClaimThread={onOpenClaimThread} answerReady={answeredIds.has(i.id)} isOwn={isOwnListing(i, currentUserId)} onSwitchRole={onSwitchRole}/>)}
         </div>
       )}
     </>
   );
 }
 
+// A saved listing the seller removed: greyed, says so, and can be removed
+// from Saved. Nothing to open or claim.
+function UnavailableSavedCard({ item, onRemove }) {
+  const photo = item.photos && item.photos.length > 0 ? item.photos[0] : (typeof item.img === "string" && /^https?:/.test(item.img) ? item.img : null);
+  return (
+    <article aria-label={item.t + ": no longer available"} style={{ borderRadius: 22, overflow: "hidden", border: "1px solid " + C.fawn, background: C.paper, display: "flex", flexDirection: "column" }}>
+      <div aria-hidden="true" style={{ position: "relative", aspectRatio: "4 / 3", background: C.sand, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {photo
+          ? <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "grayscale(1)", opacity: 0.45 }}/>
+          : <Package size={40} style={{ color: C.smoke }}/>}
+      </div>
+      <div style={{ padding: "14px 16px 16px", display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
+        <span style={{ alignSelf: "flex-start", fontFamily: F.head, fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 999, background: C.sand, color: C.mink, border: "1px solid " + C.fawn }}>No longer available</span>
+        <p style={{ fontFamily: F.head, fontSize: 15, fontWeight: 700, color: C.mink, lineHeight: 1.3 }}>{item.t}</p>
+        <p style={{ fontFamily: F.body, fontSize: 12.5, fontWeight: 500, color: C.mink, lineHeight: 1.45 }}>The seller removed this listing. Any conversation with them is still in Messages.</p>
+        <button type="button" onClick={onRemove} aria-label={"Remove " + item.t + " from Saved"}
+          style={{ marginTop: "auto", minHeight: 44, borderRadius: 12, border: "1.5px solid " + C.fawn, background: C.paper, color: C.ink, fontFamily: F.head, fontSize: 13, fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <X size={14} aria-hidden="true"/> Remove from Saved
+        </button>
+      </div>
+    </article>
+  );
+}
+
 /* ============================================================
    CLAIMS PAGE
    ============================================================ */
+// POST /api/claims/:id/review for the buyer: the stars and the optional
+// message (trimmed; the server keeps up to 500 characters). Rejects with the
+// server's reason, which the review form shows.
+function postBuyerReview(claimId, accessToken, rating, text) {
+  return apiRequest("/api/claims/" + encodeURIComponent(claimId) + "/review", {
+    method: "POST",
+    token:  accessToken,
+    body:   JSON.stringify(text ? { rating, text } : { rating }),
+  });
+}
+
+// "Confirm pickup?" — the buyer's side of the seller's "Confirm item pickup?"
+// (same layout: header with icon and close, the item, the text, Not yet /
+// Confirm pickup). Confirming completes the sale (POST /confirm-receipt).
+function PickupConfirmDialog({ title, image, price, seller, isMobile, onCancel, onConfirm }) {
+  return (
+    <ModalPortal>
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(31, 29, 25, 0.5)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: Z.modal, padding: isMobile ? 16 : 24,
+        backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+      }}
+    >
+      <ModalA11y label="Confirm pickup" onClose={onCancel}/>
+      <div onClick={e => e.stopPropagation()} className={"fade-in " + DIALOG_PANEL} style={{ width: 460, maxWidth: "100%", borderRadius: 24, background: C.paper, boxShadow: "0 24px 60px rgba(31, 29, 25, 0.25)" }}>
+        <div style={{ padding: "18px 24px", borderBottom: "1px solid " + C.fawn, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, minWidth: 0 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: C.greenMist, border: "1px solid " + C.green + "30", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <CheckCircle size={18} style={{ color: C.greenDeep }} strokeWidth={2.3} aria-hidden="true"/>
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <h3 style={{ fontFamily: F.head, fontSize: 17, fontWeight: 900, color: C.ink, letterSpacing: "-0.015em" }}>Confirm pickup?</h3>
+              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink, marginTop: 2 }}>{seller ? "From " + seller + (/\.$/.test(seller) ? "" : ".") : "Your accepted claim."}</p>
+            </div>
+          </div>
+          <button onClick={onCancel} aria-label="Close" style={{ background: C.sand, border: "none", width: 36, height: 36, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <X size={15} style={{ color: C.mink }} aria-hidden="true"/>
+          </button>
+        </div>
+        <div style={{ padding: "20px 24px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 12, background: C.sand, border: "1px solid " + C.fawn }}>
+            <div style={{ width: 44, height: 44, borderRadius: 11, background: "linear-gradient(135deg, " + C.sand + " 0%, " + C.fawn + "80 100%)", border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+              <ItemImage src={image} emojiSize={22}/>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontFamily: F.head, fontSize: 14, fontWeight: 800, color: C.ink, marginBottom: 2, overflowWrap: "anywhere" }}>{title}</p>
+              <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.mink }}>
+                {["Pickup pending", typeof price === "number" ? priceText(price) : null].filter(Boolean).join(" \u00B7 ")}
+              </p>
+            </div>
+          </div>
+          <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 500, color: C.mink, lineHeight: 1.55, marginTop: 14 }}>
+            Please confirm you&rsquo;ve collected the item. This completes the sale and moves it to your history.
+          </p>
+        </div>
+        <div style={{ padding: "14px 24px", borderTop: "1px solid " + C.fawn, background: C.sand + "80", display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", ...dialogFoot(24) }}>
+          <button onClick={onCancel} style={{ minHeight: 44, padding: "10px 20px", borderRadius: 999, border: "1.5px solid " + C.fawn, cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800, background: C.paper, color: C.ink }}>
+            Not yet
+          </button>
+          <button onClick={onConfirm} style={{ minHeight: 44, display: "inline-flex", alignItems: "center", gap: 6, padding: "10px 22px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: F.head, fontSize: 13, fontWeight: 800, letterSpacing: "-0.005em", background: C.green, color: "#fff", boxShadow: "0 2px 0 " + C.greenDeep }}>
+            <Check size={14} strokeWidth={2.6} aria-hidden="true"/> Confirm pickup
+          </button>
+        </div>
+      </div>
+    </div>
+    </ModalPortal>
+  );
+}
+
 function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpenThread = null, highlightId = null, onClearHighlight = null, accessToken = null, completedTotal = null, onClaimsChanged = null }) {
   const { isMobile } = useViewport();
   // Clear the highlight after a brief flash so the row settles.
@@ -5529,7 +5722,8 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(null), 4000); };
 
-  // "Confirm receipt" completes the transaction: the server moves the claim
+  // "Confirm pickup" (POST /confirm-receipt) completes the transaction, after
+  // the "Confirm pickup?" dialog: the server moves the claim
   // to PICKED_UP and the item to SOLD, the same end state as the seller's
   // "Mark picked up". It used to only ping the seller and leave the claim
   // ACCEPTED, so the card kept its Cancel button after the buyer had the
@@ -5537,12 +5731,16 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
   //
   // Rating is decoupled from the transaction: it happens on the History tab.
   const [confirmingId, setConfirmingId] = useState(null);
+  // The claim whose "Confirm pickup?" dialog is open.
+  const [pickupTarget, setPickupTarget] = useState(null);
+  // The claim just completed: its "Pickup Confirmed!" screen. { id, seller }
+  const [pickupDone, setPickupDone] = useState(null);
   const confirmReceipt = async (claim) => {
     const isReal = accessToken && typeof claim.id === "string" && !claim.id.startsWith("bc");
     if (!isReal) {
       // Demo path — no API; complete it locally.
       setClaims(prev => prev.filter(c => c.id !== claim.id));
-      flash("Receipt confirmed — " + claim.t + " is complete. You'll find it in History.");
+      flash("Pickup confirmed — " + claim.t + " is complete. You'll find it in History.");
       return;
     }
     if (confirmingId) return;
@@ -5554,13 +5752,14 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
       });
       if (res?.claim?.status === "PICKED_UP") {
         setClaims(prev => prev.filter(c => c.id !== claim.id));
-        flash("Receipt confirmed — " + claim.t + " is complete. You'll find it in History.");
+        // The "Pickup Confirmed!" screen says it, and offers the review.
+        setPickupDone({ id: claim.id, seller: claim.seller });
       } else {
         setClaims(prev => prev.map(c => c.id === claim.id ? { ...c, status: "completed", buyerConfirmedReceipt: true } : c));
-        flash("Receipt confirmed.");
+        flash("Pickup confirmed.");
       }
     } catch (err) {
-      flash("Couldn't confirm receipt — " + (err?.message || "try again"));
+      flash("Couldn't confirm pickup — " + (err?.message || "try again"));
     } finally {
       setConfirmingId(null);
       if (onClaimsChanged) onClaimsChanged();
@@ -5813,17 +6012,16 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                   <div style={{ display: "flex", gap: 8, flexShrink: isMobile ? 1 : 0, flexWrap: "wrap", justifyContent: isMobile ? "flex-start" : "flex-end", width: isMobile ? "100%" : undefined }}>
                     {(c.status === "pickup-today" || c.status === "pickup-scheduled") && !isRating && (
                       <>
-                        {/* BUG-055 — buyer's button is "Confirm receipt", not
-                            "Picked up". It pings the seller (system message +
-                            buyerConfirmedReceiptAt) but does NOT flip the claim
-                            status. Only the seller flips it to PICKED_UP. */}
+                        {/* The buyer's "Confirm pickup": after the "Confirm
+                            pickup?" dialog it completes the sale (PICKED_UP),
+                            the same end state as the seller's Mark picked up. */}
                         {c.buyerConfirmedReceipt ? (
                           <span style={{ padding: "9px 14px", borderRadius: 999, background: C.greenMist || "#dcfce7", color: C.greenDeep || "#15803d", fontFamily: F.head, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, maxWidth: "100%" }}>
-                            <CheckCircle size={13}/> Receipt confirmed — waiting for seller
+                            <CheckCircle size={13}/> Pickup confirmed — waiting for seller
                           </span>
                         ) : (
-                          <button onClick={() => confirmReceipt(c)} disabled={confirmingId === c.id} className="cta-primary" style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
-                            <CheckCircle size={13}/> Confirm receipt
+                          <button onClick={() => setPickupTarget(c)} disabled={confirmingId === c.id} className="cta-primary" style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
+                            <CheckCircle size={13}/> Confirm pickup
                           </button>
                         )}
                         <button onClick={() => { if (onOpenThread) onOpenThread(c.t); else if (onGoToMessages) onGoToMessages(); }} title="Open the message thread with the seller" style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
@@ -5839,7 +6037,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                     {c.status === "completed" && !isRating && (
                       <>
                         <span style={{ padding: "9px 14px", borderRadius: 999, background: C.greenMist || "#dcfce7", color: C.greenDeep || "#15803d", fontFamily: F.head, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, maxWidth: "100%" }}>
-                          <CheckCircle size={13}/> Receipt confirmed
+                          <CheckCircle size={13}/> Pickup confirmed
                         </span>
                         <button onClick={() => { if (onOpenThread) onOpenThread(c.t); else if (onGoToMessages) onGoToMessages(); }} title="Open the message thread with the seller" style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                           <MessageCircle size={13}/> Message
@@ -5850,11 +6048,11 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                       <>
                         {c.buyerConfirmedReceipt ? (
                           <span style={{ padding: "9px 14px", borderRadius: 999, background: C.greenMist || "#dcfce7", color: C.greenDeep || "#15803d", fontFamily: F.head, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 5, maxWidth: "100%" }}>
-                            <CheckCircle size={13}/> Receipt confirmed — waiting for seller
+                            <CheckCircle size={13}/> Pickup confirmed — waiting for seller
                           </span>
                         ) : (
-                          <button onClick={() => confirmReceipt(c)} disabled={confirmingId === c.id} className="cta-primary" style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
-                            <CheckCircle size={13}/> Confirm receipt
+                          <button onClick={() => setPickupTarget(c)} disabled={confirmingId === c.id} className="cta-primary" style={{ minHeight: 44, padding: "9px 16px", borderRadius: 999, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 5, boxShadow: "0 2px 0 " + C.greenDeep }}>
+                            <CheckCircle size={13}/> Confirm pickup
                           </button>
                         )}
                         <button onClick={() => requestReschedule(c)} style={{ minHeight: 44, padding: "9px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
@@ -5895,16 +6093,22 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                         <>
                           <span style={{ fontFamily: F.head, fontSize: 13, fontWeight: 800, color: C.ink }}>$</span>
                           <input
-                            type="number"
+                            type="text"
                             inputMode="numeric"
+                            autoComplete="off"
+                            aria-label="Your counter, in dollars"
                             value={counterDraftAmt}
-                            onChange={e => setCounterDraftAmt(e.target.value)}
+                            onChange={e => setCounterDraftAmt(wholeAmountText(e.target.value))}
+                            onKeyDown={e => { if (e.key === "Enter" && !offerAmountProblem(counterDraftAmt)) submitCounterFromClaim(c); }}
+                            aria-invalid={offerAmountProblem(counterDraftAmt) ? true : undefined}
+                            aria-describedby={offerAmountProblem(counterDraftAmt) ? "claim-counter-hint-" + c.id : undefined}
                             placeholder={String(c.price || 1)}
                             autoFocus
                             style={{ width: 80, padding: "7px 10px", borderRadius: 8, border: "1.5px solid " + C.fawn, fontFamily: F.head, fontSize: 13, fontWeight: 700, color: C.ink, outline: "none", background: C.paper }}
                           />
-                          <button onClick={() => submitCounterFromClaim(c)} className="cta-primary" style={{ minHeight: 44, padding: "8px 12px", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: "pointer" }}>Send</button>
+                          <button onClick={() => submitCounterFromClaim(c)} disabled={!!offerAmountProblem(counterDraftAmt)} aria-describedby={offerAmountProblem(counterDraftAmt) ? "claim-counter-hint-" + c.id : undefined} className="cta-primary" style={{ minHeight: 44, padding: "8px 12px", borderRadius: 8, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 11, fontWeight: 800, cursor: offerAmountProblem(counterDraftAmt) ? "not-allowed" : "pointer", opacity: offerAmountProblem(counterDraftAmt) ? 0.5 : 1 }}>Send</button>
                           <button onClick={() => { setCounterClaimId(null); setCounterDraftAmt(""); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+                          <AmountHint id={"claim-counter-hint-" + c.id} problem={offerAmountProblem(counterDraftAmt)}/>
                         </>
                       ) : (
                         <>
@@ -5957,6 +6161,26 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
             );
           })}
         </div>
+      )}
+
+      {/* Confirm pickup: asks first, like the seller's "Confirm item pickup?". */}
+      {pickupTarget && (
+        <PickupConfirmDialog
+          title={pickupTarget.t} image={pickupTarget.img || pickupTarget.e} price={pickupTarget.price} seller={pickupTarget.seller}
+          isMobile={isMobile}
+          onCancel={() => setPickupTarget(null)}
+          onConfirm={() => { const c = pickupTarget; setPickupTarget(null); confirmReceipt(c); }}
+        />
+      )}
+
+      {pickupDone && (
+        <PickupConfirmedDialog
+          sellerName={pickupDone.seller}
+          isMobile={isMobile}
+          onSubmitReview={(rating, text) => postBuyerReview(pickupDone.id, accessToken, rating, text)}
+          onReviewed={() => { const s = pickupDone.seller; setPickupDone(null); flash("Thanks for rating " + s + "!"); }}
+          onClose={() => setPickupDone(null)}
+        />
       )}
 
       {/* Cancel confirmation modal */}
@@ -6138,7 +6362,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
 
   // BUG-055 — active claims for buyer's conversations (PROPOSED + ACCEPTED).
   // Powers the in-chat action banner so the buyer can Accept/Counter/Decline
-  // a seller's counter, or Confirm receipt once accepted.
+  // a seller's counter, or Confirm pickup once accepted.
   const [activeClaimByConv, setActiveClaimByConv]   = useState({});
   // The CURRENT claim per conversation whatever its status — including the
   // terminal ones activeClaimByConv deliberately drops. The thread badge has
@@ -6237,15 +6461,19 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
     } catch (err) { chatFlashErr("withdraw the offer", err); }
     finally { setChatBusyClaimId(null); }
   }
-  async function chatConfirmReceipt(claim) {
+  // The banner's "Confirm pickup" opens the "Confirm pickup?" dialog first,
+  // and a completed one the "Pickup Confirmed!" screen ({ id, seller }).
+  const [chatPickupClaim, setChatPickupClaim] = useState(null);
+  const [chatPickupDone, setChatPickupDone] = useState(null);
+  async function chatConfirmReceipt(claim, sellerName) {
     setChatBusyClaimId(claim.id);
     try {
       await apiRequest("/api/claims/" + encodeURIComponent(claim.id) + "/confirm-receipt", {
         method: "POST", token: accessToken,
       });
-      chatFlashOk("Receipt confirmed — transaction complete.");
+      setChatPickupDone({ id: claim.id, seller: sellerName || "the seller" });
       setActiveClaimsTick(t => t + 1);
-    } catch (err) { chatFlashErr("confirm receipt", err); }
+    } catch (err) { chatFlashErr("confirm pickup", err); }
     finally { setChatBusyClaimId(null); }
   }
 
@@ -6606,8 +6834,6 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   // renderMessage). Backend enforces "opposite party" and "not already
   // resolved" so client-side guards are just for UX.
   const [offerBusyMsgId, setOfferBusyMsgId] = useState(null);
-  const [counterDraftMsgId, setCounterDraftMsgId] = useState(null);
-  const [counterDraftAmount, setCounterDraftAmount] = useState("");
   // BUG-055 — these now operate on a CLAIM id (PROPOSED). The buyer's "Accept"
   // is for the seller's counter offer (also a Claim.amount update). The
   // back-end /accept route is seller-only; buyer's equivalent is just
@@ -6643,29 +6869,6 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
       });
     } catch (err) {
       setErrorMsg("Couldn't decline: " + (err?.message || "try again"));
-      setTimeout(() => setErrorMsg(null), 4500);
-    } finally {
-      setOfferBusyMsgId(null);
-    }
-  }
-  async function submitCounter(claimId) {
-    const amt = Math.round(Number(counterDraftAmount));
-    if (!Number.isFinite(amt) || amt <= 0) {
-      setErrorMsg("Enter a valid counter amount.");
-      setTimeout(() => setErrorMsg(null), 4500);
-      return;
-    }
-    setOfferBusyMsgId(claimId);
-    try {
-      await apiRequest("/api/claims/" + encodeURIComponent(claimId) + "/amount", {
-        method: "PATCH",
-        token:  accessToken,
-        body:   JSON.stringify({ amount: amt }),
-      });
-      setCounterDraftMsgId(null);
-      setCounterDraftAmount("");
-    } catch (err) {
-      setErrorMsg("Couldn't counter: " + (err?.message || "try again"));
       setTimeout(() => setErrorMsg(null), 4500);
     } finally {
       setOfferBusyMsgId(null);
@@ -7225,11 +7428,31 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                   onCounter={(amt) => chatCounterClaim(pc, amt)}
                   onDecline={() => chatDeclineClaim(pc)}
                   onWithdraw={() => chatWithdrawClaim(pc)}
-                  onConfirmReceipt={() => chatConfirmReceipt(pc)}
+                  onConfirmReceipt={() => setChatPickupClaim(pc)}
                   compact={isMobile}
                 />
               );
             })()}
+            {chatPickupClaim && (
+              <PickupConfirmDialog
+                title={chatPickupClaim.item?.title || active?.item?.title || "This item"}
+                image={(chatPickupClaim.item?.photos && chatPickupClaim.item.photos[0]) || active?.item?.img || "\uD83D\uDCE6"}
+                price={chatPickupClaim.amount}
+                seller={activeSellerName}
+                isMobile={isMobile}
+                onCancel={() => setChatPickupClaim(null)}
+                onConfirm={() => { const c = chatPickupClaim; setChatPickupClaim(null); chatConfirmReceipt(c, active?.seller?.name || activeSellerName); }}
+              />
+            )}
+            {chatPickupDone && (
+              <PickupConfirmedDialog
+                sellerName={chatPickupDone.seller}
+                isMobile={isMobile}
+                onSubmitReview={(rating, text) => postBuyerReview(chatPickupDone.id, accessToken, rating, text)}
+                onReviewed={() => { const s = chatPickupDone.seller; setChatPickupDone(null); chatFlashOk("Thanks for rating " + s + "!"); }}
+                onClose={() => setChatPickupDone(null)}
+              />
+            )}
 
             {/* Messages, with a day marker before each new (Toronto) day. */}
             <div ref={threadScroll.ref} onScroll={threadScroll.onScroll} role="log" aria-live="polite" aria-label="Conversation" style={{ flex: 1, padding: isMobile ? "14px 14px" : "18px 20px", overflowY: "auto", overflowX: "hidden", background: C.paper }}>
@@ -7312,31 +7535,44 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
               }
               return (
                 <div style={{ borderTop: "1px solid " + C.fawn, background: C.paper }}>
+                  {/* The seller removed the listing: messages still go through
+                      (to wrap things up), offers and claims don't. */}
+                  {active.item?.status === "REMOVED" && (
+                    <div role="note" style={{ padding: "10px 16px", borderBottom: "1px solid " + C.fawn, background: C.sand, display: "flex", alignItems: "center", gap: 8 }}>
+                      <AlertCircle size={15} style={{ color: C.mink, flexShrink: 0 }} aria-hidden="true"/>
+                      <p style={{ fontFamily: F.body, fontSize: 12.5, fontWeight: 600, color: C.ink }}>This item is no longer available. The seller removed the listing; you can still message each other here.</p>
+                    </div>
+                  )}
                   {/* Inline offer composer — opens above the text input when
                       the buyer taps "$ Offer". Lets them propose a counter
                       price directly from the conversation without leaving
                       for Discover. Backend stores it as a real OFFER message
                       so the seller's Accept/Counter/Decline buttons apply. */}
                   {offerComposerOpen && usingBackend && (
-                    <div style={{ padding: "10px 16px", borderBottom: "1px solid " + C.fawn, background: C.aiMist + "60", display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ padding: "10px 16px", borderBottom: "1px solid " + C.fawn, background: C.aiMist + "60", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
                       <span style={{ fontFamily: F.head, fontSize: 11, fontWeight: 800, color: C.ai, letterSpacing: "0.06em", textTransform: "uppercase" }}>Your offer</span>
                       <span style={{ fontFamily: F.head, fontSize: 16, fontWeight: 900, color: C.ai }}>$</span>
                       <input
-                        type="number"
+                        type="text"
                         inputMode="numeric"
+                        autoComplete="off"
+                        aria-label="Your offer, in dollars"
                         autoFocus
                         value={offerComposerAmt}
-                        onChange={e => setOfferComposerAmt(e.target.value)}
-                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); sendOfferFromChat(); } if (e.key === "Escape") { setOfferComposerOpen(false); setOfferComposerAmt(""); } }}
-                        placeholder={active.item?.price ? String(Math.max(1, Math.round(active.item.price * 0.9))) : "0"}
+                        onChange={e => setOfferComposerAmt(wholeAmountText(e.target.value))}
+                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); if (!offerAmountProblem(offerComposerAmt)) sendOfferFromChat(); } if (e.key === "Escape") { setOfferComposerOpen(false); setOfferComposerAmt(""); } }}
+                        aria-invalid={offerAmountProblem(offerComposerAmt) ? true : undefined}
+                        aria-describedby={offerAmountProblem(offerComposerAmt) ? "chat-offer-hint" : undefined}
+                        placeholder={active.item?.price ? String(Math.max(1, Math.round(active.item.price * 0.9))) : "Amount"}
                         disabled={sending}
                         style={{ flex: 1, minWidth: 0, padding: "8px 12px", borderRadius: 10, border: "1.5px solid " + C.ai + "40", fontFamily: F.head, fontSize: 14, fontWeight: 700, color: C.ink, outline: "none", background: C.paper }}
                       />
                       {active.item?.price && (
                         <span style={{ fontFamily: F.body, fontSize: 11, fontWeight: 600, color: C.mink, whiteSpace: "nowrap" }}>vs ${active.item.price} asking</span>
                       )}
-                      <button onClick={sendOfferFromChat} disabled={sending || !offerComposerAmt} style={{ padding: "8px 14px", borderRadius: 999, border: "none", background: C.ai, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: (sending || !offerComposerAmt) ? "not-allowed" : "pointer", opacity: (sending || !offerComposerAmt) ? 0.6 : 1, flexShrink: 0 }}>{sending ? "…" : "Send offer"}</button>
+                      <button onClick={sendOfferFromChat} disabled={sending || !!offerAmountProblem(offerComposerAmt)} aria-describedby={offerAmountProblem(offerComposerAmt) ? "chat-offer-hint" : undefined} style={{ padding: "8px 14px", borderRadius: 999, border: "none", background: C.ai, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: (sending || offerAmountProblem(offerComposerAmt)) ? "not-allowed" : "pointer", opacity: (sending || offerAmountProblem(offerComposerAmt)) ? 0.6 : 1, flexShrink: 0 }}>{sending ? "…" : "Send offer"}</button>
                       <button onClick={() => { setOfferComposerOpen(false); setOfferComposerAmt(""); }} disabled={sending} style={{ padding: "8px 10px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer", flexShrink: 0 }}><X size={12}/></button>
+                      <AmountHint id="chat-offer-hint" problem={offerAmountProblem(offerComposerAmt)} style={{ flexBasis: "100%" }}/>
                     </div>
                   )}
                   {/* Staged photo, waiting on send. Shows what was picked, its
@@ -7376,7 +7612,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
                         claim on this conversation. If a PROPOSED/ACCEPTED
                         claim already exists, the action banner above already
                         handles the negotiation; a duplicate would 409 anyway. */}
-                    {usingBackend && !offerComposerOpen && active && !activeClaimByConv[active.id] && (
+                    {usingBackend && !offerComposerOpen && active && !activeClaimByConv[active.id] && active.item?.status !== "REMOVED" && (
                       <button
                         onClick={() => { setOfferComposerOpen(true); setOfferComposerAmt(active.item?.price ? String(Math.max(1, Math.round(active.item.price * 0.9))) : ""); }}
                         disabled={sending}
@@ -7508,7 +7744,6 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
     return () => clearTimeout(t);
   }, [highlightId, onClearHighlight]);
   const [reviewId, setReviewId] = useState(null);
-  const [reviewStars, setReviewStars] = useState(0);
   const [reviews, setReviews] = useState({}); // {txId: stars}
   const [collapsed, setCollapsed] = useState(() => ({})); // {"year-2025": true, "2026-March": true}
   const toggleCollapse = (key) => setCollapsed(p => ({ ...p, [key]: !p[key] }));
@@ -7537,6 +7772,20 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
       .catch(() => { /* keep demo data */ });
     return () => { cancelled = true; };
   }, [accessToken, historyTick]);
+
+  // The buyer's own rating, as sellers gave it: the average and how many
+  // (GET /api/claims/buyer-rating — only those two numbers; sellers' reviews
+  // of a buyer aren't sent to the buyer). Refetched with the history.
+  const [myRating, setMyRating] = useState(null); // { rating, count }
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+    apiRequest("/api/claims/buyer-rating", { token: accessToken })
+      .then((r) => { if (!cancelled && r && typeof r.count === "number") setMyRating(r); })
+      .catch(() => { /* the tile shows "—" */ });
+    return () => { cancelled = true; };
+  }, [accessToken, historyTick]);
+  const ratingFromSellers = accessToken && myRating && myRating.count > 0 && typeof myRating.rating === "number" ? myRating : null;
 
   const transactions = Array.isArray(liveTxs) ? liveTxs : [
     { id: "t1",  title: "Solid Oak Dining Table", price: 350, origPrice: 900, img: "\uD83E\uDEB5",       cat: "Furniture",              seller: "Jane D.",          hood: "Bridlewood",     date: "2026-04-13", layer: "drop",      rated: false, rating: null },
@@ -7579,37 +7828,22 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
     { label: "Items bought", value: totalItems,          icon: ShoppingBag,  color: C.green,     bg: C.greenMist  },
     { label: "Total spent",  value: "$" + totalSpent,    icon: DollarSign,   color: C.amberDeep, bg: C.amberMist  },
     { label: "Total saved",  value: "$" + totalSaved,    icon: TrendingDown, color: C.greenDeep, bg: C.greenMist,  sub: "vs original" },
-    { label: "Avg rating",   value: (withReviews.filter(t => t.rating).reduce((a,t) => a+t.rating, 0) / Math.max(1, withReviews.filter(t => t.rating).length)).toFixed(1), icon: Star, color: C.amberDeep, bg: C.amberMist },
+    // The buyer's rating from sellers (not the stars they gave sellers).
+    { label: "Rating from sellers", value: ratingFromSellers ? ratingFromSellers.rating.toFixed(1) : "—", icon: Star, color: C.amberDeep, bg: C.amberMist,
+      sub: ratingFromSellers ? (ratingFromSellers.count === 1 ? "1 rating" : ratingFromSellers.count + " ratings") : "No ratings yet" },
   ];
 
-  const submitReview = async (txId) => {
-    // Optimistic overlay so the row shows the rating immediately.
-    const previous = reviews[txId];
-    setReviews(r => ({ ...r, [txId]: reviewStars }));
-    setReviewId(null);
-    setReviewStars(0);
-    // Persist to the backend when we have a real session + claim id (history
-    // rows for demo accounts have non-cuid ids and skip the API).
+  // Saved first, then the row shows the rating. A refusal stays in the form
+  // (ReviewForm shows it) with the stars and message kept. Demo rows (no real
+  // claim id) skip the API.
+  const submitReview = async (txId, rating, text) => {
     const isReal = accessToken && typeof txId === "string" && txId.length > 8 && !txId.startsWith("bc");
-    if (!isReal) return;
-    try {
-      await apiRequest("/api/claims/" + encodeURIComponent(txId) + "/review", {
-        method: "POST",
-        token:  accessToken,
-        body:   JSON.stringify({ rating: reviewStars }),
-      });
-    } catch {
-      // Roll back the optimistic overlay so the row stops claiming it's rated.
-      setReviews(r => {
-        const copy = { ...r };
-        if (previous == null) delete copy[txId];
-        else copy[txId] = previous;
-        return copy;
-      });
-    }
+    if (isReal) await postBuyerReview(txId, accessToken, rating, text);
+    setReviews(r => ({ ...r, [txId]: rating }));
+    setReviewId(null);
   };
 
-  function TxRow({ tx, idx }) {
+  function renderTxRow(tx) {
     const saved = tx.origPrice ? tx.origPrice - tx.price : 0;
     const isReviewing = reviewId === tx.id;
 
@@ -7631,7 +7865,7 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: __isMobile ? 10 : 18 }}>
           {!tx.rated && !isReviewing && (
-            <button onClick={() => { setReviewId(tx.id); setReviewStars(0); }} style={{ minHeight: 44, padding: __isMobile ? "10px 16px" : "11px 18px", borderRadius: 999, border: "1.5px solid " + C.amber, background: C.paper, color: C.amberDeep, fontFamily: F.head, fontSize: __isMobile ? 14 : 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
+            <button onClick={() => setReviewId(tx.id)} style={{ minHeight: 44, padding: __isMobile ? "10px 16px" : "11px 18px", borderRadius: 999, border: "1.5px solid " + C.amber, background: C.paper, color: C.amberDeep, fontFamily: F.head, fontSize: __isMobile ? 14 : 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
               <Star size={16}/> Leave review
             </button>
           )}
@@ -7675,22 +7909,11 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
         </div>
         {__isMobile && <div style={{ marginTop: 12 }}>{priceAndAction}</div>}
         {isReviewing && (
-          <div style={{ marginTop: 14, padding: 14, borderRadius: 12, background: C.sand, border: "1px solid " + C.fawn }}>
-            <p style={{ fontFamily: F.head, fontSize: 12, fontWeight: 800, color: C.ink, marginBottom: 10 }}>How was your experience with {tx.seller}?</p>
-            <div style={{ display: "flex", gap: 3, marginBottom: 10 }}>
-              {[1,2,3,4,5].map(n => (
-                <button key={n} onClick={() => setReviewStars(n)} style={{ border: "none", background: "none", cursor: "pointer", padding: 2 }}>
-                  <Star size={24} style={{ color: n <= reviewStars ? C.amber : C.smoke }} fill={n <= reviewStars ? C.amber : "none"} strokeWidth={n <= reviewStars ? 0 : 1.5}/>
-                </button>
-              ))}
-            </div>
-            {reviewStars > 0 && (
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                <button onClick={() => { setReviewId(null); setReviewStars(0); }} style={{ padding: "7px 14px", borderRadius: 10, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
-                <button onClick={() => submitReview(tx.id)} className="cta-primary" style={{ padding: "7px 14px", borderRadius: 10, border: "none", background: C.green, color: "#fff", fontFamily: F.head, fontSize: 12, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 0 " + C.greenDeep }}>Submit</button>
-              </div>
-            )}
-          </div>
+          <ReviewForm
+            prompt={"How was your experience with " + tx.seller + "?"}
+            onSubmit={(rating, text) => submitReview(tx.id, rating, text)}
+            onCancel={() => setReviewId(null)}
+          />
         )}
       </article>
     );
@@ -7747,7 +7970,7 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
               <span style={{ fontFamily: F.head, fontWeight: 800, color: C.greenDeep }}>${monthSaved} saved</span>
             </>}
           >
-            {monthTxs.map((tx, idx) => <TxRow key={tx.id} tx={tx} idx={idx}/>)}
+            {monthTxs.map((tx) => <Fragment key={tx.id}>{renderTxRow(tx)}</Fragment>)}
           </MonthGroup>
         );
       }))}
@@ -7759,7 +7982,7 @@ function HistoryPage({ highlightId = null, onClearHighlight = null, onOpenThread
           <div>
             <p style={{ fontFamily: F.head, fontSize: 16, fontWeight: 900, color: "#fff", marginBottom: 6 }}>Your community impact</p>
             <p style={{ fontFamily: F.body, fontSize: 13, fontWeight: 500, color: "rgba(255,255,255,0.7)", lineHeight: 1.55, maxWidth: 420 }}>
-              You've kept <b style={{ color: C.amber }}>{totalItems} items</b> out of landfill and saved <b style={{ color: C.green }}>${totalSaved}</b> buying from neighbours.
+              You've kept <b style={{ color: C.amber }}>{totalItems} {totalItems === 1 ? "item" : "items"}</b> out of landfill and saved <b style={{ color: C.green }}>${totalSaved}</b> buying from neighbours.
             </p>
           </div>
           <div style={{ display: "flex", gap: 12, flexShrink: 0 }}>
@@ -8080,9 +8303,9 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
             const peekLiveCount = liveUnifiedPool.filter(i => i.fromPeek && savedPreview.has(i.id)).length;
             const subtitle = peekLiveCount > 0
               ? (peekLiveCount === 1
-                  ? "1 item from your Sneak Peek is live and shown first. " + liveUnifiedPool.length + " items total."
-                  : peekLiveCount + " items from your Sneak Peek are live and shown first. " + liveUnifiedPool.length + " items total.")
-              : liveUnifiedPool.length + " item" + (liveUnifiedPool.length === 1 ? "" : "s") + " up for grabs. The window closes " + dropCloseDay() + " " + dropCloseHour() + " — claim now before they're gone.";
+                  ? "1 item from your Sneak Peek is live and shown first. " + liveUnifiedPool.length + (liveUnifiedPool.length === 1 ? " item" : " items") + " total."
+                  : peekLiveCount + " items from your Sneak Peek are live and shown first. " + liveUnifiedPool.length + (liveUnifiedPool.length === 1 ? " item" : " items") + " total.")
+              : liveUnifiedPool.length + " item" + (liveUnifiedPool.length === 1 ? "" : "s") + " up for grabs. The window closes " + dropCloseDay() + " " + dropCloseHour() + " — claim before it closes.";
             return <SectionHeader eyebrow="Live Drop" eyebrowBg={C.green} title="Your neighbours right now" subtitle={subtitle} pulse={true}/>;
           })()}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
@@ -8099,7 +8322,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
         const betweenPool = [...shelfItems].sort((a, b) => (a.id * 7 % 13) - (b.id * 7 % 13));
         return (
           <>
-            <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" titleStyle={REFRESHED_HEADING} subtitle={betweenPool.length + " items you can grab today — Shelf items available for pickup anytime."} pulse={true}/>
+            <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" titleStyle={REFRESHED_HEADING} subtitle={betweenPool.length + (betweenPool.length === 1 ? " item" : " items") + " you can grab today — Shelf items available for pickup anytime."} pulse={true}/>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
               {betweenPool.map((item, i) => (
                 <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} myClaim={claimsByItem.get(item.id) || null} onOpenClaimThread={onOpenClaimThread} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
@@ -8112,7 +8335,7 @@ function DiscoverPage({ savedIds, onToggleSave, onSelect, onClaimNow, state, rem
       {/* BETWEEN DROPS, Shelf filter — Shelf items only */}
       {!isLive && filter === "shelf" && shelfItems.length > 0 && (
         <>
-          <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" titleStyle={REFRESHED_HEADING} subtitle={shelfItems.length + " items ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
+          <SectionHeader eyebrow="Available now" eyebrowBg={C.green} title="Don't wait for Saturday" titleStyle={REFRESHED_HEADING} subtitle={shelfItems.length + (shelfItems.length === 1 ? " item" : " items") + " ready to grab right now. Message the seller to arrange pickup."} pulse={true}/>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 20 }}>
             {shelfItems.map((item, i) => (
               <ItemCard key={item.id} item={item} saved={savedIds.has(item.id)} onToggleSave={onToggleSave} onOpen={() => onSelect(toDetailItem(item))} onClaimNow={() => onClaimNow(toDetailItem(item))} index={i} fromPeek={item.fromPeek && savedPreview.has(item.id)} claimedByMe={claimedIds.has(item.id)} purchasedByMe={purchasedIds.has(item.id)} offerPending={offeredIds.has(item.id)} myClaim={claimsByItem.get(item.id) || null} onOpenClaimThread={onOpenClaimThread} answerReady={answeredIds.has(item.id)} isOwn={isOwnItem(item)} onSwitchRole={onSwitchRole}/>
@@ -8658,24 +8881,20 @@ export default function DropYardBuyerDashboard({
     return () => { cancelled = true; };
   }, [accessToken]);
   const [toast, setToast] = useState(null);
-  // Drop state is derived from the system clock (see computeDropState).
-  // We re-check every 60 seconds so the UI flips automatically the moment
-  // the Drop opens (Sat 8am) and closes (Sun 7pm), without any manual toggle.
+  // Drop state ("live" | "between") comes from the same schedule the homepage
+  // and the Discover hero use (useDropSchedule): the backend's Drop record
+  // (liveStart / closedStart, corrected for this device's clock skew),
+  // evaluated on the shared one-second clock. So the whole dashboard — the
+  // header's bell, Switch pill and active tab included — flips at the second
+  // the Drop opens or closes, together with the hero. It used to re-check the
+  // browser clock every 60 seconds, so the theme could lag the hero by up to
+  // a minute. Until the record arrives (or if it can't be read) the local
+  // Saturday 8 AM–Sunday 7 PM Toronto calculation stands in.
   //
-  // `?simulate=<ISO>` (dev builds only — the provider ignores it in
-  // production) pins the clock so the LIVE band can be seen on a Tuesday.
-  // When it's set there's nothing to re-check: the moment is fixed, so the
-  // interval is skipped rather than re-deciding the same answer every minute.
-  const { simulatedDate } = useDropCycle();
-  const simulatedMs = simulatedDate ? simulatedDate.getTime() : null;
-  const [dropState, setDropState] = useState(() => computeDropState());
-  useEffect(() => {
-    const resolve = () => setDropState(computeDropState(simulatedMs == null ? new Date() : new Date(simulatedMs)));
-    resolve();
-    if (simulatedMs != null) return;
-    const tick = setInterval(resolve, 60 * 1000);
-    return () => clearInterval(tick);
-  }, [simulatedMs]);
+  // `?simulate=<ISO>` (dev builds only) uses the local calculation on a
+  // simulated clock that runs, so the switch can be watched happen.
+  const dropSchedule = useDropSchedule();
+  const dropState = dropSchedule.status === "LIVE" ? "live" : "between";
   const [claimItem, setClaimItem] = useState(null); // direct-from-card claim modal target
 
   // Demo claims reserved for /preview/buyer-dashboard (no accessToken). Real
@@ -9106,7 +9325,7 @@ export default function DropYardBuyerDashboard({
           <ClaimModal
             item={claimItem}
             onClose={() => setClaimItem(null)}
-            onConfirm={(slot, price, realClaim) => { handleClaimComplete({ ...claimItem, price }, slot, realClaim); setClaimItem(null); setPage("claims"); }}
+            onConfirm={(slot, price, realClaim, opts) => { handleClaimComplete({ ...claimItem, price }, slot, realClaim); setClaimItem(null); if (opts && opts.viewClaims) setPage("claims"); }}
             accessToken={accessToken}
             onGoToMessages={(item) => { setClaimItem(null); if (item?.id) setOpenThread({ itemId: item.id, title: item.title }); setPage("messages"); }}
             onClaimCreated={handleClaimCreated}

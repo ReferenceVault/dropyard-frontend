@@ -15,7 +15,7 @@ import { NeighbourhoodsSection } from "./NeighbourhoodsSection";
 import { FEATURED_SECTION_ID, LivePill, NextDropSectionView } from "./NextDropSection";
 import { ShelfSection } from "./ShelfSection";
 import { useDropSchedule } from "./useDropSchedule";
-import { useHomeData, type HomeItem, type LoadState } from "./useHomeData";
+import { FEATURED_MAX, useHomeData, type HomeItem, type LoadState } from "./useHomeData";
 import { useSectionReveal } from "./useSectionReveal";
 
 // The hero's location pin: a solid pin with a round cut-out (even-odd fill,
@@ -125,6 +125,9 @@ export function TrustStrip() {
  * when it switches: the live Drop card and the Shelf already say so, and a
  * third announcement would only repeat them.
  */
+/** Cards shown below 1024px (two columns): four rows. */
+const MOBILE_FEATURED = 8;
+
 const FeaturedSection = memo(function FeaturedSection({ items, state, savedIds, onToggleSaved, live = null }: {
   items: HomeItem[];
   state: LoadState;
@@ -154,13 +157,18 @@ const FeaturedSection = memo(function FeaturedSection({ items, state, savedIds, 
             />
           ) : (
             // Two columns from the smallest phone: one full-width card per row
-            // made this section ~2,450px tall at 390px.
+            // made this section ~2,450px tall at 390px. Up to 12 cards: three
+            // rows of four from 1024px; below that the first 8 (four rows of
+            // two), and "Browse All Items" has the rest.
             <ul className="grid grid-cols-2 gap-x-3 gap-y-5 sm:gap-x-[clamp(14px,1.55vw,30px)] sm:gap-y-8 lg:grid-cols-4">
               {state === "loading"
                 ? [0, 1, 2, 3].map((i) => <li key={i} className="min-w-0"><ItemCardSkeleton /></li>)
-                : items.map((item) => (
-                    <li key={item.id} className="min-w-0">
-                      <ItemCard tight item={item} ribbon={isLive ? "Live Drop" : "New"} saved={savedIds.has(item.id)} onToggleSaved={onToggleSaved} />
+                : items.slice(0, FEATURED_MAX).map((item, i) => (
+                    <li key={item.id} className={`min-w-0 ${i >= MOBILE_FEATURED ? "max-lg:hidden" : ""}`}>
+                      {/* Live: Drop items "Live Drop", Shelf items "Available"
+                          (the Shelf's own ribbon): both claimable, but only
+                          one is in the Drop. */}
+                      <ItemCard tight item={item} ribbon={isLive ? (item.placement === "SHELF" ? "Available" : "Live Drop") : "New"} saved={savedIds.has(item.id)} onToggleSaved={onToggleSaved} />
                     </li>
                   ))}
             </ul>
@@ -287,12 +295,14 @@ function GoodStuff() {
  * every second, but the same elements come back each time, so React leaves
  * them alone.
  */
-function ScheduledSections({ live, onDropOpened, neighbourCount, featured, between, shelf, state, savedIds, onToggleSaved }: {
+function ScheduledSections({ live, onDropOpened, neighbourCount, featured, liveFeatured, between, shelf, state, savedIds, onToggleSaved }: {
   live: { state: LoadState; feedPhase: string | null };
   onDropOpened: () => void;
   neighbourCount: number | null;
   /** "Worth a closer look": switches with the other two (FeaturedSection is memo'd, so the clock's ticks pass it by). */
   featured: HomeItem[];
+  /** The same section during the live Drop: every claimable item, Drop and Shelf. */
+  liveFeatured: HomeItem[];
   between: React.ReactNode;
   shelf: HomeItem[];
   state: LoadState;
@@ -323,7 +333,7 @@ function ScheduledSections({ live, onDropOpened, neighbourCount, featured, betwe
     <>
       <p className="sr-only" aria-live="polite">{announcement}</p>
       <NextDropSectionView schedule={schedule} live={live} onDropOpened={onDropOpened} neighbourCount={neighbourCount} />
-      <FeaturedSection items={featured} state={state} savedIds={savedIds} onToggleSaved={onToggleSaved} live={isLive} />
+      <FeaturedSection items={isLive ? liveFeatured : featured} state={state} savedIds={savedIds} onToggleSaved={onToggleSaved} live={isLive} />
       {between}
       {/* Between Drops only. During the live Drop it isn't rendered at all,
           and not before the schedule is known either, so a Saturday visitor
@@ -337,7 +347,7 @@ export function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const revealRef = useSectionReveal<HTMLDivElement>();
-  const { state, featured, shelf, feedPhase, reload, neighbourCount, savedIds, toggleSaved } = useHomeData();
+  const { state, featured, liveFeatured, shelf, feedPhase, reload, neighbourCount, savedIds, toggleSaved } = useHomeData();
 
   useEffect(() => {
     const p = searchParams?.get("page");
@@ -356,6 +366,7 @@ export function HomeContent() {
           onDropOpened={reload}
           neighbourCount={neighbourCount}
           featured={featured}
+          liveFeatured={liveFeatured}
           between={<DropFeature />}
           shelf={shelf}
           state={state}

@@ -46,7 +46,40 @@ const srOnly: React.CSSProperties = {
 
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
-export function NotificationBell() {
+// The bell sits in a round tinted circle that follows the Drop: pale green
+// with a dark-green bell while a Drop is live, pale amber with a brown bell
+// between Drops (the dashboards' amber theme). The colours are CSS variables
+// so hover, focus and the open state stay in globals.css (.dy-notif-bell).
+// Contrast: greenDeep on greenMist 6.2:1, amberDeep on amberSoft 4.2:1 (a
+// graphic, AA needs 3:1); the badge's white on claret is 5.0:1.
+// "seller": the seller dashboard's orange in every Drop state (icon #C2410C on
+// #FFEDE0 is 4.55:1).
+export type BellTone = "live" | "between" | "seller";
+const BELL_TONE: Record<BellTone, React.CSSProperties> = {
+  live: {
+    ["--dy-bell-bg" as string]: MC.greenMist,
+    ["--dy-bell-bg-hover" as string]: "#D3E7D0",
+    ["--dy-bell-icon" as string]: MC.greenDeep,
+    ["--dy-bell-accent" as string]: MC.green,
+  },
+  between: {
+    ["--dy-bell-bg" as string]: "#FFE4C4", // amberSoft
+    ["--dy-bell-bg-hover" as string]: "#FFD8A8",
+    ["--dy-bell-icon" as string]: MC.amberDeep,
+    ["--dy-bell-accent" as string]: MC.amberDeep,
+  },
+  seller: {
+    ["--dy-bell-bg" as string]: "#FFEDE0",
+    ["--dy-bell-bg-hover" as string]: "#FDDCC6",
+    ["--dy-bell-icon" as string]: "#C2410C",
+    ["--dy-bell-accent" as string]: "#C2410C",
+  },
+};
+
+/** "9+" past nine, so the badge stays a small round dot. */
+export const badgeCount = (n: number) => (n > 9 ? "9+" : String(n));
+
+export function NotificationBell({ tone = "live" }: { tone?: BellTone }) {
   const inbox = useNotifications();
   const [open, setOpen] = useState(false);
   const isPhone = useIsPhone();
@@ -75,17 +108,22 @@ export function NotificationBell() {
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((o) => !o)}
+        data-tone={tone}
+        style={BELL_TONE[tone]}
       >
-        <Bell size={16} style={{ color: MC.mink }} strokeWidth={2.2} aria-hidden="true" />
+        <Bell size={18} style={{ color: "var(--dy-bell-icon)" }} strokeWidth={2.2} aria-hidden="true" />
+        {/* The unread total, in red at the top right (the accessible name
+            above carries the full number). */}
         {total > 0 && (
-          <span aria-hidden="true" style={{
-            position: "absolute", top: 3, right: 3,
-            minWidth: 16, height: 16, padding: "0 4px",
+          <span aria-hidden="true" className="dy-notif-bell__badge" style={{
+            position: "absolute", top: -3, right: -3,
+            minWidth: 18, height: 18, padding: "0 5px",
             borderRadius: 999, background: MC.claret, color: "#fff",
-            fontFamily: MF.head, fontSize: 9, fontWeight: 800,
+            fontFamily: MF.head, fontSize: 10, fontWeight: 800, lineHeight: 1,
             display: "inline-flex", alignItems: "center", justifyContent: "center",
-            border: "2px solid " + MC.paper,
-          }}>{total > 99 ? "99+" : total}</span>
+            boxShadow: "0 0 0 2px var(--dy-bell-ring, #FFFFFF)",
+            pointerEvents: "none",
+          }}>{badgeCount(total)}</span>
         )}
       </button>
       {open && (isPhone

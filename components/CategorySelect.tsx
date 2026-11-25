@@ -184,7 +184,9 @@ export function CategoryPicker({
 
       {options.length > 0 ? (
         <ul ref={listRef} id={listId} role="listbox" aria-label="Categories"
-          style={{ listStyle: "none", margin: 0, padding: 4, maxHeight: listMaxHeight, overflowY: "auto", borderRadius: 12, border: "1px solid " + T.c.fawn, background: T.c.paper }}>
+          // overscrollBehavior: scrolling the list stops at its ends instead
+          // of carrying on into the page (or dialog) behind it.
+          style={{ listStyle: "none", margin: 0, padding: 4, maxHeight: listMaxHeight, overflowY: "auto", overscrollBehavior: "contain", borderRadius: 12, border: "1px solid " + T.c.fawn, background: T.c.paper }}>
           {options.map((o, i) => {
             const selected = o.value === (value || (allowAll ? ALL : ""));
             const isActive = i === active;

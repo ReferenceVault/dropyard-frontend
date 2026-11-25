@@ -29,6 +29,8 @@ export interface HomeItem {
   sellerId: string | null;
   /** "First L." — the homepage is public, so never a full surname. */
   sellerName: string;
+  /** DROP (this week's Drop) or SHELF (claimable any time). */
+  placement: string;
   sellerAvatar: ResolvedAvatar | null;
 }
 
@@ -52,7 +54,18 @@ function toHomeItem(api: ApiItem): HomeItem {
     sellerId:      api.seller?.id ?? null,
     sellerName:    shortName(api.seller?.name),
     sellerAvatar:  api.seller?.avatar ?? null,
+    placement:     api.placement,
   };
+}
+
+/** "Worth a closer look" holds up to 12 (three rows of four on desktop; the
+ *  grid shows the first 8, four rows of two, below 1024px). */
+export const FEATURED_MAX = 12;
+
+/** Each item once, first occurrence kept. */
+function uniqueById(items: ApiItem[]): ApiItem[] {
+  const seen = new Set<string>();
+  return items.filter((i) => (seen.has(i.id) ? false : (seen.add(i.id), true)));
 }
 
 /** Real subscriber count, only once the backend says it's worth showing. */
@@ -76,6 +89,7 @@ export function useHomeData() {
   const { user } = useAuth();
   const [state, setState] = useState<LoadState>("loading");
   const [featured, setFeatured] = useState<HomeItem[]>([]);
+  const [liveFeatured, setLiveFeatured] = useState<HomeItem[]>([]);
   const [shelf, setShelf] = useState<HomeItem[]>([]);
   const [liveItems, setLiveItems] = useState<HomeItem[]>([]);
   const [feedPhase, setFeedPhase] = useState<string | null>(null);
@@ -104,9 +118,16 @@ export function useHomeData() {
       // so only items the seller committed to the Drop are shown here (BUG-093).
       const dropItems = feed.filter((i) => i.placement === "DROP" && (i.status !== "DRAFT" || i.queuedAt));
       const seen = new Set(dropItems.map((i) => i.id));
-      const upcoming = [...dropItems, ...peek.filter((i) => !seen.has(i.id))];
+      const upcoming = uniqueById([...dropItems, ...peek.filter((i) => !seen.has(i.id))]);
 
-      setFeatured(upcoming.slice(0, 4).map(toHomeItem));
+      // Between Drops: this week's Drop items (the Shelf has its own section).
+      setFeatured(upcoming.slice(0, FEATURED_MAX).map(toHomeItem));
+      // During the live Drop: everything claimable, Drop and Shelf alike, in
+      // the feed's order (newest first, as the buyer dashboard's default).
+      // The Shelf section isn't on the page then, so this is where Shelf items
+      // show. LIVE only: a RESERVED item in the feed is the viewer's own
+      // accepted claim, not something to claim.
+      setLiveFeatured(uniqueById(feed.filter((i) => i.status === "LIVE" && (i.placement === "DROP" || i.placement === "SHELF"))).slice(0, FEATURED_MAX).map(toHomeItem));
       setShelf(feed.filter((i) => i.placement === "SHELF").slice(0, 12).map(toHomeItem));
       setLiveItems(dropItems.filter((i) => i.status === "LIVE").map(toHomeItem));
       setFeedPhase(feedResult.value.phase ?? null);
@@ -155,7 +176,7 @@ export function useHomeData() {
   }, [user, router, savedIds]);
 
   return {
-    state, featured, shelf, liveItems, feedPhase, reload, dropStats, neighbourCount, toggleSaved,
+    state, featured, liveFeatured, shelf, liveItems, feedPhase, reload, dropStats, neighbourCount, toggleSaved,
     savedIds:   user ? savedIds : NO_SAVED_ITEMS,
     claimedIds: user ? claimedIds : NO_SAVED_ITEMS,
     userId:     user?.id ?? null,

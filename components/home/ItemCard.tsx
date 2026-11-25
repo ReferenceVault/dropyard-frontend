@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Heart, MapPin, Package, Radio } from "lucide-react";
 import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/context/AuthContext";
 import { isOwnListing } from "@/lib/ownListing";
+import { ItemShareButton } from "@/components/share/ItemShareButton";
 import type { HomeItem } from "./useHomeData";
 
 // Type scale per card size. `tight` is the Featured grid, which runs two
@@ -32,10 +33,10 @@ const SIZES = {
     small:  "text-[13px] sm:text-[clamp(14px,1.15vw,22px)]",
     avatar: 24,
     // "LIVE DROP" on a ~138px card (320px phone, two columns): a little less
-    // tail and letter-spacing below sm, so it stays on one line. Under 440px
-    // it's still longer than the room left of the heart (80px at 320), so it
-    // sits just below the heart instead (10px + 44px + 8px), clear of it.
-    live:   "max-sm:pr-[1.55em] max-[439px]:top-[62px]",
+    // tail and letter-spacing below sm, so it stays on one line. Where it
+    // still doesn't fit left of the share and save buttons, it drops below
+    // them (measured: see ItemCard).
+    live:   "max-sm:pr-[1.55em]",
     liveText: "max-sm:tracking-[0.04em]",
   },
   compact: {
@@ -80,6 +81,32 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
   const { user } = useAuth();
   const isOwn = isOwnListing(item, user?.id);
 
+  // The ribbon sits top-left beside the share and save buttons (top-right)
+  // when there's room, and just below them when there isn't (narrow cards:
+  // two columns on a phone, four on a small laptop). Measured rather than
+  // guessed at breakpoints: the ribbon's text, the buttons and the card all
+  // scale differently. A ResizeObserver reports before paint, so it never
+  // shows in the wrong place.
+  const ribbonRef = useRef<HTMLSpanElement>(null);
+  const buttonsRef = useRef<HTMLDivElement>(null);
+  const [ribbonTop, setRibbonTop] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const rib = ribbonRef.current, row = buttonsRef.current;
+    const card = row?.parentElement;
+    if (!rib || !row || !card) return;
+    const observer = new ResizeObserver(() => {
+      const r = rib.getBoundingClientRect(), b = row.getBoundingClientRect(), c = card.getBoundingClientRect();
+      const fits = r.right + 8 <= b.left;
+      setRibbonTop(fits ? null : Math.round(b.bottom - c.top + 8));
+    });
+    observer.observe(card);
+    observer.observe(row);
+    // The ribbon too: its width changes when the web font arrives, which
+    // resizes neither the card nor the buttons.
+    observer.observe(rib);
+    return () => observer.disconnect();
+  }, [isOwn]);
+
   return (
     // A card surface (white, hairline border, soft shadow) so the details sit
     // on something instead of floating under the photo. Not overflow-hidden:
@@ -108,7 +135,7 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
               <Package size={56} strokeWidth={1.25} aria-hidden />
             </div>
           )}
-          <span className={`dy-ribbon absolute left-0 top-[6%] whitespace-nowrap py-[0.45em] pl-[1em] pr-[2em] font-medium ${s.ribbon} ${RIBBON_TONE[ribbon]} ${ribbon === "Live Drop" ? s.live : ""}`}>
+          <span ref={ribbonRef} style={ribbonTop !== null ? { top: ribbonTop } : undefined} className={`dy-ribbon absolute left-0 top-[6%] whitespace-nowrap py-[0.45em] pl-[1em] pr-[2em] font-medium ${s.ribbon} ${RIBBON_TONE[ribbon]} ${ribbon === "Live Drop" ? s.live : ""}`}>
             {ribbon === "Live Drop" ? (
               // Styled like the "LIVE NOW" pill: broadcast icon, bold capitals.
               // align-top: on the baseline, the icon row made this ribbon a
@@ -146,19 +173,25 @@ export function ItemCard({ item, ribbon, saved, onToggleSaved, compact = false, 
         </div>
       </Link>
       {action && <div className="px-2.5 pb-2.5">{action}</div>}
-      {/* Outside the link: a button can't nest in an anchor, and clicking it
-          must save rather than navigate. Not on your own listing. */}
-      {!isOwn && (
-        <button
-          type="button"
-          onClick={() => onToggleSaved(item.id)}
-          aria-label={saved ? `Remove ${item.title} from saved items` : `Save ${item.title}`}
-          aria-pressed={saved}
-          className={`dy-focus absolute flex items-center justify-center rounded-full bg-white text-dy-line shadow-[0_4px_12px_-4px_rgba(15,54,11,0.25)] transition-colors hover:text-dy-green ${compact ? "right-1.5 top-1.5 h-11 w-11" : "right-[5%] top-[clamp(10px,1vw,20px)] h-[clamp(44px,3.65vw,70px)] w-[clamp(44px,3.65vw,70px)]"}`}
-        >
-          <Heart className={`h-1/2 w-1/2 ${saved ? "text-dy-green" : ""}`} fill={saved ? "currentColor" : "none"} strokeWidth={1.75} aria-hidden />
-        </button>
-      )}
+      {/* Share and save, top-right over the photo. Outside the link: a button
+          can't nest in an anchor, and clicking either must share or save
+          rather than open the item. Share is on every card (signed out too,
+          and on your own listing: sellers share their own things); the heart
+          isn't on your own listing. */}
+      <div ref={buttonsRef} className={`absolute flex gap-2 ${compact ? "right-1.5 top-1.5" : "right-[5%] top-[clamp(10px,1vw,20px)]"}`}>
+        <ItemShareButton item={item} className={compact ? "h-11 w-11" : "h-[clamp(44px,3.65vw,70px)] w-[clamp(44px,3.65vw,70px)]"} />
+        {!isOwn && (
+          <button
+            type="button"
+            onClick={() => onToggleSaved(item.id)}
+            aria-label={saved ? `Remove ${item.title} from saved items` : `Save ${item.title}`}
+            aria-pressed={saved}
+            className={`dy-focus flex items-center justify-center rounded-full bg-white text-dy-line shadow-[0_4px_12px_-4px_rgba(15,54,11,0.25)] transition-colors hover:text-dy-green ${compact ? "h-11 w-11" : "h-[clamp(44px,3.65vw,70px)] w-[clamp(44px,3.65vw,70px)]"}`}
+          >
+            <Heart className={`h-1/2 w-1/2 ${saved ? "text-dy-green" : ""}`} fill={saved ? "currentColor" : "none"} strokeWidth={1.75} aria-hidden />
+          </button>
+        )}
+      </div>
     </article>
   );
 }
