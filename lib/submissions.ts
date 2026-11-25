@@ -3,7 +3,8 @@
 // marketing site funnels through here, so the admin Inbox sees one consistent
 // shape and source tag per entry point.
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+import { publicRequest, FRIENDLY_ERROR } from "@/lib/api";
+
 const ACCESS_TOKEN_KEY = "dy_access_token";
 
 export const NETWORK_ERROR = "We couldn't reach DropYard. Check your connection and try again.";
@@ -37,39 +38,30 @@ export interface SubmissionResult {
 export async function submitSubmission(
   input: SubmissionInput
 ): Promise<SubmissionResult> {
+  // A saved access token links the entry to the signed-in user (the API
+  // ignores one that has expired). Cookies, the CSRF header and the one
+  // retry are handled by publicRequest, shared by every public form.
   const token =
     typeof window !== "undefined"
       ? localStorage.getItem(ACCESS_TOKEN_KEY)
       : null;
 
-  let res: Response;
+  let result: Awaited<ReturnType<typeof publicRequest<SubmissionResult>>>;
   try {
-    res = await fetch(`${BASE_URL}/api/submissions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(input),
-    });
+    result = await publicRequest<SubmissionResult>("/api/submissions", { body: input, bearer: token });
   } catch {
     // Offline / server unreachable: fetch throws a bare "Failed to fetch",
     // which every form would otherwise show verbatim.
     throw new Error(NETWORK_ERROR);
   }
 
-  if (!res.ok) {
-    let message = "Something went wrong. Please try again.";
-    try {
-      const data = await res.json();
-      if (data?.error && typeof data.error === "string") message = data.error;
-    } catch {
-      // Non-JSON body — keep generic message.
-    }
-    throw new Error(message);
+  if (!result.ok) {
+    // Server-side validation messages ("Enter a valid email address.") are
+    // shown as they are; a CSRF failure after the retry is FRIENDLY_ERROR.
+    throw new Error(typeof result.data.error === "string" ? result.data.error : FRIENDLY_ERROR);
   }
 
-  return res.json();
+  return result.data as SubmissionResult;
 }
 
 export function isValidEmail(value: string): boolean {

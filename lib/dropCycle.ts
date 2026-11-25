@@ -433,3 +433,8 @@ export function dropDayOf(d: Date, short = false): string {
 export function dropTimeOf(d: Date): string {
   return d.toLocaleTimeString("en-US", { timeZone: OPERATING_TIMEZONE, hour: "numeric", minute: "2-digit", hour12: true });
 }
+
+/** "7 PM" (or "7:30 PM") — the same instant without ":00", for running text. */
+export function dropTimeShortOf(d: Date): string {
+  return dropTimeOf(d).replace(":00 ", " ");
+}

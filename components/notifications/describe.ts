@@ -22,9 +22,15 @@ export function describeNotification(n: AppNotification): Described {
   const who = n.actor?.name || (role === "seller" ? "A buyer" : "The seller");
   const what = n.item?.title || "an item";
   const amt = money(n.amount);
+  // No thread to open: the buyer's Claims tab, or the seller's My items on
+  // that item's card (Claimed · action pending, or the pickup once accepted).
+  const sellerFilter = n.type === "CLAIM_ACCEPTED" || n.type === "PICKUP_EXTENDED" ? "pickups"
+    : n.type === "CLAIM_REQUESTED" || n.type === "OFFER_RECEIVED" || n.type === "COUNTER_OFFER" ? "action" : null;
   const thread: NavTarget = n.conversationId
     ? { role, conversationId: n.conversationId }
-    : { role, tab: "claims" };
+    : role === "seller"
+      ? { role, tab: "items", filter: sellerFilter, itemId: n.item?.id ?? null }
+      : { role, tab: "claims" };
 
   switch (n.type) {
     case "CLAIM_REQUESTED":
@@ -56,7 +62,7 @@ export function describeNotification(n: AppNotification): Described {
     case "PICKED_UP":
       return { text: `${who} marked ${what} as picked up`, target: thread, tone: "good" };
     case "RECEIPT_CONFIRMED":
-      return { text: `${who} confirmed they received ${what}`, target: thread, tone: "good" };
+      return { text: `${who} confirmed pickup of ${what}`, target: thread, tone: "good" };
     case "QUESTION_ASKED":
       return { text: `${who} asked a question about ${what}`, target: { role: "seller", tab: "questions" }, tone: "info" };
     case "QUESTION_ANSWERED":

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import ItemGallery from "@/components/item/ItemGallery";
 import { UserAvatar } from "@/components/UserAvatar";
+import { ItemShareButton } from "@/components/share/ItemShareButton";
 import { shortName, type ResolvedAvatar } from "@/lib/avatar";
 import { categoryLabel } from "@/lib/categories";
 
@@ -147,7 +148,13 @@ export default async function PublicItemPage({ params }: { params: Promise<{ id:
             </span>
           )}
 
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">{item.title}</h1>
+          {/* Share beside the title (components/share/ItemShareButton, as on
+              the cards): works signed out. Not once the item is sold or
+              waiting for pickup: a shared link there leads nowhere. */}
+          <div className="mt-3 flex items-start justify-between gap-3">
+            <h1 className="min-w-0 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">{item.title}</h1>
+            {!isTaken && <ItemShareButton item={{ id: item.id, title: item.title, price: item.price }} className="mt-0.5 h-11 w-11" />}
+          </div>
 
           <div className="mt-2 flex items-baseline gap-3">
             {/* Free reads in red, not the usual green: a giveaway is its own

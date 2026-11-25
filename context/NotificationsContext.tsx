@@ -86,6 +86,8 @@ export interface NavTarget {
   conversationId?: string | null;
   tab?: string | null;
   itemId?: string | null;
+  /** With tab "items" (seller): which My items filter, e.g. "action" or "pickups". */
+  filter?: string | null;
 }
 
 interface NotificationsValue {
@@ -416,10 +418,13 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     if (target.conversationId) {
       there.searchParams.set("tab", "messages");
       there.searchParams.set("conversation", target.conversationId);
-    } else if (target.itemId) {
-      there.searchParams.set("item", target.itemId);
     } else if (target.tab) {
       there.searchParams.set("tab", target.tab);
+      // A seller's My items link: the filter, and the card to highlight.
+      if (target.filter) there.searchParams.set("filter", target.filter);
+      if (target.itemId) there.searchParams.set("item", target.itemId);
+    } else if (target.itemId) {
+      there.searchParams.set("item", target.itemId);
     }
     window.history.pushState(null, "", there.pathname + there.search);
     setMode(target.role);

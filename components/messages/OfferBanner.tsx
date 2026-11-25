@@ -5,6 +5,7 @@ import { Check, CheckCircle, Clock, DollarSign, RefreshCw } from "lucide-react";
 import { expiryLabel } from "./format";
 import { tidyPickupTime } from "./claimStatus";
 import { MC, MF } from "./theme";
+import { offerAmountProblem, wholeAmountText } from "@/lib/amountInput";
 
 export interface OfferBannerClaim {
   id: string;
@@ -37,6 +38,7 @@ export interface OfferBannerProps {
 }
 
 const MAX_AMOUNT = 100000; // PATCH /api/claims/:id/amount's own limit
+const srOnly: CSSProperties = { position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 };
 
 const btn = (kind: "primary" | "outline" | "danger" | "quiet", busy: boolean): CSSProperties => ({
   display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 40, padding: "8px 16px",
@@ -56,7 +58,7 @@ const btn = (kind: "primary" | "outline" | "danger" | "quiet", busy: boolean): C
  * Pending offer, viewer's turn:     Accept Offer · Counter Offer · Decline
  * Pending offer, waiting on them:   "Waiting for David K. to respond"
  *                                   + Withdraw offer (buyer) / Decline (seller)
- * Accepted:                         Confirm receipt (buyer) / Mark picked up (seller)
+ * Accepted:                         Confirm pickup (buyer) / Mark picked up (seller)
  * Decline and Withdraw ask first; they end the negotiation.
  */
 export function OfferBanner(props: OfferBannerProps) {
@@ -111,11 +113,16 @@ function OfferBannerBody({
   const detail = proposed
     ? [`Listed at $${claim.listed}`, claim.expiresAt ? `Expires ${expiryLabel(claim.expiresAt)}` : null].filter(Boolean).join(" · ")
     : role === "buyer"
-      ? (receipt ? "You confirmed receipt. Thanks for picking it up!" : `Coordinate pickup here, then confirm receipt once you have the item.${claim.pickupSlot ? ` Buyer suggested: ${tidyPickupTime(claim.pickupSlot)}.` : ""}`)
-      : (receipt ? `${otherName} confirmed receipt. Mark the pickup complete.` : `Coordinate pickup in this thread.${claim.pickupSlot ? ` Buyer suggested: ${tidyPickupTime(claim.pickupSlot)}.` : ""}`);
+      ? (receipt ? "You confirmed pickup. Enjoy your item!" : `Coordinate pickup here, then confirm pickup once you have the item.${claim.pickupSlot ? ` Buyer suggested: ${tidyPickupTime(claim.pickupSlot)}.` : ""}`)
+      : (receipt ? `${otherName} confirmed pickup. Mark the pickup complete.` : `Coordinate pickup in this thread.${claim.pickupSlot ? ` Buyer suggested: ${tidyPickupTime(claim.pickupSlot)}.` : ""}`);
 
   let actions: ReactNode = null;
   if (proposed && mode === "counter") {
+    // Empty or $0: Send counter is disabled and the hint says why (the
+    // submit-time checks below still cover the rest).
+    const problem = offerAmountProblem(amount);
+    const hintId = errorId + "-hint";
+    const describedBy = [error ? errorId : null, problem && !error ? hintId : null].filter(Boolean).join(" ") || undefined;
     actions = (
       <form onSubmit={submitCounter} noValidate style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 8 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -125,24 +132,28 @@ function OfferBannerBody({
             <input
               ref={inputRef}
               id={inputId}
-              type="number"
+              type="text"
               inputMode="numeric"
-              min={1}
-              step={1}
+              autoComplete="off"
               value={amount}
-              onChange={(e) => { setAmount(e.target.value); if (error) setError(null); }}
+              onChange={(e) => { setAmount(wholeAmountText(e.target.value)); if (error) setError(null); }}
               onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setMode("idle"); setError(null); } }}
               placeholder={String(claim.amount)}
               disabled={busy}
-              aria-invalid={!!error}
-              aria-describedby={error ? errorId : undefined}
+              aria-invalid={!!error || undefined}
+              aria-describedby={describedBy}
               style={{ width: 84, border: "none", outline: "none", background: "transparent", fontFamily: MF.head, fontSize: 16, fontWeight: 700, color: MC.ink, padding: "8px 0" }}
             />
           </span>
           {error && <p id={errorId} role="alert" style={{ fontFamily: MF.body, fontSize: 12, fontWeight: 600, color: MC.claret, maxWidth: 260 }}>{error}</p>}
+          {/* Polite live region, always present so it's announced when the
+              text appears; empty and out of the layout otherwise. */}
+          <p id={hintId} role="status" aria-live="polite" style={problem && !error ? { fontFamily: MF.body, fontSize: 12, fontWeight: 600, color: MC.mink, maxWidth: 260 } : srOnly}>
+            {problem && !error ? problem : ""}
+          </p>
         </div>
-        <div style={{ display: "flex", gap: 8, alignSelf: "flex-end", marginBottom: error ? 22 : 0 }}>
-          <button type="submit" disabled={busy} style={btn("primary", busy)}>Send counter</button>
+        <div style={{ display: "flex", gap: 8, alignSelf: "flex-end", marginBottom: error || problem ? 22 : 0 }}>
+          <button type="submit" disabled={busy || !!problem} aria-describedby={problem && !error ? hintId : undefined} style={btn("primary", busy || !!problem)}>Send counter</button>
           <button type="button" disabled={busy} onClick={() => { setMode("idle"); setError(null); }} style={btn("quiet", busy)}>Cancel</button>
         </div>
       </form>
@@ -193,11 +204,11 @@ function OfferBannerBody({
   } else if (accepted && role === "buyer") {
     actions = receipt ? (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 999, background: MC.paper, color: MC.greenDeep, fontFamily: MF.head, fontSize: 12, fontWeight: 800 }}>
-        <CheckCircle size={14} aria-hidden="true" /> Receipt confirmed
+        <CheckCircle size={14} aria-hidden="true" /> Pickup confirmed
       </span>
     ) : (
       <button type="button" disabled={busy} onClick={onConfirmReceipt} style={btn("primary", busy)}>
-        <CheckCircle size={14} aria-hidden="true" /> Confirm receipt
+        <CheckCircle size={14} aria-hidden="true" /> Confirm pickup
       </button>
     );
   } else if (accepted) {

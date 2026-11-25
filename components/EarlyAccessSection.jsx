@@ -13,6 +13,7 @@
 import React, { useState, useEffect } from "react";
 import { Check } from "lucide-react";
 import { isValidEmail, NETWORK_ERROR } from "@/lib/submissions";
+import { publicRequest } from "@/lib/api";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -74,17 +75,16 @@ export default function EarlyAccessSection() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${BASE_URL}/api/email-subscriptions`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email: email.trim(), source: "homepage-early-access" }),
+      // publicRequest: cookies, the CSRF header and one retry, so a
+      // signed-in browser can sign up too.
+      const res = await publicRequest("/api/email-subscriptions", {
+        body: { email: email.trim(), source: "homepage-early-access" },
       }).catch(() => {
         // Offline / unreachable: don't show the browser's bare "Failed to fetch".
         throw new Error(NETWORK_ERROR);
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data && data.error) || "Could not save your spot. Try again.");
+        throw new Error(res.data.error || "Could not save your spot. Try again.");
       }
       localStorage.setItem("dropyard_email", email);
       setSubmitted(true);

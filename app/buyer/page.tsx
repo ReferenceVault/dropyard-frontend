@@ -122,6 +122,15 @@ function AuthedBuyerContent() {
     setDropType,
   } = useDashboard();
 
+  // The Seller/Buyer toggle: remember the choice (setMode persists it) and put
+  // it in the URL, so a reload stays on the chosen side instead of following a
+  // stale ?mode=. The other dashboard's params (tab, filter, conversation,
+  // item) go: both dashboards use those names for different pages.
+  const switchMode = useCallback((next: "buyer" | "seller") => {
+    setMode(next);
+    window.history.replaceState(null, "", `${window.location.pathname}?mode=${next}`);
+  }, [setMode]);
+
   // Seed mode + onboarding flags from the authenticated user.
   // Mode/dropType are initialized ONCE per user identity — otherwise
   // refreshUser() after a profile save would re-run setMode() and bounce
@@ -230,7 +239,7 @@ function AuthedBuyerContent() {
       <>
         <EmailVerifyBanner />
         <DropYardSellerDashboard
-          onSwitchRole={() => setMode("buyer")}
+          onSwitchRole={() => switchMode("buyer")}
           user={user as any}
           onSignout={signout as any}
           accessToken={accessToken as any}
@@ -263,7 +272,7 @@ function AuthedBuyerContent() {
         {/* `as any` casts match the existing props: the dashboard is .jsx, so
             TS infers its prop types from default values (null), not a signature. */}
         <DropYardBuyerDashboard
-          onSwitchRole={() => setMode("seller")}
+          onSwitchRole={() => switchMode("seller")}
           user={user as any}
           onSignout={signout as any}
           accessToken={accessToken as any}

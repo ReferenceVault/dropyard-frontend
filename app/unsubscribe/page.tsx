@@ -7,8 +7,8 @@
 import React, { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { publicRequest } from "@/lib/api";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
 // BUG-075 — useSearchParams() needs to be wrapped in a Suspense boundary
 // per Next.js 16. Without this, every visit prints a console error and
@@ -42,13 +42,14 @@ function UnsubscribeInner() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${BASE_URL}${isReminders ? "/api/drop-reminders/unsubscribe" : "/api/email-subscriptions/unsubscribe"}`, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ token }),
-        });
+        // publicRequest: cookies, the CSRF header and one retry, so the
+        // link works in a signed-in browser too.
+        const res = await publicRequest<{ email?: string; alreadyOff?: boolean }>(
+          isReminders ? "/api/drop-reminders/unsubscribe" : "/api/email-subscriptions/unsubscribe",
+          { body: { token } },
+        );
         if (cancelled) return;
-        const data = await res.json().catch(() => ({}));
+        const data = res.data;
         if (!res.ok) {
           setErrorMsg(typeof data?.error === "string" ? data.error : "Could not process this unsubscribe link.");
           setState("invalid");
