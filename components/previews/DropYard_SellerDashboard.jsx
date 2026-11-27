@@ -66,6 +66,7 @@ import {
 } from "lucide-react";
 import { Pencil, Trash2, CalendarClock, UserX, Undo2, FileDown, HelpCircle, ShoppingCart, PanelLeft } from "lucide-react";
 import { ItemActionsMenu } from "@/components/inventory/ItemActionsMenu";
+import { ClaimCardFrame, PriceTag } from "@/components/inventory/ClaimCardParts";
 import { ReviewForm } from "@/components/reviews/ReviewForm";
 import { copyText, openShareWindow, shareLinks } from "@/lib/share";
 import { SellerOverview } from "@/components/seller-overview/SellerOverview";
@@ -378,36 +379,6 @@ function typeInfo(type) {
   return map[type] || map.garage;
 }
 
-
-/* ============================== SHARED STATUS BADGE ============================== */
-const STATUS_META = {
-  "offer":           { label: "New offer",       color: C.amberDeep, bg: C.amberMist,  icon: "clipboardlist" },
-  "countered":       { label: "Counter sent",    color: C.ai,        bg: C.aiMist,     icon: "messagesquare" },
-  "claimed":         { label: "Claimed",         color: C.greenDeep, bg: C.greenMist,  icon: "check" },
-  "scheduled":       { label: "Scheduled",       color: C.greenDeep, bg: C.greenMist,  icon: "checkcircle" },
-  "pickup-today":    { label: "Pickup today",    color: C.claret,    bg: C.claretMist, icon: "clock" },
-  "pickup-scheduled":{ label: "Scheduled",       color: C.greenDeep, bg: C.greenMist,  icon: "checkcircle" },
-  "needs-response":  { label: "Needs response",  color: C.amberDeep, bg: C.amberMist,  icon: "clipboardlist" },
-  "pending":         { label: "Unanswered",      color: C.claret,    bg: C.claretMist, icon: "clock" },
-  "answered":        { label: "Answered",        color: C.ai,        bg: C.aiMist,     icon: "check" },
-  "completed":       { label: "Completed",       color: C.ash,       bg: C.sand,       icon: "check" },
-  "draft":           { label: "Draft",           color: C.ash,       bg: C.sand,       icon: null },
-  "listed":          { label: "Listed",          color: C.greenDeep, bg: C.greenMist,  icon: "check" },
-};
-function StatusBadge({ status, size = "sm", label }) {
-  const meta = STATUS_META[status] || { label: label || status, color: C.mink, bg: C.sand };
-  const iconMap = { clock: Clock, check: Check, checkcircle: CheckCircle, clipboardlist: ClipboardList, messagesquare: MessageSquare };
-  const Ic = meta.icon ? iconMap[meta.icon] : null;
-  const fs_ = size === "sm" ? 11 : 12;
-  const pad = size === "sm" ? "3px 9px" : "4px 11px";
-  const isz = size === "sm" ? 10 : 12;
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: pad, borderRadius: 999, background: meta.bg, color: meta.color, fontSize: fs_, fontWeight: 800, fontFamily: F.head, whiteSpace: "nowrap", letterSpacing: "0.04em" }}>
-      {Ic && <Ic size={isz} strokeWidth={2.4}/>}
-      {label || meta.label}
-    </span>
-  );
-}
 
 /* ============================== SIDEBAR ============================== */
 
@@ -3369,7 +3340,10 @@ function adaptSellerItem(api) {
   // stay visible — they're in flight (buyer claimed, seller confirmed,
   // pickup pending) and the seller still cares about them.
   // Sold, taken down by an admin, or removed by the seller: not in My items.
-  if (api.status === "SOLD" || api.status === "ARCHIVED" || api.status === "REMOVED") return null;
+  // Except an item the seller marked sold elsewhere: it stays, under Sold
+  // only, labelled "Sold elsewhere" (it's not a DropYard sale, so it isn't
+  // in History).
+  if ((api.status === "SOLD" && !api.soldElsewhereAt) || api.status === "ARCHIVED" || api.status === "REMOVED") return null;
   const placementUi = ENUM_TO_PLACEMENT_LABEL[api.placement] || "drop";
   const isDraft = api.status === "DRAFT";
   let shelfDays;
@@ -3409,6 +3383,11 @@ function adaptSellerItem(api) {
     activeClaimSlot:           api.activeClaim?.pickupSlot || null,
     activeClaimConversationId: api.activeClaim?.conversationId || null,
     activeClaimCreatedAt:      api.activeClaim?.createdAt || null,
+    // For the pickup card's header and steps: when it was accepted and by
+    // whom (the side that didn't set the amount last), and how the buyer pays.
+    activeClaimAcceptedAt:     api.activeClaim?.acceptedAt || null,
+    activeClaimAcceptedBy:     api.activeClaim && api.activeClaim.lastAmountBy && api.activeClaim.lastAmountBy !== api.activeClaim.buyerId ? "buyer" : "seller",
+    activeClaimPaymentMethod:  api.activeClaim?.paymentMethod || null,
     // BUG-093 — set when the seller committed the item to a Drop. Distinguishes
     // "queued for Saturday" from a private draft; both are backend DRAFT.
     isQueued:    !!api.queuedAt,
@@ -3435,6 +3414,12 @@ function adaptSellerItem(api) {
     // Open offers (PROPOSED claims) from GET /api/items/mine, for the offers
     // card. sellerCountered: the seller set the amount last, so it's the
     // buyer's turn (the buyer set it on a new offer or a counter back).
+    // Sold outside DropYard (POST /api/items/:id/sold-elsewhere).
+    soldElsewhere: !!api.soldElsewhereAt,
+    // Buyers waiting behind an accepted sale (WAITLISTED), oldest first.
+    waitlist: Array.isArray(api.waitlist)
+      ? api.waitlist.map(c => ({ id: c.id, buyer: c.buyer?.name || "Buyer", amount: typeof c.amount === "number" ? c.amount : api.price, conversationId: c.conversationId || null }))
+      : [],
     openClaims: Array.isArray(api.openClaims)
       ? api.openClaims.filter(c => c && c.status === "PROPOSED").map(c => ({
           id:              c.id,
@@ -3445,6 +3430,8 @@ function adaptSellerItem(api) {
           sellerCountered: !!c.lastAmountBy && c.lastAmountBy !== c.buyerId,
           at:              c.proposedAt || c.createdAt || null,
           conversationId:  c.conversationId || null,
+          // Every amount so far ({ by, amount, at }), for the card's steps.
+          history:         Array.isArray(c.history) ? c.history : [],
         }))
       : [],
     raw:         api,
@@ -3517,7 +3504,7 @@ function ChipScrollRow({ scroll, selectedKey, ariaLabel, children }) {
 // initialFilter / highlightItemId: where a link landed (a bell entry, an old
 // Orders link, an Overview shortcut). The root remounts this view for each
 // such link, so they're only read once.
-const MY_ITEMS_FILTERS = new Set(["all", "draft", "queued", "live", "shelf", "pickups", "action"]);
+const MY_ITEMS_FILTERS = new Set(["all", "draft", "queued", "live", "shelf", "pickups", "action", "sold"]);
 // Older addresses and links: filter=offers was "Offers to review".
 const MY_ITEMS_FILTER_ALIASES = { offers: "action" };
 function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefresh = null, sellerItemsLoading, accessToken, onOpenThread = null, initialFilter = null, initialPickupWhen = null, initialSearch = null, highlightItemId = null }) {
@@ -3560,6 +3547,23 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
   const [confirmDelete, setConfirmDelete] = useState(null);
   // The item whose "Save to Drafts" is waiting for confirmation.
   const [confirmRemove, setConfirmRemove] = useState(null);
+  // Mark as sold elsewhere: the item awaiting the seller's confirmation.
+  const [confirmSoldElsewhere, setConfirmSoldElsewhere] = useState(null);
+  async function markSoldElsewhere(item) {
+    if (!accessToken || (typeof item.id === "string" && item.id.startsWith("demo-"))) {
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, soldElsewhere: true } : i));
+      flash("\u201C" + item.t + "\u201D marked as sold elsewhere.");
+      return;
+    }
+    try {
+      const res = await apiRequest("/api/items/" + encodeURIComponent(item.id) + "/sold-elsewhere", { method: "POST", token: accessToken });
+      const n = res?.closedClaims || 0;
+      flash("\u201C" + item.t + "\u201D marked as sold elsewhere." + (n ? (n === 1 ? " The buyer has been told." : " " + n + " buyers have been told.") : ""));
+    } catch (err) {
+      flash("Couldn't mark it as sold: " + (err?.message || "try again"));
+    }
+    if (onRefresh) onRefresh();
+  }
 
   // (The pickups-badge fetch that used to live here moved into InventoryTabs,
   // which now owns the Orders count for every tab — BUG-103.)
@@ -3637,6 +3641,8 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     // (promoteItemsToLive on GET /api/items) the next time anyone browses.
     // The stored status lags, but buyers already see it in the Drop.
     // EditItemView applies the same rule.
+    // Marked sold elsewhere: done, whatever else the item says.
+    if (item.soldElsewhere) return "sold";
     if (item.status === "draft" && item.isQueued) {
       return dropIsLive ? "live" : "queued";
     }
@@ -3664,6 +3670,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     live:    { label: "Live in Drop",                color: C.greenDeep, bg: C.greenMist,  border: C.green + "40", pulse: true },
     shelf:   { label: "On the Shelf",                color: C.greenDeep, bg: C.greenMist,  border: C.green + "40" },
     claimed: { label: "Claimed · pickup pending",    color: C.ai,        bg: C.aiMist,     border: C.ai + "40" },
+    sold:    { label: "Sold elsewhere",              color: C.ash,       bg: C.sand,       border: C.fawn },
   };
 
   // Filters follow the lifecycle. "Claimed" only shows up when there's at
@@ -3690,10 +3697,14 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     { id: "shelf",   label: "On the Shelf" },
     { id: "pickups", label: "Claimed \u00B7 pickup pending" },
     { id: "action",  label: "Claimed \u00B7 action pending" },
-  ].filter(f => f.id !== "live" || dropIsLive);
+    { id: "sold",    label: "Sold" },
+  ].filter(f => (f.id !== "live" || dropIsLive) && (f.id !== "sold" || items.some(i => lifecycleOf(i) === "sold")));
 
   const counts = {
-    all:     items.length,
+    // All is what's still for sale or in progress: items sold elsewhere are
+    // only under Sold.
+    all:     items.filter(i => lifecycleOf(i) !== "sold").length,
+    sold:    items.filter(i => lifecycleOf(i) === "sold").length,
     draft:   items.filter(i => lifecycleOf(i) === "draft").length,
     queued:  items.filter(i => lifecycleOf(i) === "queued").length,
     live:    items.filter(i => lifecycleOf(i) === "live").length,
@@ -3709,7 +3720,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     upcoming: pickupItems.filter(i => pickupWhenOf(i) === "upcoming").length,
   };
 
-  const statusFiltered = filter === "all" ? items
+  const statusFiltered = filter === "all" ? items.filter(i => lifecycleOf(i) !== "sold")
     : filter === "action" ? actionItems
     : filter === "pickups" ? (pickupWhenFilter === "all" ? pickupItems : pickupItems.filter(i => pickupWhenOf(i) === pickupWhenFilter))
     : items.filter(i => lifecycleOf(i) === filter);
@@ -3872,6 +3883,12 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
     const deleteListing = (reason) => ({ id: "delete", label: "Delete listing", icon: Trash2, danger: true, onSelect: () => setConfirmDelete(item),
       disabledReason: reason || (item.openClaimCount > 0 ? DELETE_BLOCKED_BY_OFFER : null) });
     const offerOpen = item.openClaimCount > 0 ? REMOVE_BLOCKED_BY_OFFER : null;
+    // Sold outside DropYard: closes every offer, accepted claim and waitlist
+    // place, with a notice to each buyer (DECISIONS.md #7). Asks first.
+    const soldElsewhere = { id: "sold-elsewhere", label: "Mark as sold elsewhere", icon: Tag, danger: true, onSelect: () => setConfirmSoldElsewhere(item) };
+    if (lc === "sold") return [
+      { id: "view", label: "View details", icon: ClipboardList, onSelect: () => onView && onView(item) },
+    ];
     if (lc === "draft") return [
       { id: "publish", label: "Publish", icon: Send, onSelect: () => openPublishChooser(item) },
       edit,
@@ -3886,6 +3903,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       share,
       { id: "move", label: "Move to Shelf", icon: ArrowRight, onSelect: () => makeLiveNow(item.id) },
       edit,
+      soldElsewhere,
       saveToDrafts(offerOpen),
       deleteListing(),
     ];
@@ -3898,6 +3916,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       // Locked only for items in the Drop (its live items, and drafts queued
       // for it). Shelf items also show as live during the Drop, but they
       // aren't in it: the usual rules apply (the server enforces the same).
+      soldElsewhere,
       ...(item.publishedTo === "shelf"
         ? [saveToDrafts(offerOpen), deleteListing()]
         : [saveToDrafts("Can't save to Drafts while it's in the live Drop."), deleteListing("Can't delete while it's in the live Drop.")]),
@@ -3906,6 +3925,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       share,
       { id: "lower", label: "Lower price", icon: TrendingDown, onSelect: () => beginPriceEdit(item) },
       edit,
+      soldElsewhere,
       saveToDrafts(offerOpen),
       deleteListing(),
     ];
@@ -3968,6 +3988,7 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
       onView: onView ? () => onView(item) : null,
       onNoShow: () => setPendingPickup({ kind: "no-show", item }),
       onRelease: () => setPendingPickup({ kind: "release", item }),
+      onSoldElsewhere: () => setConfirmSoldElsewhere(item),
     });
   }
   async function confirmPendingPickup() {
@@ -4255,11 +4276,15 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
                 buyer={item.activeClaimBuyer}
                 buyerAvatar={item.activeClaimBuyerAvatar}
                 price={typeof item.soldPrice === "number" ? item.soldPrice : item.price}
+                listed={item.price}
                 when={pickupWhen(item.activeClaimSlot, { since: item.activeClaimCreatedAt })}
-                width={width}
+                acceptedAt={item.activeClaimAcceptedAt}
+                acceptedBy={item.activeClaimAcceptedBy}
+                paymentMethod={item.activeClaimPaymentMethod}
                 busy={pickupBusyId === item.id}
                 onPickup={() => setPendingPickup({ kind: "pickup", item })}
                 onOpen={onView ? () => onView(item) : null}
+                onMessage={item.activeClaimConversationId && onOpenThread ? () => onOpenThread(item.activeClaimConversationId) : null}
                 actions={pickupCardActions(item)}
               />
             );
@@ -4269,10 +4294,10 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
             return (
               <OfferCard
                 item={item}
-                width={width}
                 busyId={offerBusyId}
                 onOpen={onView}
-                menu={<ItemActionsMenu itemName={item.t} actions={itemActions(item, lc)} size={40}/>}
+                menuActions={itemActions(item, lc)}
+                onMessage={onOpenThread ? (c) => onOpenThread(c.conversationId) : null}
                 onAccept={c => acceptOffer(item, c)}
                 onDecline={c => setPendingDecline({ item, claim: c })}
                 onCounter={(c, amount) => counterOffer(item, c, amount)}
@@ -4588,6 +4613,26 @@ function MyItemsView({ onNav, onEdit, onView, sellerItems, onItemsChange, onRefr
           onConfirm={confirmDecline}
         />
       )}
+      {confirmSoldElsewhere && (
+        <ConfirmListingDialog
+          item={confirmSoldElsewhere}
+          isMobile={isMobile}
+          ariaLabel="Mark as sold elsewhere"
+          title="Sold it somewhere else?"
+          subtitle="It comes off DropYard for good."
+          statusLabel={(lifecycleMeta[lifecycleOf(confirmSoldElsewhere)] || lifecycleMeta.shelf).label}
+          body={(confirmSoldElsewhere.openClaimCount > 0
+            ? "Every buyer with an offer, an accepted claim or a place on the waitlist is told it's gone, and their claims close. "
+            : "")
+            + "It won't count as a DropYard sale and won't appear in History. You'll find it in My items under Sold."}
+          confirmLabel="Mark as sold"
+          cancelLabel="Keep listing"
+          confirmIcon={Tag}
+          tone="danger"
+          onCancel={() => setConfirmSoldElsewhere(null)}
+          onConfirm={() => { const it = confirmSoldElsewhere; setConfirmSoldElsewhere(null); markSoldElsewhere(it); }}
+        />
+      )}
       {confirmRemove && (
         <ConfirmListingDialog
           item={confirmRemove}
@@ -4633,6 +4678,7 @@ function rowStatusText(item, lc) {
   if (lc === "queued") return "Queued for Saturday";
   if (lc === "live") return "Live in the Drop";
   if (lc === "claimed") return "Claimed · pickup pending";
+  if (lc === "sold") return "Sold outside DropYard";
   return "Draft";
 }
 
@@ -4660,20 +4706,26 @@ const ROW_SIZE = {
 // One pill size for status, bundle and free-pile labels.
 const ROW_PILL = { display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 11, fontWeight: 650, lineHeight: 1.2, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap", maxWidth: "100%" };
 
-// ── Offers card (State C) ──────────────────────────────────────────────────
-// A listed item with open offers: the client's card (Image C) in place of the
-// listed row. The best offer is on the card (highest amount, then earliest),
-// with Accept $X · Counter · Decline; "+N more offers" lists the rest, each
-// with its own actions. An offer the seller countered is the buyer's turn:
-// "Waiting for {buyer}", with Change counter and Withdraw counter (which
-// declines it, after a confirmation). Counter is unavailable on a claim at
-// or above the listed price (there's nothing to negotiate), with the reason.
-// All of it comes from GET /api/items/mine (openClaims); every action goes to
-// the claims API, and the list refetches on the server's answer and on the
-// socket's claim events, so the card turns into the pickup card (accepted)
-// or back into the listed row (last offer declined, withdrawn or expired).
-const OFFER_COUNTER_FULL  = "This is a full-price claim.";
-const OFFER_COUNTER_ABOVE = "This offer is above your listed price.";
+// ── Claim cards (My items) ─────────────────────────────────────────────────
+// The client's redesign of the seller's claim cards: a cream header strip
+// (status, a plain-language line, the step tracker), then the photo, title
+// and buyer, a paper price tag and the actions. Parts and styles:
+// components/inventory/ClaimCardParts.tsx and .dy-cc-* in globals.css.
+//
+// OfferCard: a listed item with open offers (Claimed · action pending). The
+// best offer is the card (highest amount, then earliest); "+N more offers"
+// lists the rest, each with its own actions. By state:
+//   new offer below asking  Decline · Counter · Accept $X
+//   full-price / above      Decline · Accept $X (nothing to counter)
+//   buyer countered back    the same, with the history in the steps
+//   seller countered        Withdraw · Message buyer; Change counter in ⋯
+// Decline and Withdraw ask first (the dialogs in InventoryView); Withdraw
+// declines the offer. Everything comes from GET /api/items/mine (openClaims,
+// each with its amount history); every action goes to the claims API, and
+// the list refetches on the server's answer and on the socket's claim events,
+// so the card turns into the pickup card (accepted) or back into the listed
+// row (last offer declined, withdrawn or expired).
+const NO_THREAD_REASON = "There's no conversation with this buyer yet.";
 function offerLabel(c, listed) {
   if (c.sellerCountered) return "Your counter";
   return c.amount === listed ? "Full price claim" : c.amount < listed ? "Offer below asking" : "Offer above asking";
@@ -4686,9 +4738,80 @@ function sortOpenOffers(claims) {
   const countered = claims.filter(c => c.sellerCountered).sort((a, b) => at(a) - at(b));
   return [...awaiting, ...countered];
 }
-function OfferCard({ item, width, busyId = null, onOpen = null, menu = null, onAccept, onDecline, onCounter, onWithdraw }) {
-  const phone = width < 641;
-  const wide = width >= 1100;
+const firstNameOf = (name) => String(name || "Buyer").trim().split(/\s+/)[0] || "Buyer";
+const moneyText = (n) => (n === 0 ? "Free" : "$" + n);
+// "4 min ago", "2 hours ago", "yesterday" (the header's plain-language line).
+function agoText(iso) {
+  if (!iso) return "";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return "";
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return mins + " min ago";
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs === 1 ? "1 hour ago" : hrs + " hours ago";
+  const days = Math.floor(hrs / 24);
+  return days === 1 ? "yesterday" : days + " days ago";
+}
+// A claim's amounts, oldest first: [{ by: "buyer"|"seller"|null, amount, at }].
+// From the server's history; when that's short (rows past retention, an old
+// claim), the current amount is added, and a counter with no offer before it
+// gets an unnamed "made an offer" step.
+function claimHistory(c, sellerSetLast) {
+  const out = (Array.isArray(c.history) ? c.history : [])
+    .filter(h => h && typeof h.amount === "number")
+    .map(h => ({ by: h.by || null, amount: h.amount, at: h.at || null }));
+  const curBy = sellerSetLast ? "seller" : "buyer";
+  const last = out[out.length - 1];
+  if (!last || last.amount !== c.amount || (last.by && last.by !== curBy)) out.push({ by: curBy, amount: c.amount, at: null });
+  if (out[0].by === "seller") out.unshift({ by: "buyer", amount: null, at: null });
+  return out;
+}
+// The done steps for a history, at most three: the first, "N more counters",
+// the last.
+function historySteps(hist, who, listed) {
+  const labels = hist.map((h, i) => {
+    if (h.by === "seller") return "You countered " + moneyText(h.amount);
+    if (h.amount == null) return who + " made an offer";
+    if (i === 0) return h.amount === 0 ? who + " claimed it" : (h.amount === listed ? who + " claimed " : who + " offered ") + moneyText(h.amount);
+    return (h.by === "buyer" ? who + " countered " : "Countered at ") + moneyText(h.amount);
+  });
+  const shown = labels.length > 3 ? [labels[0], (labels.length - 2) + " more counters", labels[labels.length - 1]] : labels;
+  return shown.map(label => ({ label, state: "done" }));
+}
+const lastSetAt = (c) => {
+  const h = Array.isArray(c.history) ? c.history : [];
+  return (h.length && h[h.length - 1].at) || c.at || null;
+};
+// Where the negotiation stands: offer (below asking), full, above, back (the
+// buyer countered the seller's counter), waiting (the seller countered).
+function offerPhase(c, listed) {
+  if (c.sellerCountered) return "waiting";
+  if (claimHistory(c, false).length > 1) return "back";
+  return c.amount === listed ? "full" : c.amount > listed ? "above" : "offer";
+}
+// The header, the steps and the tag for one offer.
+function offerCardContent(c, listed) {
+  const who = firstNameOf(c.buyer);
+  const phase = offerPhase(c, listed);
+  const hist = claimHistory(c, c.sellerCountered);
+  const ago = agoText(lastSetAt(c));
+  const sent = ago ? ", sent " + ago : "";
+  const prev = (by) => { for (let i = hist.length - 2; i >= 0; i--) if (hist[i].by === by && hist[i].amount != null) return hist[i].amount; return null; };
+  const turn = c.sellerCountered ? who + " accepts, counters or declines"
+    : c.amount >= listed ? "You accept or decline" : "You accept, counter or decline";
+  const steps = [...historySteps(hist, who, listed), { label: turn, state: "current" }, { label: "Arrange pickup", state: "todo" }];
+  const byPhase = {
+    offer:   { status: "Offer from " + who,  line: "$" + (listed - c.amount) + " under your asking price" + sent, label: who + "’s offer:" },
+    full:    { status: "Claim from " + who,  line: "Full asking price" + sent, label: who + "’s claim:", note: "Full price" },
+    above:   { status: "Offer from " + who,  line: "$" + (c.amount - listed) + " over your asking price" + sent, label: who + "’s offer:" },
+    back:    { status: who + " countered",   line: (prev("seller") != null ? who + " countered your " + moneyText(prev("seller")) : who + " countered") + (ago ? ", " + ago : ""), label: who + "’s counter:", note: prev("seller") != null ? "You: " + moneyText(prev("seller")) : null },
+    waiting: { status: "Waiting for " + who, line: "Your counter-offer" + sent, label: "Your counter:", note: prev("buyer") != null ? who + ": " + moneyText(prev("buyer")) : null },
+  }[phase];
+  return { who, phase, steps, ...byPhase, strike: c.amount !== listed ? moneyText(listed) : null };
+}
+
+function OfferCard({ item, busyId = null, onOpen = null, menuActions = [], onAccept, onDecline, onCounter, onWithdraw, onMessage = null }) {
   const [expanded, setExpanded] = useState(false);
   const [counterFor, setCounterFor] = useState(null);
   const [counterText, setCounterText] = useState("");
@@ -4698,6 +4821,9 @@ function OfferCard({ item, width, busyId = null, onOpen = null, menu = null, onA
   if (!primary) return null;
   const listed = item.price;
   const awaitingCount = offers.filter(c => !c.sellerCountered).length;
+  const view = offerCardContent(primary, listed);
+  const photo = item.photos && item.photos.length > 0 ? item.photos[0] : null;
+  const canMessage = (c) => !!(onMessage && c.conversationId);
 
   const counterProblem = (c) => offerAmountProblem(counterText)
     || (Number(counterText) === c.amount ? (c.sellerCountered ? "That's your current counter." : "That's the buyer's offer. To agree to it, accept it.") : null);
@@ -4710,237 +4836,239 @@ function OfferCard({ item, width, busyId = null, onOpen = null, menu = null, onA
     const ok = await onCounter(c, Number(counterText));
     if (ok) { setCounterFor(null); setCounterText(""); }
   }
+  const cancelCounter = () => { setCounterFor(null); setCounterText(""); };
 
-  const btnBase = { minHeight: 44, padding: "8px 14px", borderRadius: 8, fontFamily: F.body, fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, flex: phone ? 1 : "0 0 auto", whiteSpace: "nowrap" };
-
-  function actionsFor(c) {
+  // One offer's buttons. small: the rows under "+N more offers", which have
+  // no ⋯ menu, so Change counter is a button there.
+  function actionsFor(c, small) {
     const busy = busyId === c.id;
-    const hintId = "offer-counter-hint-" + c.id;
+    const who = firstNameOf(c.buyer);
+    const sz = small ? " dy-cc-btn--sm" : "";
     if (counterFor === c.id) {
       const problem = counterProblem(c);
+      const hintId = "offer-counter-hint-" + c.id;
       return (
         <>
-          <span aria-hidden="true" style={{ fontSize: 14, fontWeight: 800, color: C.ink, fontFamily: F.head }}>$</span>
+          <span className="dy-cc-dollar" aria-hidden="true">$</span>
           <input
             type="text" inputMode="numeric" autoComplete="off" autoFocus
             value={counterText}
             onChange={e => setCounterText(wholeAmountText(e.target.value))}
-            onKeyDown={e => { if (e.key === "Enter") submitCounter(c); if (e.key === "Escape") { setCounterFor(null); setCounterText(""); } }}
+            onKeyDown={e => { if (e.key === "Enter") submitCounter(c); if (e.key === "Escape") cancelCounter(); }}
             aria-label={(c.sellerCountered ? "New counter to " : "Counter to ") + c.buyer + ", in dollars"}
             aria-invalid={problem ? true : undefined}
             aria-describedby={problem ? hintId : undefined}
             disabled={busy}
-            className="dy-field"
-            style={{ width: phone ? 96 : 92, minHeight: 44, padding: "7px 10px", borderRadius: 8, border: "1.5px solid " + C.smoke, fontFamily: F.head, fontSize: 16, fontWeight: 700, color: C.ink, background: C.paper }}
+            className="dy-cc-input dy-field"
           />
-          <button type="button" onClick={() => submitCounter(c)} disabled={busy || !!problem} aria-describedby={problem ? hintId : undefined} className="cta-primary"
-            style={{ ...btnBase, border: "none", background: C.gPrimary, color: "#fff", fontWeight: 800, cursor: busy || problem ? "not-allowed" : "pointer", opacity: problem ? 0.5 : 1 }}>
+          <button type="button" onClick={() => submitCounter(c)} disabled={busy || !!problem} aria-describedby={problem ? hintId : undefined} className={"dy-cc-btn dy-cc-btn--dark" + sz}>
             {busy ? "Sending…" : c.sellerCountered ? "Update counter" : "Send counter"}
           </button>
-          <button type="button" onClick={() => { setCounterFor(null); setCounterText(""); }} disabled={busy}
-            style={{ ...btnBase, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, cursor: busy ? "not-allowed" : "pointer" }}>Cancel</button>
-          <AmountHint id={hintId} problem={problem} style={{ flexBasis: "100%", textAlign: phone ? "left" : "right" }}/>
+          <button type="button" onClick={cancelCounter} disabled={busy} className={"dy-cc-btn" + sz}>Cancel</button>
+          <AmountHint id={hintId} problem={problem} style={{ flexBasis: "100%" }}/>
         </>
       );
     }
+    const message = (
+      <button type="button" onClick={canMessage(c) ? () => onMessage(c) : undefined} aria-disabled={canMessage(c) ? undefined : "true"}
+        title={canMessage(c) ? undefined : NO_THREAD_REASON} className={"dy-cc-btn" + sz}>
+        <MessageSquare size={small ? 15 : 17} aria-hidden="true"/> {"Message " + who}
+      </button>
+    );
     if (c.sellerCountered) {
       return (
         <>
-          <span style={{ padding: "8px 12px", borderRadius: 999, background: C.amberMist, color: C.amberDeep, fontFamily: F.head, fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5, border: "1.5px solid " + C.amber + "30", flexBasis: phone ? "100%" : "auto", justifyContent: "center" }}>
-            <Clock size={12} aria-hidden="true"/> Waiting for {c.buyer}
-          </span>
-          <button type="button" onClick={() => startCounter(c)} disabled={busy} aria-label={"Change your counter to " + c.buyer}
-            style={{ ...btnBase, border: "1.5px solid " + C.gPrimary + "55", background: C.gLightBg || "#ecfdf5", color: C.gPrimary, cursor: busy ? "not-allowed" : "pointer" }}>
-            <RefreshCw size={12} aria-hidden="true"/> Change counter
+          <button type="button" onClick={() => onWithdraw(c)} disabled={busy} aria-label={"Withdraw your counter to " + c.buyer} className={"dy-cc-btn dy-cc-btn--link" + sz}>
+            <Undo2 size={small ? 15 : 17} aria-hidden="true"/> Withdraw
           </button>
-          <button type="button" onClick={() => onWithdraw(c)} disabled={busy} aria-label={"Withdraw your counter to " + c.buyer}
-            style={{ ...btnBase, border: "1px solid #FECACA", background: C.paper, color: "#DC2626", cursor: busy ? "not-allowed" : "pointer" }}>
-            <Undo2 size={12} aria-hidden="true"/> Withdraw counter
-          </button>
+          {message}
+          {small && (
+            <button type="button" onClick={() => startCounter(c)} disabled={busy} aria-label={"Change your counter to " + c.buyer} className={"dy-cc-btn" + sz}>
+              <RefreshCw size={15} aria-hidden="true"/> Change counter
+            </button>
+          )}
         </>
       );
     }
-    const counterReason = c.amount >= listed ? (c.amount === listed ? OFFER_COUNTER_FULL : OFFER_COUNTER_ABOVE) : null;
-    const reasonId = "offer-counter-reason-" + c.id;
+    // Counter only below the asking price: there's nothing to negotiate on a
+    // full-price claim or an offer above it (the steps say "accept or decline").
+    const canCounter = c.amount < listed;
     return (
       <>
-        <button type="button" onClick={() => onAccept(c)} disabled={busy} aria-label={"Accept $" + c.amount + " from " + c.buyer + " for " + item.t} className="cta-primary"
-          style={{ ...btnBase, border: "none", background: C.gPrimary, color: "#fff", fontWeight: 800, cursor: busy ? "not-allowed" : "pointer" }}>
-          {busy ? "Saving…" : "Accept $" + c.amount}
-        </button>
-        {/* aria-disabled, not disabled: it stays reachable, and says why. */}
-        <button type="button" onClick={counterReason || busy ? undefined : () => startCounter(c)} aria-disabled={counterReason || busy ? "true" : undefined}
-          aria-label={"Counter " + c.buyer + "\u2019s offer"} aria-describedby={counterReason ? reasonId : undefined} title={counterReason || undefined}
-          style={{ ...btnBase, border: "1.5px solid " + C.gPrimary + "55", background: C.gLightBg || "#ecfdf5", color: C.gPrimary, cursor: counterReason || busy ? "not-allowed" : "pointer", opacity: counterReason ? 0.45 : 1 }}>
-          <RefreshCw size={12} aria-hidden="true"/> Counter
-        </button>
-        <button type="button" onClick={() => onDecline(c)} disabled={busy} aria-label={"Decline " + c.buyer + "\u2019s offer"}
-          style={{ ...btnBase, border: "1px solid #FECACA", background: C.paper, color: "#DC2626", fontWeight: 600, cursor: busy ? "not-allowed" : "pointer" }}>Decline</button>
-        {counterReason && (
-          <span id={reasonId} style={{ flexBasis: "100%", fontFamily: F.body, fontSize: 11.5, fontWeight: 600, color: C.mink, textAlign: phone ? "left" : "right" }}>{"Counter isn\u2019t available: " + counterReason.charAt(0).toLowerCase() + counterReason.slice(1)}</span>
+        <button type="button" onClick={() => onDecline(c)} disabled={busy} aria-label={"Decline " + c.buyer + "’s offer"} className={"dy-cc-btn dy-cc-btn--link" + sz}>Decline</button>
+        {canCounter && (
+          <button type="button" onClick={busy ? undefined : () => startCounter(c)} aria-disabled={busy ? "true" : undefined} aria-label={"Counter " + c.buyer + "’s offer"} className={"dy-cc-btn" + sz}>
+            <RefreshCw size={small ? 15 : 16} aria-hidden="true"/> Counter
+          </button>
         )}
+        <button type="button" onClick={() => onAccept(c)} disabled={busy} aria-label={"Accept $" + c.amount + " from " + c.buyer + " for " + item.t} className={"dy-cc-btn dy-cc-btn--dark" + sz}>
+          {busy ? "Saving…" : <><Check size={small ? 15 : 17} strokeWidth={2.6} aria-hidden="true"/> {"Accept " + moneyText(c.amount)}</>}
+        </button>
       </>
     );
   }
 
-  // One offer: label line, (on the card's own row) the item, the buyer, the
-  // amount and the actions. Compact for the "+N more" list.
-  function renderOffer(c, isPrimary) {
-    const busy = busyId === c.id;
-    const thumb = 52;
-    const photo = item.photos && item.photos.length > 0 ? item.photos[0] : null;
-    return (
-      <div style={{ opacity: busy ? 0.6 : 1 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-          {isPrimary && !c.sellerCountered && <StatusBadge status="offer" size="sm"/>}
-          <span style={{ fontSize: 12, color: C.mink, fontWeight: 600, fontFamily: F.body }}>{offerLabel(c, listed)}</span>
-          <span style={{ fontSize: 11, color: C.ash, fontFamily: F.body }}>{relativeTimeShort(c.at)}</span>
-          {isPrimary && menu && <span style={{ marginLeft: "auto" }}>{menu}</span>}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: phone ? 10 : 14, flexWrap: "wrap" }}>
-          {isPrimary && (
-            <button type="button" tabIndex={-1} aria-hidden="true" onClick={() => onOpen && onOpen(item)}
-              style={{ width: phone ? 46 : thumb, height: phone ? 46 : thumb, borderRadius: 14, background: C.sand, border: "1px solid " + C.fawn, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0, overflow: "hidden", padding: 0, cursor: "pointer" }}>
-              {photo ? <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/> : <span>{item.e}</span>}
-            </button>
-          )}
-          <div style={{ flex: 1, minWidth: phone ? "55%" : 0 }}>
-            {isPrimary && (
-              <button type="button" onClick={() => onOpen && onOpen(item)} className="dy-row-name"
-                style={{ display: "block", maxWidth: "100%", fontSize: 14, fontWeight: 700, color: C.ink, fontFamily: F.head, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}>{item.t}</button>
-            )}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: isPrimary ? 4 : 0, fontSize: 12, color: C.mink, fontFamily: F.body }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}><UserAvatar avatar={c.buyerAvatar} name={c.buyer} size={20} decorative initialsBg={avatarBg(c.buyer)} fontFamily={F.head} fontSize={8}/> {c.buyer}</span>
-            </div>
-          </div>
-          <div style={{ textAlign: "right", marginRight: wide ? 10 : 0, flexShrink: 0 }}>
-            <p style={{ fontSize: 18, fontWeight: 900, color: C.amberDeep, fontFamily: F.head }}>{"$" + c.amount}</p>
-            {c.amount !== listed && (
-              <p style={{ fontSize: 11, fontWeight: 500, color: C.ash, fontFamily: F.body, textDecoration: "line-through", marginTop: 1 }}>{"$" + listed + " listed"}</p>
-            )}
-          </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: wide ? "flex-start" : "flex-end", flexShrink: 0, width: wide ? "auto" : "100%", marginTop: wide ? 0 : 4, flexWrap: "wrap" }}>
-            {actionsFor(c)}
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // The card's ⋯: Change counter (seller countered) or Message (seller's
+  // turn), then the item's own actions with their rules (live-Drop locks,
+  // open-offer reasons) from InventoryView.itemActions.
+  const menu = [
+    primary.sellerCountered
+      ? { id: "change-counter", label: "Change counter", icon: RefreshCw, onSelect: () => startCounter(primary), disabledReason: busyId === primary.id ? "Saving…" : null }
+      : { id: "message-buyer", label: "Message " + view.who, icon: MessageCircle, onSelect: () => canMessage(primary) && onMessage(primary), disabledReason: canMessage(primary) ? null : NO_THREAD_REASON },
+    ...menuActions,
+  ];
 
   return (
-    <article aria-label={item.t + ": " + (awaitingCount > 0 ? awaitingCount + " offer" + (awaitingCount === 1 ? "" : "s") + " to review" : "waiting for the buyer")}
-      style={{ padding: phone ? "14px" : "16px 18px", borderRadius: 16, border: "2px solid " + C.oSoft, background: C.paper }}>
-      {renderOffer(primary, true)}
+    <ClaimCardFrame
+      ariaLabel={item.t + ": " + (awaitingCount > 0 ? awaitingCount + " offer" + (awaitingCount === 1 ? "" : "s") + " to review" : "waiting for the buyer")}
+      status={view.status} line={view.line} steps={view.steps}>
+      <div className="dy-cc-body" style={{ opacity: busyId === primary.id ? 0.7 : 1 }}>
+        <button type="button" tabIndex={-1} aria-hidden="true" onClick={() => onOpen && onOpen(item)} className="dy-cc-thumb">
+          {photo ? <img src={photo} alt=""/> : <span>{item.e}</span>}
+        </button>
+        <div className="dy-cc-info">
+          <button type="button" onClick={() => onOpen && onOpen(item)} className="dy-cc-title dy-row-name">{item.t}</button>
+          <p className="dy-cc-meta">
+            <span>
+              <UserAvatar avatar={primary.buyerAvatar} name={primary.buyer} size={24} decorative initialsBg={avatarBg(primary.buyer)} fontFamily={F.head} fontSize={9}/>
+              <span style={{ overflowWrap: "anywhere" }}>{(view.phase === "full" ? "Claim from " : "Offer from ") + primary.buyer}</span>
+            </span>
+          </p>
+          {others.length > 0 && (
+            <button type="button" onClick={() => setExpanded(x => !x)} aria-expanded={expanded} aria-controls={listId} className="dy-cc-more-btn">
+              {expanded ? "Hide other offers" : "+" + others.length + " more offer" + (others.length === 1 ? "" : "s")}
+              <ChevronDown size={15} aria-hidden="true"/>
+            </button>
+          )}
+        </div>
+        <div className="dy-cc-tagcell">
+          <PriceTag amount={moneyText(primary.amount)} amountLabel={view.label} strike={view.strike} note={view.note || null}/>
+        </div>
+        <span className="dy-cc-divider" aria-hidden="true"/>
+        <div className="dy-cc-actions">
+          {actionsFor(primary, false)}
+          <ItemActionsMenu itemName={item.t} actions={menu} size={48}/>
+        </div>
+      </div>
       {others.length > 0 && (
-        <>
-          <button type="button" onClick={() => setExpanded(x => !x)} aria-expanded={expanded} aria-controls={listId}
-            style={{ marginTop: 12, minHeight: 40, width: phone ? "100%" : "auto", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 14px", borderRadius: 999, border: "1.5px solid " + C.fawn, background: C.sand, color: C.ink, fontFamily: F.head, fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>
-            {expanded ? "Hide other offers" : "+" + others.length + " more offer" + (others.length === 1 ? "" : "s")}
-            <ChevronDown size={14} aria-hidden="true" style={{ transform: expanded ? "rotate(180deg)" : "none", transition: "transform 150ms" }}/>
-          </button>
-          <ul id={listId} hidden={!expanded} style={{ listStyle: "none", margin: "10px 0 0", padding: 0, display: expanded ? "flex" : "none", flexDirection: "column", gap: 10 }}>
-            {others.map(c => (
-              <li key={c.id} style={{ borderTop: "1px solid " + C.fawn, paddingTop: 10 }}>{renderOffer(c, false)}</li>
-            ))}
-          </ul>
-        </>
+        <ul id={listId} hidden={!expanded} className="dy-cc-others" style={{ display: expanded ? "block" : "none" }}>
+          {others.map(c => {
+            const ago = agoText(lastSetAt(c));
+            return (
+              <li key={c.id} className="dy-cc-other" style={{ opacity: busyId === c.id ? 0.6 : 1 }}>
+                <div className="dy-cc-other-who">
+                  <UserAvatar avatar={c.buyerAvatar} name={c.buyer} size={34} decorative initialsBg={avatarBg(c.buyer)} fontFamily={F.head} fontSize={11}/>
+                  <div style={{ minWidth: 0 }}>
+                    <span className="dy-cc-other-name">{c.buyer}</span>
+                    <span className="dy-cc-other-sub">{(c.sellerCountered ? "Your counter, waiting for " + firstNameOf(c.buyer) : offerLabel(c, listed)) + (ago ? " · " + ago : "")}</span>
+                  </div>
+                </div>
+                <span className="dy-cc-other-amount">{moneyText(c.amount)}</span>
+                <div className="dy-cc-actions">{actionsFor(c, true)}</div>
+              </li>
+            );
+          })}
+        </ul>
       )}
-    </article>
+    </ClaimCardFrame>
   );
 }
 
-// ── Pickup cards ───────────────────────────────────────────────────────────
-// One card for an accepted claim waiting to be picked up, shared by My items
-// (Claimed · pickup pending) and Orders → Scheduled pickups: the client's
-// design. Photo | title, buyer and price, the buyer's suggested time |
-// "Pickup pending", Mark picked up and the ⋯ menu (pickupMenuActions). On
-// phones the button takes the full width under the details, ⋯ beside it.
-const PICKUP_PILL = { bg: "#F1F2EF", ink: "#3D4148", border: "#DCDFD9" };
-function PickupCard({ item, buyer, buyerAvatar = null, price, when, width, busy = false, onPickup, onOpen = null, actions }) {
-  const wide = width >= 640;
-  const thumb = wide ? 84 : 64;
+// ── Pickup card ────────────────────────────────────────────────────────────
+// An accepted claim waiting to be picked up (Claimed · pickup pending): "Sold ·
+// awaiting pickup", who accepted and when, the steps, how the buyer pays, the
+// pickup time and the waitlist; the SOLD tag; Message buyer · Mark picked up
+// (asks first) · ⋯ (pickupMenuActions: Message buyer, View details, Mark as
+// no-show, Release item, Mark as sold elsewhere; the risky ones ask first).
+// How the buyer pays: the claim's choice, else the listing's.
+function pickupPaymentText(who, claimMethod, itemMethod) {
+  const m = String(claimMethod || itemMethod || "").toUpperCase();
+  if (m === "CASH") return who + " pays you at pickup, in cash";
+  if (m === "ETRANSFER") return who + " pays you at pickup, by e-Transfer";
+  return who + " pays you at pickup, cash or e-Transfer";
+}
+function PickupCard({ item, buyer, buyerAvatar = null, price, listed = null, when, acceptedAt = null, acceptedBy = "seller", paymentMethod = null, busy = false, onPickup, onOpen = null, onMessage = null, actions }) {
+  // Buyers waiting in case this sale falls through (DECISIONS.md #6).
+  const waiting = Array.isArray(item.waitlist) ? item.waitlist.length : 0;
   const photo = item.photos && item.photos.length > 0 ? item.photos[0] : null;
-  const priceLabel = price === 0 ? "Free" : "$" + price;
-  const pill = (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontFamily: F.head, fontSize: 12, fontWeight: 650, lineHeight: 1.2, padding: "4px 10px", borderRadius: 999, background: PICKUP_PILL.bg, color: PICKUP_PILL.ink, border: "1px solid " + PICKUP_PILL.border, whiteSpace: "nowrap" }}>
-      <Clock size={12} strokeWidth={2.3} aria-hidden="true"/> Pickup pending
-    </span>
-  );
-  const button = (
-    <button
-      type="button"
-      onClick={onPickup}
-      disabled={busy}
-      aria-label={"Mark picked up: " + item.t}
-      className="cta-primary"
-      style={{ minHeight: 44, padding: "0 18px", borderRadius: 999, border: "none", background: C.green, color: "#fff", boxShadow: "0 2px 0 " + C.greenDeep, fontFamily: F.head, fontSize: 14, fontWeight: 750, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, whiteSpace: "nowrap", cursor: busy ? "wait" : "pointer", opacity: busy ? 0.7 : 1, flex: wide ? "0 0 auto" : 1 }}
-    >
-      <Check size={16} strokeWidth={2.8} aria-hidden="true"/> {busy ? "Saving…" : "Mark picked up"}
-    </button>
-  );
-  const menu = <ItemActionsMenu itemName={item.t} actions={actions} size={wide ? 42 : 44}/>;
-  const thumbStyle = { width: thumb, height: thumb, borderRadius: wide ? 16 : 13, background: ROW.thumb, border: "1px solid " + ROW.border, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", padding: 0 };
-  const thumbInner = photo
-    ? <img src={photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}/>
-    : <span style={{ fontSize: wide ? 40 : 30 }} aria-hidden="true">{item.e}</span>;
-  const titleStyle = { fontFamily: F.head, fontSize: wide ? 17 : 16, fontWeight: 700, color: ROW.ink, letterSpacing: "-0.01em", lineHeight: 1.3, overflowWrap: "anywhere", display: "-webkit-box", WebkitLineClamp: wide ? 2 : 3, WebkitBoxOrient: "vertical", overflow: "hidden" };
-  const lineStyle = { display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontFamily: F.body, fontSize: wide ? 14 : 13.5, fontWeight: 500, color: ROW.muted, lineHeight: 1.4 };
+  const who = firstNameOf(buyer);
+  const priceLabel = moneyText(price);
+  const ago = agoText(acceptedAt);
+  const fullPrice = typeof listed === "number" && price >= listed;
+  const line = (acceptedBy === "buyer" ? who + " accepted your counter"
+    : "You accepted " + who + "’s " + (fullPrice ? "claim" : "offer")) + (ago ? " " + ago : "");
+  const steps = [
+    { label: acceptedBy === "buyer" ? who + " accepted " + priceLabel : (price === 0 ? "You gave it to " + who : "You accepted " + priceLabel), state: "done" },
+    { label: price === 0 ? "Hand over" : "Hand over & get paid", state: "current" },
+    { label: "Picked up", state: "todo" },
+  ];
+  const thumb = photo ? <img src={photo} alt=""/> : <span>{item.e}</span>;
+  const pickupText = when.kind === "unscheduled" ? "No pickup time yet" : (when.kind === "past" ? "Pickup was " : "Pickup ") + when.time;
   return (
-    <article style={{ display: "flex", flexDirection: "column", gap: 14, padding: wide ? "18px 20px" : "14px", borderRadius: 16, border: "1px solid " + ROW.border, background: C.paper }}>
-      <div style={{ display: "flex", alignItems: wide ? "center" : "flex-start", gap: wide ? 18 : 12 }}>
+    <ClaimCardFrame ariaLabel={item.t + ": sold to " + buyer + ", awaiting pickup"} status={"Sold · awaiting pickup"} line={line} steps={steps}>
+      <div className="dy-cc-body" style={{ opacity: busy ? 0.7 : 1 }}>
         {onOpen ? (
-          <button type="button" tabIndex={-1} aria-hidden="true" onClick={onOpen} style={{ ...thumbStyle, cursor: "pointer" }}>{thumbInner}</button>
+          <button type="button" tabIndex={-1} aria-hidden="true" onClick={onOpen} className="dy-cc-thumb">{thumb}</button>
         ) : (
-          <div style={thumbStyle}>{thumbInner}</div>
+          <div className="dy-cc-thumb" aria-hidden="true" style={{ cursor: "default" }}>{thumb}</div>
         )}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {!wide && <div style={{ marginBottom: 6 }}>{pill}</div>}
-          {onOpen ? (
-            <button type="button" onClick={onOpen} className="dy-row-name" style={{ ...titleStyle, background: "transparent", border: "none", padding: 0, cursor: "pointer", textAlign: "left", maxWidth: "100%" }}>{item.t}</button>
-          ) : (
-            <p style={titleStyle}>{item.t}</p>
-          )}
-          <p style={{ ...lineStyle, marginTop: 5 }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+        <div className="dy-cc-info">
+          {onOpen
+            ? <button type="button" onClick={onOpen} className="dy-cc-title dy-row-name">{item.t}</button>
+            : <p className="dy-cc-title" style={{ cursor: "default" }}>{item.t}</p>}
+          <p className="dy-cc-meta">
+            <span>
               {buyerAvatar
-                ? <UserAvatar avatar={buyerAvatar} name={buyer} size={20} decorative initialsBg={avatarBg(buyer)} fontFamily={F.head} fontSize={8}/>
-                : <User size={15} strokeWidth={2.2} aria-hidden="true" style={{ flexShrink: 0 }}/>}
-              <span style={{ overflowWrap: "anywhere" }}>{buyer}</span>
+                ? <UserAvatar avatar={buyerAvatar} name={buyer} size={24} decorative initialsBg={avatarBg(buyer)} fontFamily={F.head} fontSize={9}/>
+                : <User size={17} strokeWidth={2.2} aria-hidden="true"/>}
+              <span style={{ overflowWrap: "anywhere" }}>{"Sold to " + buyer}</span>
             </span>
-            <span style={{ fontFamily: F.head, fontSize: wide ? 16 : 15, fontWeight: 750, color: C.green, fontVariantNumeric: "tabular-nums" }}>{priceLabel}</span>
+            {waiting > 0 && (
+              <span className="dy-cc-chip" title="If this sale falls through, their offers become active again and you choose">
+                {waiting === 1 ? "1 on the waitlist" : waiting + " on the waitlist"}
+              </span>
+            )}
           </p>
-          {/* The icon stays beside the text; only the text wraps. */}
-          <p style={{ ...lineStyle, marginTop: 4, flexWrap: "nowrap", alignItems: "flex-start", color: when.kind === "today" ? C.greenDeep : ROW.muted, fontWeight: when.kind === "today" ? 650 : 500 }}>
-            <CalendarClock size={15} strokeWidth={2.2} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}/>
-            <span style={{ overflowWrap: "anywhere", minWidth: 0 }}>
-              {when.label}
-              {when.kind === "today" && " "}
-              {when.kind === "today" && (
-                <span style={{ display: "inline-block", marginLeft: 2, fontFamily: F.head, fontSize: 11.5, fontWeight: 700, lineHeight: 1.4, padding: "1px 8px", borderRadius: 999, background: C.greenMist, color: C.greenDeep }}>Today</span>
-              )}
+          {price > 0 && (
+            <p className="dy-cc-meta dy-cc-meta--small">
+              <span><Banknote size={16} strokeWidth={2.1} aria-hidden="true"/> {pickupPaymentText(who, paymentMethod, item.raw?.paymentMethod)}</span>
+            </p>
+          )}
+          <p className="dy-cc-meta dy-cc-meta--small">
+            <span>
+              <CalendarClock size={16} strokeWidth={2.1} aria-hidden="true"/>
+              <span style={{ overflowWrap: "anywhere" }}>{pickupText}</span>
             </span>
+            {when.kind === "today" && <span className="dy-cc-chip dy-cc-chip--today">Today</span>}
           </p>
         </div>
-        {wide && (
-          <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12 }}>
-            {pill}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>{button}{menu}</div>
-          </div>
-        )}
+        <div className="dy-cc-tagcell">
+          <PriceTag amount={priceLabel} amountLabel="Sold for" sold/>
+        </div>
+        <span className="dy-cc-divider" aria-hidden="true"/>
+        <div className="dy-cc-actions">
+          <button type="button" onClick={onMessage || undefined} aria-disabled={onMessage ? undefined : "true"} title={onMessage ? undefined : NO_THREAD_REASON} className="dy-cc-btn">
+            <MessageSquare size={17} aria-hidden="true"/> {"Message " + who}
+          </button>
+          <button type="button" onClick={onPickup} disabled={busy} aria-label={"Mark picked up: " + item.t} className="dy-cc-btn dy-cc-btn--dark">
+            <Check size={17} strokeWidth={2.8} aria-hidden="true"/> {busy ? "Saving…" : "Mark picked up"}
+          </button>
+          <ItemActionsMenu itemName={item.t} actions={actions} size={48}/>
+        </div>
       </div>
-      {!wide && <div style={{ display: "flex", alignItems: "center", gap: 10 }}>{button}{menu}</div>}
-    </article>
+    </ClaimCardFrame>
   );
 }
 
 // The pickup card's ⋯ menu: Message buyer · View details · — · Mark as no-show
 // · Release item (the last two in red, each confirmed first).
-function pickupMenuActions({ onMessage, onView, onNoShow, onRelease }) {
+function pickupMenuActions({ onMessage, onView, onNoShow, onRelease, onSoldElsewhere }) {
   return [
     { id: "message", label: "Message buyer", icon: MessageCircle, onSelect: onMessage || (() => {}), disabledReason: onMessage ? null : "There's no conversation with this buyer yet." },
     { id: "view", label: "View details", icon: Eye, onSelect: onView || (() => {}), disabledReason: onView ? null : "This item can't be opened from here." },
     { id: "no-show", label: "Mark as no-show", icon: UserX, danger: true, onSelect: onNoShow },
     { id: "release", label: "Release item", icon: Undo2, danger: true, onSelect: onRelease },
+    ...(onSoldElsewhere ? [{ id: "sold-elsewhere", label: "Mark as sold elsewhere", icon: Tag, danger: true, onSelect: onSoldElsewhere }] : []),
   ];
 }
 
@@ -5461,7 +5589,8 @@ function SellerMessagesView({ user = null, accessToken = null, convList: convLis
           // Newest-first, so the first claim seen for a conversation is the
           // one that counts.
           if (!latest[c.conversationId]) latest[c.conversationId] = c;
-          if (c.status === "PROPOSED" || c.status === "ACCEPTED") {
+          // WAITLISTED too: the banner then offers Remove from waitlist.
+          if (c.status === "PROPOSED" || c.status === "ACCEPTED" || c.status === "WAITLISTED") {
             idx[c.conversationId] = c;
           }
         }

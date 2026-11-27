@@ -249,6 +249,8 @@ const BUYER_ENUM_TO_PAYMENT = {
 // mapping follows what a buyer expects to see:
 //   PENDING   -> "offer-pending"   (waiting on the seller to confirm)
 //   CONFIRMED -> "pickup-scheduled" (with date/time from pickupSlot)
+//   WAITLISTED -> "waitlisted"     (the seller accepted another buyer; this
+//                                   offer waits in case that sale falls through)
 // REJECTED / CANCELLED / PICKED_UP are filtered out before this runs.
 function adaptBuyerClaim(api) {
   if (!api) return null;
@@ -5717,6 +5719,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
     "pickup-overdue":   { label: "Pickup overdue",    color: C.amberDeep, bg: C.amberMist,  icon: AlertCircle },
     "pickup-scheduled": { label: "Scheduled",         color: C.greenDeep, bg: C.greenMist,  icon: CheckCircle },
     "offer-pending":    { label: "Offer pending",     color: C.amberDeep, bg: C.amberMist,  icon: RefreshCw   },
+    "waitlisted":       { label: "Waitlisted",        color: C.amberDeep, bg: C.amberMist,  icon: Clock       },
     "completed":        { label: "Completed",         color: C.ash,       bg: C.sand,       icon: Check       },
   };
 
@@ -5810,7 +5813,9 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
     const snapshot = claims;
     setClaims(prev => prev.filter(c => c.id !== claim.id));
     setCancelTarget(null);
-    flash(claim.status === "offer-pending"
+    flash(claim.status === "waitlisted"
+      ? "You left the waitlist for " + claim.t + "."
+      : claim.status === "offer-pending"
       ? "Claim on " + claim.t + " waived. Item released."
       : "Claim on " + claim.t + " cancelled. Item released.");
     // Skip the backend call for demo claims (no real id on the server) and for
@@ -6088,6 +6093,19 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                         </button>
                       </>
                     )}
+                    {/* Waitlisted: the seller accepted another buyer. Nothing
+                        to answer; if that sale falls through this offer is
+                        active again. The buyer can leave the waitlist. */}
+                    {c.status === "waitlisted" && (
+                      <>
+                        <span style={{ fontFamily: F.head, fontSize: isMobile ? 14 : 15, fontWeight: 700, color: C.amberDeep, padding: isMobile ? "10px 14px" : "12px 18px", background: C.paper, borderRadius: isMobile ? 22 : 999, border: "1.5px solid " + C.amber + "66", display: "flex", alignItems: "center", gap: 8, whiteSpace: "normal", maxWidth: "100%", minHeight: 44, boxSizing: "border-box" }}>
+                          <Clock size={16}/> On the waitlist: if the sale falls through, your offer is active again
+                        </span>
+                        <button onClick={() => setCancelTarget(c)} title="Take your offer off the waitlist" style={{ padding: "12px 18px", borderRadius: 999, border: "1.5px solid " + C.claret + "40", background: C.paper, color: C.claret, fontFamily: F.head, fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap" }}>
+                          <X size={16}/> Leave waitlist
+                        </button>
+                      </>
+                    )}
                     {c.status === "offer-pending" && !c.iMadeTheOffer && (
                       counterClaimId === c.id ? (
                         <>
@@ -6197,15 +6215,19 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
                 scheduled. Only the copy differs; the 2-hour courtesy note has
                 nothing to say when no pickup has been agreed. */}
             <h3 style={{ fontFamily: F.head, fontSize: 20, fontWeight: 900, color: C.ink, marginBottom: 8 }}>
-              {cancelTarget.status === "offer-pending" ? "Waive this item?" : "Cancel this claim?"}
+              {cancelTarget.status === "waitlisted" ? "Leave the waitlist?" : cancelTarget.status === "offer-pending" ? "Waive this item?" : "Cancel this claim?"}
             </h3>
             <p style={{ fontFamily: F.body, fontSize: 14, fontWeight: 500, color: C.mink, lineHeight: 1.55, marginBottom: 18 }}>
-              Your claim on <b style={{ color: C.ink }}>{cancelTarget.t}</b> will be released so another neighbour can claim it. The seller will be notified.
+              {cancelTarget.status === "waitlisted"
+                ? <>Your offer on <b style={{ color: C.ink }}>{cancelTarget.t}</b> comes off the waitlist. The seller will be notified.</>
+                : <>Your claim on <b style={{ color: C.ink }}>{cancelTarget.t}</b> will be released so another neighbour can claim it. The seller will be notified.</>}
             </p>
             <div style={{ padding: 12, borderRadius: 12, background: C.amberMist, border: "1px solid " + C.amber + "30", marginBottom: 18, display: "flex", alignItems: "center", gap: 9 }}>
               <Info size={14} style={{ color: C.amberDeep, flexShrink: 0 }}/>
               <p style={{ fontFamily: F.body, fontSize: 12, fontWeight: 600, color: C.amberDeep, lineHeight: 1.5 }}>
-                {cancelTarget.status === "offer-pending"
+                {cancelTarget.status === "waitlisted"
+                  ? "If the current sale falls through, the seller won't be able to choose you."
+                  : cancelTarget.status === "offer-pending"
                   ? "Your offer is withdrawn and the item goes back on the listing. You can claim it again later if nobody else does."
                   : "Please cancel at least 2 hours before your scheduled pickup."}
               </p>
@@ -6213,7 +6235,7 @@ function ClaimsPage({ claims, setClaims, onBrowse, onBack, onGoToMessages, onOpe
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", ...dialogFoot(28) }}>
               <button onClick={() => setCancelTarget(null)} style={{ padding: "11px 18px", borderRadius: 12, border: "1.5px solid " + C.fawn, background: C.paper, color: C.mink, fontFamily: F.head, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Keep claim</button>
               <button onClick={() => cancelClaim(cancelTarget)} style={{ padding: "11px 18px", borderRadius: 12, border: "none", background: C.claret, color: "#fff", fontFamily: F.head, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-                {cancelTarget.status === "offer-pending" ? "Waive item" : "Cancel claim"}
+                {cancelTarget.status === "waitlisted" ? "Leave waitlist" : cancelTarget.status === "offer-pending" ? "Waive item" : "Cancel claim"}
               </button>
             </div>
           </div>
@@ -6360,7 +6382,8 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
   }, [emojiOpen]);
   const [offerComposerAmt, setOfferComposerAmt]   = useState("");
 
-  // BUG-055 — active claims for buyer's conversations (PROPOSED + ACCEPTED).
+  // BUG-055 — active claims for buyer's conversations (PROPOSED + ACCEPTED,
+  // and WAITLISTED: the banner then offers Leave waitlist).
   // Powers the in-chat action banner so the buyer can Accept/Counter/Decline
   // a seller's counter, or Confirm pickup once accepted.
   const [activeClaimByConv, setActiveClaimByConv]   = useState({});
@@ -6386,7 +6409,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
           // /api/claims/mine comes back newest-first, so the first claim seen
           // for a conversation is the one that counts.
           if (!latest[c.conversationId]) latest[c.conversationId] = c;
-          if (c.status === "PROPOSED" || c.status === "ACCEPTED") {
+          if (c.status === "PROPOSED" || c.status === "ACCEPTED" || c.status === "WAITLISTED") {
             idx[c.conversationId] = c;
           }
         }
@@ -6456,7 +6479,7 @@ function MessagesPage({ user = null, accessToken = null, claims = [], onAcceptCo
         method: "PATCH", token: accessToken,
         body: JSON.stringify({ reason: "buyer-cancelled" }),
       });
-      chatFlashOk("Offer withdrawn.");
+      chatFlashOk(claim.status === "WAITLISTED" ? "You left the waitlist." : "Offer withdrawn.");
       setActiveClaimsTick(t => t + 1);
     } catch (err) { chatFlashErr("withdraw the offer", err); }
     finally { setChatBusyClaimId(null); }
@@ -8932,10 +8955,11 @@ export default function DropYardBuyerDashboard({
         if (cancelled) return;
         const list = Array.isArray(data?.claims) ? data.claims : [];
         // BUG-055 — new lifecycle statuses. Active claims (shown on Claims
-        // tab) are PROPOSED + ACCEPTED. Terminal statuses (PICKED_UP for
-        // History tab; DECLINED/CANCELLED/EXPIRED hidden) drop out here.
+        // tab) are PROPOSED + ACCEPTED + WAITLISTED. Terminal statuses
+        // (PICKED_UP for History tab; DECLINED/CANCELLED/EXPIRED hidden) drop
+        // out here.
         const active = list
-          .filter((c) => c.status === "PROPOSED" || c.status === "ACCEPTED")
+          .filter((c) => c.status === "PROPOSED" || c.status === "ACCEPTED" || c.status === "WAITLISTED")
           .map(adaptBuyerClaim).filter(Boolean);
         setClaims(active);
         setCompletedClaimsTotal(list.filter((c) => c.status === "PICKED_UP").length);

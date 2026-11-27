@@ -4,13 +4,15 @@ import { MESSAGES_TZ } from "./format";
 
 export type PillTone = "amber" | "red" | "green" | "grey";
 export interface ClaimPill {
-  key: "offer-pending" | "pickup-today" | "in-progress" | "picked-up" | "declined" | "expired" | "cancelled";
+  key: "offer-pending" | "waitlisted" | "pickup-today" | "in-progress" | "picked-up" | "declined" | "went-elsewhere" | "sold-elsewhere" | "expired" | "cancelled";
   label: string;
   tone: PillTone;
 }
 
 export interface ClaimLike {
   status?: string | null;
+  /** Why a claim closed: "went-to-another-buyer" (the waitlist closed at pickup), "sold-elsewhere", "no-show"… */
+  cancelReason?: string | null;
   buyerConfirmedReceiptAt?: string | null;
   pickupSlot?: string | null;
   /** When the claim was made: what a bare weekday in pickupSlot counts from. */
@@ -109,6 +111,10 @@ export function claimPill(claim: ClaimLike | null | undefined, now: Date = new D
     case "PROPOSED":
     case "PENDING":
       return { key: "offer-pending", label: "Offer pending", tone: "amber" };
+    // The seller accepted another buyer; this offer waits in case that sale
+    // falls through (DECISIONS.md #6 in the app repo).
+    case "WAITLISTED":
+      return { key: "waitlisted", label: "Waitlisted", tone: "amber" };
     case "ACCEPTED":
       // A receipt the buyer confirmed is a finished sale (the backend treats
       // it as completed too) even before the seller marks it picked up.
@@ -120,10 +126,12 @@ export function claimPill(claim: ClaimLike | null | undefined, now: Date = new D
       return { key: "picked-up", label: "Picked up", tone: "green" };
     case "DECLINED":
     case "REJECTED":
+      if (claim.cancelReason === "went-to-another-buyer") return { key: "went-elsewhere", label: "Went to another buyer", tone: "grey" };
       return { key: "declined", label: "Declined", tone: "grey" };
     case "EXPIRED":
       return { key: "expired", label: "Expired", tone: "grey" };
     case "CANCELLED":
+      if (claim.cancelReason === "sold-elsewhere") return { key: "sold-elsewhere", label: "Sold elsewhere", tone: "grey" };
       return { key: "cancelled", label: "Cancelled", tone: "grey" };
     default:
       return null;
@@ -133,8 +141,9 @@ export function claimPill(claim: ClaimLike | null | undefined, now: Date = new D
 /**
  * A claim still in play: what the Active Claims tab lists. An accepted claim
  * the buyer has confirmed stays here until the seller marks it picked up,
- * because the seller still has that step to do.
+ * because the seller still has that step to do. A waitlisted claim is still
+ * in play too: it can become an offer again.
  */
 export function isLiveClaim(claim: ClaimLike | null | undefined): boolean {
-  return claim?.status === "PROPOSED" || claim?.status === "PENDING" || claim?.status === "ACCEPTED";
+  return claim?.status === "PROPOSED" || claim?.status === "PENDING" || claim?.status === "ACCEPTED" || claim?.status === "WAITLISTED";
 }

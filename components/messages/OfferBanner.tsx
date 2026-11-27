@@ -58,6 +58,10 @@ const btn = (kind: "primary" | "outline" | "danger" | "quiet", busy: boolean): C
  * Pending offer, viewer's turn:     Accept Offer · Counter Offer · Decline
  * Pending offer, waiting on them:   "Waiting for David K. to respond"
  *                                   + Withdraw offer (buyer) / Decline (seller)
+ * Waitlisted (another buyer's claim was accepted): no Accept or Counter;
+ *                                   Leave waitlist (buyer) / Remove from
+ *                                   waitlist (seller). If that sale falls
+ *                                   through, the offer becomes active again.
  * Accepted:                         Confirm pickup (buyer) / Mark picked up (seller)
  * Decline and Withdraw ask first; they end the negotiation.
  */
@@ -86,8 +90,9 @@ function OfferBannerBody({
   }, [mode]);
 
   const proposed = claim.status === "PROPOSED" || claim.status === "PENDING";
+  const waitlisted = claim.status === "WAITLISTED";
   const accepted = claim.status === "ACCEPTED";
-  if (!proposed && !accepted) return null;
+  if (!proposed && !waitlisted && !accepted) return null;
   const receipt = !!claim.buyerConfirmedReceiptAt;
 
   async function submitCounter(e: FormEvent) {
@@ -103,14 +108,20 @@ function OfferBannerBody({
     if (ok) { setMode("idle"); setAmount(""); }
   }
 
-  const tone = proposed
+  const tone = proposed || waitlisted
     ? { bg: MC.amberMist, border: MC.amber + "40", icon: MC.amber, title: MC.amberDeep }
     : { bg: MC.greenMist, border: MC.green + "40", icon: MC.green, title: MC.greenDeep };
 
-  const title = proposed
-    ? (claim.myTurn ? `Offer: $${claim.amount}` : `Your offer: $${claim.amount}`)
-    : (receipt ? `Picked up · $${claim.amount}` : `Claim in progress · $${claim.amount}`);
-  const detail = proposed
+  const title = waitlisted
+    ? (role === "buyer" ? `On the waitlist · $${claim.amount}` : `${otherName} is on the waitlist · $${claim.amount}`)
+    : proposed
+      ? (claim.myTurn ? `Offer: $${claim.amount}` : `Your offer: $${claim.amount}`)
+      : (receipt ? `Picked up · $${claim.amount}` : `Claim in progress · $${claim.amount}`);
+  const detail = waitlisted
+    ? (role === "buyer"
+      ? "The seller accepted another buyer. If that sale falls through, your offer becomes active again."
+      : "You accepted another buyer. If that sale falls through, this offer becomes active again and you can choose.")
+    : proposed
     ? [`Listed at $${claim.listed}`, claim.expiresAt ? `Expires ${expiryLabel(claim.expiresAt)}` : null].filter(Boolean).join(" · ")
     : role === "buyer"
       ? (receipt ? "You confirmed pickup. Enjoy your item!" : `Coordinate pickup here, then confirm pickup once you have the item.${claim.pickupSlot ? ` Buyer suggested: ${tidyPickupTime(claim.pickupSlot)}.` : ""}`)
@@ -158,21 +169,35 @@ function OfferBannerBody({
         </div>
       </form>
     );
-  } else if (proposed && (mode === "confirm-decline" || mode === "confirm-withdraw")) {
+  } else if ((proposed || waitlisted) && (mode === "confirm-decline" || mode === "confirm-withdraw")) {
     const withdrawing = mode === "confirm-withdraw";
     actions = (
-      <div role="group" aria-label={withdrawing ? "Confirm withdrawing your offer" : "Confirm declining this offer"} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+      <div role="group" aria-label={withdrawing ? (waitlisted ? "Confirm leaving the waitlist" : "Confirm withdrawing your offer") : (waitlisted ? "Confirm removing this buyer from the waitlist" : "Confirm declining this offer")} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
         <p style={{ fontFamily: MF.body, fontSize: 13, fontWeight: 700, color: MC.ink, flexBasis: "100%" }}>
           {withdrawing
-            ? `Withdraw your $${claim.amount} offer? ${otherName} will see that you withdrew it.`
-            : `Decline this $${claim.amount} offer? This ends the negotiation.`}
+            ? (waitlisted ? `Leave the waitlist? ${otherName} will see that you left.` : `Withdraw your $${claim.amount} offer? ${otherName} will see that you withdrew it.`)
+            : (waitlisted ? `Remove ${otherName} from the waitlist? Their $${claim.amount} offer ends.` : `Decline this $${claim.amount} offer? This ends the negotiation.`)}
         </p>
         <button ref={firstActionRef} type="button" disabled={busy} onClick={() => (withdrawing ? onWithdraw?.() : onDecline())} style={btn("danger", busy)}>
-          {withdrawing ? "Withdraw offer" : "Decline offer"}
+          {withdrawing ? (waitlisted ? "Leave waitlist" : "Withdraw offer") : (waitlisted ? "Remove" : "Decline offer")}
         </button>
         <button type="button" disabled={busy} onClick={() => setMode("idle")} style={btn("quiet", busy)}>
-          {withdrawing ? "Keep offer" : "Keep talking"}
+          {withdrawing ? (waitlisted ? "Stay on it" : "Keep offer") : (waitlisted ? "Keep them" : "Keep talking")}
         </button>
+      </div>
+    );
+  } else if (waitlisted) {
+    actions = (
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: 999, background: MC.paper, border: "1.5px solid " + MC.amber + "40", color: MC.amberDeep, fontFamily: MF.head, fontSize: 12, fontWeight: 800 }}>
+          <Clock size={13} aria-hidden="true" /> Waitlisted
+        </span>
+        {role === "buyer" && onWithdraw && (
+          <button type="button" disabled={busy} onClick={() => setMode("confirm-withdraw")} style={btn("danger", busy)}>Leave waitlist</button>
+        )}
+        {role === "seller" && (
+          <button type="button" disabled={busy} onClick={() => setMode("confirm-decline")} style={btn("danger", busy)}>Remove from waitlist</button>
+        )}
       </div>
     );
   } else if (proposed && claim.myTurn) {
