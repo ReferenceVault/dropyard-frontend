@@ -39,6 +39,8 @@ const CLAIM_STATUS_META: Record<string, { label: string; color: string; bg: stri
   CONFIRMED:  { label: "Confirmed",  color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200" },
   REJECTED:   { label: "Rejected",   color: "text-rose-700",    bg: "bg-rose-50 border-rose-200" },
   PICKED_UP:  { label: "Picked up",  color: "text-slate-700",   bg: "bg-slate-100 border-slate-200" },
+  // Waiting behind another buyer's accepted claim (the waitlist).
+  WAITLISTED: { label: "Waitlisted", color: "text-amber-700",   bg: "bg-amber-50 border-amber-200" },
 };
 
 const MOVING_STATUS_META: Record<string, { label: string; color: string; bar: string }> = {
@@ -299,7 +301,7 @@ function ClaimFunnel({ data }: { data: Overview | null }) {
       </div>
     );
   }
-  const steps = ["PENDING", "CONFIRMED", "PICKED_UP", "REJECTED"];
+  const steps = ["PENDING", "CONFIRMED", "PICKED_UP", "REJECTED", "WAITLISTED"];
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       {steps.map((step) => {

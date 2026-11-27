@@ -1,0 +1,145 @@
+/* ── Seller claim cards (My items: Claimed · action pending / pickup pending) ──
+   The client's redesign; markup in ClaimCardParts.tsx (which imports this file) and
+   OfferCard / PickupCard in DropYard_SellerDashboard.jsx. Sized by the card's
+   own width (container queries), so it's the same with the sidebar open or
+   closed. Text contrast (AA, measured): orange #C2410C 4.9:1 and muted #5F5650
+   6.8:1 on the header cream, future steps #6B625C 5.6:1; on the tag paper
+   ink #3B2410 12.7:1, strike/note #5C4630 7.8:1, SOLD #B42318 5.8:1; red
+   #B42318 6.6:1 on white. */
+.dy-cc { container-type: inline-size; position: relative; border: 1px solid #F2E1CE; border-radius: 18px; background: #FFFFFF; overflow: hidden; box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04), 0 4px 14px -6px rgba(28, 25, 23, 0.08); font-family: var(--font-instrument-sans), -apple-system, BlinkMacSystemFont, sans-serif; color: #1C1917; }
+.dy-cc-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* Header strip: status · plain line | steps. */
+.dy-cc-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; padding: 13px 24px; background: #FFF7EE; border-bottom: 1px solid #F5E4D2; }
+.dy-cc-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; margin: 0; flex: 0 1 auto; }
+.dy-cc-dot { width: 9px; height: 9px; border-radius: 50%; background: #F97316; box-shadow: 0 0 0 4px #FFE4CC; flex-shrink: 0; margin-right: 2px; }
+.dy-cc-badge { font-size: 13px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: #C2410C; white-space: nowrap; }
+.dy-cc-sep { color: #5F5650; font-weight: 700; }
+.dy-cc-line { font-size: 14px; font-weight: 500; color: #5F5650; line-height: 1.4; overflow-wrap: anywhere; }
+
+/* Every step has a connector before it; the list is pulled left by one
+   connector and clipped, so no line (first or wrapped) starts with one. */
+.dy-cc-track { margin-left: auto; min-width: 0; overflow: hidden; }
+.dy-cc-steps { display: flex; flex-wrap: wrap; align-items: center; row-gap: 6px; list-style: none; margin: 0 0 0 -34px; padding: 0; }
+.dy-cc-step { display: flex; align-items: center; gap: 7px; font-size: 13.5px; font-weight: 550; color: #1C1917; white-space: nowrap; }
+.dy-cc-step--current { font-weight: 750; }
+.dy-cc-step--todo { color: #6B625C; }
+.dy-cc-join { width: 22px; height: 2px; border-radius: 1px; background: #3B2410; margin: 0 9px 0 3px; }
+.dy-cc-join--todo { height: 1.5px; background: #DDD3C8; }
+.dy-cc-mark { width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; box-sizing: border-box; }
+.dy-cc-step--done .dy-cc-mark { background: #3B2410; color: #FFFFFF; }
+.dy-cc-step--current .dy-cc-mark { border: 2px solid #F97316; background: #F97316; box-shadow: inset 0 0 0 3px #FFFFFF; }
+.dy-cc-step--todo .dy-cc-mark { border: 1.5px solid #CFC5BA; background: #FFFFFF; }
+.dy-cc-compact { display: none; margin: 0; align-items: center; gap: 10px; font-size: 13.5px; color: #1C1917; line-height: 1.35; }
+.dy-cc-compact strong { font-weight: 750; }
+.dy-cc-bars { display: inline-flex; gap: 3px; flex-shrink: 0; }
+.dy-cc-bar { width: 14px; height: 5px; border-radius: 3px; background: #E4DAD0; }
+.dy-cc-bar--done { background: #3B2410; }
+.dy-cc-bar--current { background: #F97316; }
+
+/* Body: photo | title, buyer, details | tag | divider | actions. */
+.dy-cc-body { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; grid-template-areas: "thumb info tag divider actions"; align-items: center; gap: 16px 24px; padding: 22px 24px; }
+.dy-cc-thumb { grid-area: thumb; width: 92px; height: 92px; border-radius: 16px; background: #F7F3EF; border: 1px solid #ECE6E0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0; flex-shrink: 0; font-size: 40px; cursor: pointer; }
+.dy-cc-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dy-cc-info { grid-area: info; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.dy-cc-title { max-width: 100%; margin: 0; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; font-family: inherit; font-size: 22px; font-weight: 750; letter-spacing: -0.015em; line-height: 1.22; color: #1C1917; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dy-cc-title:hover { text-decoration: underline; text-underline-offset: 3px; }
+.dy-cc-title:focus-visible, .dy-cc-thumb:focus-visible { outline: 2px solid #C2410C; outline-offset: 2px; }
+.dy-cc-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 0; font-size: 15px; font-weight: 500; color: #5F5650; line-height: 1.4; }
+.dy-cc-meta > span { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.dy-cc-meta svg { flex-shrink: 0; }
+.dy-cc-meta--small { font-size: 14px; }
+.dy-cc-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 700; line-height: 1.3; padding: 3px 10px; border-radius: 999px; background: #FFF4E5; color: #8A4B00; border: 1px solid #FBD9AC; white-space: nowrap; }
+.dy-cc-chip--today { background: #E3F4E1; color: #166534; border-color: #CBE6C6; }
+.dy-cc-more-btn { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 14px; border-radius: 999px; border: 1.5px solid #F3C9A8; background: #FFF4EC; color: #9A3412; font-family: inherit; font-size: 13.5px; font-weight: 750; cursor: pointer; }
+.dy-cc-more-btn:hover { background: #FFEDE0; }
+.dy-cc-more-btn:focus-visible { outline: 2px solid #C2410C; outline-offset: 2px; }
+.dy-cc-more-btn svg { transition: transform 150ms; }
+.dy-cc-more-btn[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+.dy-cc-tagcell { grid-area: tag; display: flex; justify-content: center; padding: 4px 6px 4px 0; }
+.dy-cc-divider { grid-area: divider; align-self: stretch; width: 1px; background: #EFE6DC; margin: 6px 0; }
+.dy-cc-actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.dy-cc-note { flex-basis: 100%; margin: 0; text-align: right; font-size: 12.5px; font-weight: 600; color: #5F5650; }
+
+/* Buttons: text link (red), outlined, dark filled. */
+.dy-cc-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 20px; border-radius: 12px; border: 1.5px solid #E7DCD0; background: #FFFFFF; color: #1C1917; font-family: inherit; font-size: 15.5px; font-weight: 700; line-height: 1.2; white-space: nowrap; cursor: pointer; transition: background 120ms, border-color 120ms; }
+.dy-cc-btn:hover { background: #FFF8F1; border-color: #DCCBB9; }
+.dy-cc-btn:focus-visible { outline: 2px solid #C2410C; outline-offset: 2px; }
+.dy-cc-btn--dark { border-color: #3B2410; background: #3B2410; color: #FFFFFF; }
+.dy-cc-btn--dark:hover { background: #2A1909; border-color: #2A1909; }
+.dy-cc-btn--link { border-color: transparent; background: transparent; color: #B42318; padding: 0 12px; }
+.dy-cc-btn--link:hover { background: #FEF3F2; border-color: transparent; }
+.dy-cc-btn--sm { min-height: 44px; padding: 0 14px; font-size: 14px; border-radius: 10px; }
+.dy-cc-btn:disabled, .dy-cc-btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; }
+.dy-cc-btn--dark:disabled:hover { background: #3B2410; }
+.dy-cc-input { width: 96px; min-height: 48px; padding: 0 12px; border-radius: 12px; border: 1.5px solid #D6CABD; background: #FFFFFF; font-family: inherit; font-size: 17px; font-weight: 700; color: #1C1917; box-sizing: border-box; }
+.dy-cc-input:focus-visible { outline: 2px solid #C2410C; outline-offset: 1px; }
+.dy-cc-dollar { font-size: 17px; font-weight: 800; color: #1C1917; }
+
+/* "+N more offers": the other offers on this item. */
+.dy-cc-others { list-style: none; margin: 0; padding: 0 24px 6px; border-top: 1px solid #F3EBE2; }
+.dy-cc-other { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 14px 0; }
+.dy-cc-other + .dy-cc-other { border-top: 1px solid #F3EBE2; }
+.dy-cc-other-who { display: flex; align-items: center; gap: 10px; flex: 1 1 220px; min-width: 0; }
+.dy-cc-other-name { display: block; font-size: 15px; font-weight: 700; color: #1C1917; overflow-wrap: anywhere; }
+.dy-cc-other-sub { display: block; font-size: 13px; font-weight: 500; color: #5F5650; }
+.dy-cc-other-amount { font-size: 19px; font-weight: 800; color: #1C1917; font-variant-numeric: tabular-nums; }
+.dy-cc-other .dy-cc-actions { flex: 0 1 auto; }
+
+/* The paper price tag: cream paper, punched hole, a string, Caveat amounts. */
+.dy-tag { position: relative; display: inline-flex; align-items: center; transform: rotate(-3deg); filter: drop-shadow(0 3px 5px rgba(90, 55, 15, 0.16)); }
+.dy-tag--sold { transform: rotate(-2deg); }
+.dy-tag-string { width: 46px; height: 24px; margin-right: -12px; color: #6B4A2A; flex-shrink: 0; position: relative; z-index: 1; }
+.dy-tag-paper { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 156px; min-height: 96px; padding: 10px 18px 10px 32px; box-sizing: border-box; background: linear-gradient(180deg, #FFF9EC, #FBEFD6); clip-path: polygon(16px 0, 100% 0, 100% 100%, 16px 100%, 0 calc(100% - 16px), 0 16px); }
+.dy-tag-hole { position: absolute; left: 13px; top: 50%; width: 9px; height: 9px; margin-top: -4.5px; border-radius: 50%; background: #FFFFFF; box-shadow: inset 0 1px 2px rgba(90, 55, 15, 0.35); }
+.dy-tag-top { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.dy-tag-strike { font-family: var(--font-caveat), "Segoe Print", cursive; font-size: 21px; font-weight: 700; line-height: 1; color: #5C4630; text-decoration: line-through; text-decoration-color: #B42318; text-decoration-thickness: 2px; }
+.dy-tag-note { font-size: 12.5px; font-weight: 650; color: #5C4630; }
+.dy-tag-amount { font-family: var(--font-caveat), "Segoe Print", cursive; font-size: 46px; font-weight: 700; line-height: 0.95; color: #3B2410; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dy-tag-sold { display: inline-block; margin-bottom: 2px; padding: 1px 9px; border: 2px solid #B42318; border-radius: 6px; color: #B42318; font-size: 13px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; transform: rotate(4deg); }
+
+/* Tablet: the steps go under the header line; the actions take a full row. */
+@container (max-width: 999px) {
+  .dy-cc-track { margin-left: 0; flex-basis: 100%; }
+}
+@container (max-width: 879px) {
+  .dy-cc-body { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "thumb info tag" "actions actions actions"; gap: 16px 20px; padding: 20px; }
+  .dy-cc-head { padding: 12px 20px; }
+  .dy-cc-divider { display: none; }
+  .dy-cc-actions { padding-top: 16px; border-top: 1px solid #F3EBE2; justify-content: stretch; }
+  .dy-cc-actions > .dy-cc-btn { flex: 1 1 auto; }
+  .dy-cc-note { text-align: left; }
+  .dy-cc-thumb { width: 80px; height: 80px; }
+  .dy-cc-title { font-size: 20px; }
+  .dy-cc-others { padding: 0 20px 6px; }
+  .dy-cc-other .dy-cc-actions { padding-top: 0; border-top: 0; }
+}
+/* Phone: "Step 3 of 4: …", a smaller tag on its own row, full-width actions. */
+@container (max-width: 559px) {
+  .dy-cc-head { padding: 12px 16px; gap: 8px; }
+  .dy-cc-steps { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .dy-cc-compact { display: flex; }
+  .dy-cc-badge { font-size: 12px; }
+  .dy-cc-sep { display: none; }
+  .dy-cc-line { font-size: 13px; flex-basis: 100%; }
+  .dy-cc-body { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "thumb info" "tag tag" "actions actions"; gap: 12px 14px; padding: 16px; }
+  .dy-cc-thumb { width: 64px; height: 64px; border-radius: 13px; font-size: 30px; align-self: start; }
+  .dy-cc-title { font-size: 17.5px; -webkit-line-clamp: 3; }
+  .dy-cc-meta { font-size: 14px; }
+  .dy-cc-meta--small { font-size: 13px; }
+  .dy-cc-tagcell { justify-content: flex-start; padding: 0 0 0 4px; }
+  .dy-tag-string { width: 34px; }
+  .dy-tag-paper { min-width: 128px; min-height: 76px; padding: 8px 14px 8px 28px; }
+  .dy-tag-amount { font-size: 36px; }
+  .dy-tag-strike { font-size: 18px; }
+  .dy-tag-hole { left: 11px; }
+  .dy-cc-actions { padding-top: 14px; gap: 8px; }
+  .dy-cc-btn { min-height: 46px; padding: 0 14px; font-size: 14.5px; }
+  .dy-cc-btn--link { padding: 0 8px; }
+  .dy-cc-others { padding: 0 16px 4px; }
+  .dy-cc-other .dy-cc-actions { flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dy-cc-more-btn svg, .dy-cc-btn { transition: none; }
+}

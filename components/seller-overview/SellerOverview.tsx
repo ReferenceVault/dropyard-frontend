@@ -377,6 +377,7 @@ const STATUS_PILL: Record<ListingStatus, { label: string; dot?: boolean; check?:
   queued:         { label: "Queued for Drop", tone: "peach" },
   live:           { label: "Live in Drop", dot: true, tone: "white" },
   sold:           { label: "Sold", check: true, tone: "white" },
+  sold_elsewhere: { label: "Sold elsewhere", tone: "white" },
   back_on_shelf:  { label: "Back on Shelf", tone: "white" },
   shelf:          { label: "On the Shelf", tone: "white" },
 };

@@ -15,7 +15,9 @@ import { useDropCycle } from "@/context/DropCycleContext";
 import { useSocketEvent } from "@/context/SocketContext";
 import type { OverviewAttentionData, OverviewDrop } from "./overviewState";
 
-export type ListingStatus = "sold" | "pickup_pending" | "claimed" | "queued" | "live" | "shelf" | "back_on_shelf";
+// sold_elsewhere: the seller marked it sold outside DropYard. Not a DropYard
+// sale: no Overview number counts it.
+export type ListingStatus = "sold" | "sold_elsewhere" | "pickup_pending" | "claimed" | "queued" | "live" | "shelf" | "back_on_shelf";
 export interface ListingCard { id: string; title: string; price: number; photo: string | null; status: ListingStatus }
 export interface SnapshotPeriod { sold: number; lb: number; neighbours: number }
 

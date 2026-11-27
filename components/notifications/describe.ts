@@ -63,6 +63,14 @@ export function describeNotification(n: AppNotification): Described {
       return { text: `${who} marked ${what} as picked up`, target: thread, tone: "good" };
     case "RECEIPT_CONFIRMED":
       return { text: `${who} confirmed pickup of ${what}`, target: thread, tone: "good" };
+    // The waitlist (another buyer's claim was accepted) and what follows it.
+    case "CLAIM_WAITLISTED":
+      return { text: `${who} accepted another buyer for ${what}. You're on the waitlist if that sale falls through`, target: thread, tone: "info" };
+    case "OFFER_REACTIVATED":
+      // Neutral on purpose: the offer is open again, nobody has been chosen.
+      return { text: `Your offer on ${what} is active again. The seller may get in touch.`, target: thread, tone: "info" };
+    case "ITEM_GONE":
+      return { text: `${what} is no longer available, so your claim has closed`, target: thread, tone: "bad" };
     case "QUESTION_ASKED":
       return { text: `${who} asked a question about ${what}`, target: { role: "seller", tab: "questions" }, tone: "info" };
     case "QUESTION_ANSWERED":

@@ -1,6 +1,6 @@
 "use client";
 
-import { Calendar, CheckCircle, Clock, Package, X } from "lucide-react";
+import { Calendar, CheckCircle, Clock, Hourglass, Package, Tag, X } from "lucide-react";
 import type { ClaimPill } from "./claimStatus";
 import { MC, MF } from "./theme";
 
@@ -13,13 +13,16 @@ const TONES = {
 
 const ICONS = {
   "offer-pending": Clock,
+  waitlisted: Hourglass,
   "pickup-today": Calendar,
   "in-progress": Package,
   "picked-up": CheckCircle,
   declined: X,
+  "went-elsewhere": X,
+  "sold-elsewhere": Tag,
   expired: Clock,
   cancelled: X,
-} as const;
+} as const satisfies Record<ClaimPill["key"], unknown>;
 
 /** The claim status pill on inbox rows ("sm") and in the thread header ("md"). */
 export function ClaimStatusPill({ pill, size = "sm" }: { pill: ClaimPill | null; size?: "sm" | "md" }) {
